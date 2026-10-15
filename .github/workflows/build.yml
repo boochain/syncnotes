@@ -1,0 +1,228 @@
+name: Build & Test
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  FLUTTER_VERSION: "3.44.8"
+  CARGO_TERM_COLOR: always
+
+jobs:
+  server-test:
+    name: Server tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+      - name: Clippy
+        working-directory: server
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Test
+        working-directory: server
+        run: cargo test --all-targets
+      - name: Build release binary (for app e2e)
+        working-directory: server
+        run: cargo build --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server-bin-for-e2e
+          path: server/target/release/syncnotes-server
+          retention-days: 3
+
+  app-test:
+    name: App analyze & tests
+    needs: server-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: server-bin-for-e2e
+          path: bin
+      - run: chmod +x bin/syncnotes-server
+      - name: Analyze
+        working-directory: app
+        run: flutter analyze
+      - name: Test (unit + widget + e2e against real server)
+        working-directory: app
+        env:
+          SYNCNOTES_SERVER_BIN: ${{ github.workspace }}/bin/syncnotes-server
+        run: flutter test
+
+  server-build:
+    name: Server ${{ matrix.name }}
+    needs: server-test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            ext: ""
+          - name: linux-aarch64
+            os: ubuntu-latest
+            target: aarch64-unknown-linux-musl
+            ext: ""
+            cross: true
+          - name: windows-x86_64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            ext: ".exe"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+          key: ${{ matrix.target }}
+      - name: Install musl tools
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Install cross
+        if: matrix.cross
+        run: cargo install cross --locked
+      - name: Build
+        working-directory: server
+        shell: bash
+        run: |
+          if [ "${{ matrix.cross }}" = "true" ]; then
+            cross build --release --target ${{ matrix.target }}
+          else
+            cargo build --release --target ${{ matrix.target }}
+          fi
+          mkdir -p ../dist
+          cp target/${{ matrix.target }}/release/syncnotes-server${{ matrix.ext }} ../dist/syncnotes-server-${{ matrix.name }}${{ matrix.ext }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server-${{ matrix.name }}
+          path: dist/*
+
+  app-linux:
+    name: App Linux
+    needs: app-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libgtk-3-dev libayatana-appindicator3-dev libnotify-dev
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Build
+        working-directory: app
+        run: flutter build linux --release
+      - name: Package
+        run: |
+          mkdir -p dist
+          tar -C app/build/linux/x64/release -czf dist/SyncNotes-linux-x64.tar.gz --transform 's/^bundle/SyncNotes/' bundle
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-linux
+          path: dist/*
+
+  app-windows:
+    name: App Windows
+    needs: app-test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Build
+        working-directory: app
+        run: flutter build windows --release
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item -Recurse app/build/windows/x64/runner/Release SyncNotes
+          Compress-Archive -Path SyncNotes -DestinationPath dist/SyncNotes-windows-x64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-windows
+          path: dist/*
+
+  app-android:
+    name: App Android
+    needs: app-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Build APK
+        working-directory: app
+        run: flutter build apk --release
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp app/build/app/outputs/flutter-apk/app-release.apk dist/SyncNotes-android.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-android
+          path: dist/*
+
+  release:
+    name: Publish release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [server-build, app-linux, app-windows, app-android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: "{server-linux-*,server-windows-*,app-*}"
+          merge-multiple: true
+      - name: Checksums
+        run: cd artifacts && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" artifacts/* --clobber
+          else
+            NOTES_FILE=docs/release-notes/${TAG}.md
+            if [ -f "$NOTES_FILE" ]; then
+              gh release create "$TAG" artifacts/* --title "SyncNotes $TAG" --notes-file "$NOTES_FILE"
+            else
+              gh release create "$TAG" artifacts/* --title "SyncNotes $TAG" --generate-notes
+            fi
+          fi

@@ -1,0 +1,149 @@
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+
+import '../app_scope.dart';
+import '../platform/android_service.dart';
+import '../platform/desktop.dart';
+import '../sync/sync_client.dart';
+
+class SettingsPage extends StatefulWidget {
+  const SettingsPage({super.key});
+  @override
+  State<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<SettingsPage> {
+  bool? _autoStart;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAutoStart();
+  }
+
+  Future<void> _loadAutoStart() async {
+    bool v;
+    try {
+      v = isDesktop ? await DesktopShell.isAutoStartEnabled() : false;
+    } catch (_) {
+      v = false;
+    }
+    if (!mounted) return;
+    setState(() => _autoStart = isDesktop ? v : AppScope.of(context).settings.autoStart);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScope.of(context);
+    final st = s.settings;
+    return Scaffold(
+      appBar: AppBar(title: const Text('设置')),
+      body: ListView(children: [
+        _section(context, '账号'),
+        ListTile(
+          leading: const Icon(Icons.person_outline),
+          title: Text(st.username ?? ''),
+          subtitle: Text(st.server ?? ''),
+        ),
+        ListenableBuilder(
+          listenable: s.sync,
+          builder: (c, _) => ListTile(
+            leading: const Icon(Icons.sync),
+            title: Text(switch (s.sync.state) {
+              ConnState.online => '已连接',
+              ConnState.connecting => '连接中…',
+              ConnState.authError => '登录已失效，请重新登录',
+              ConnState.offline => '离线（将自动重连）',
+            }),
+            subtitle: Text('同步序号 ${s.sync.lastSeq} · 待发送 ${s.sync.pendingCount} · 设备 ${st.deviceId.length > 8 ? st.deviceId.substring(0, 8) : st.deviceId}'),
+            trailing: TextButton(onPressed: s.sync.reconnectNow, child: const Text('重连')),
+          ),
+        ),
+        _section(context, '启动'),
+        SwitchListTile(
+          secondary: const Icon(Icons.power_settings_new),
+          title: Text(Platform.isAndroid ? '开机自动启动后台同步' : '登录系统时自动启动'),
+          value: _autoStart ?? false,
+          onChanged: _autoStart == null
+              ? null
+              : (v) async {
+                  st.autoStart = v;
+                  if (isDesktop) {
+                    await DesktopShell.setAutoStart(v);
+                  } else if (Platform.isAndroid) {
+                    AndroidSyncService.init(autoRunOnBoot: v);
+                  }
+                  setState(() => _autoStart = v);
+                },
+        ),
+        if (isDesktop)
+          SwitchListTile(
+            secondary: const Icon(Icons.visibility_off_outlined),
+            title: const Text('启动时最小化到托盘'),
+            value: st.startMinimized,
+            onChanged: (v) => setState(() => st.startMinimized = v),
+          ),
+        if (Platform.isAndroid)
+          SwitchListTile(
+            secondary: const Icon(Icons.notifications_active_outlined),
+            title: const Text('后台保持连接（前台服务）'),
+            subtitle: const Text('常驻通知栏，保证及时收到新消息推送'),
+            value: st.foregroundService,
+            onChanged: (v) async {
+              setState(() => st.foregroundService = v);
+              v ? await AndroidSyncService.start() : await AndroidSyncService.stop();
+            },
+          ),
+        _section(context, '通知与已读'),
+        SwitchListTile(
+          secondary: const Icon(Icons.notifications_outlined),
+          title: const Text('新内容通知'),
+          value: st.notifications,
+          onChanged: (v) => setState(() => st.notifications = v),
+        ),
+        SwitchListTile(
+          secondary: const Icon(Icons.public),
+          title: const Text('新建块默认使用全局已读'),
+          subtitle: Text(st.defaultGlobalViewed
+              ? '在一台设备上查看后，所有设备都标为已读'
+              : '每台设备独立记录已读状态（可在每个块上单独切换）'),
+          value: st.defaultGlobalViewed,
+          onChanged: (v) => setState(() => st.defaultGlobalViewed = v),
+        ),
+        _section(context, '其他'),
+        ListTile(
+          leading: const Icon(Icons.cleaning_services_outlined),
+          title: const Text('清除本地缓存并重新同步'),
+          onTap: () async {
+            await s.sync.clearLocal();
+            s.sync.reconnectNow();
+          },
+        ),
+        ListTile(
+          leading: Icon(Icons.logout, color: Theme.of(context).colorScheme.error),
+          title: Text('退出登录', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          onTap: () async {
+            Navigator.of(context).pop();
+            await s.logout();
+          },
+        ),
+        const AboutListTile(
+          icon: Icon(Icons.info_outline),
+          applicationName: 'SyncNotes',
+          applicationVersion: '0.1.0',
+          applicationLegalese: '多设备实时同步笔记 / 消息队列',
+        ),
+      ]),
+    );
+  }
+
+  Widget _section(BuildContext context, String t) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
+        child: Text(t,
+            style: Theme.of(context)
+                .textTheme
+                .labelLarge
+                ?.copyWith(color: Theme.of(context).colorScheme.primary)),
+      );
+}
