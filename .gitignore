@@ -1,0 +1,25 @@
+# Rust
+server/target/
+*.db
+*.db-shm
+*.db-wal
+syncnotes-files/
+
+# Flutter
+app/.dart_tool/
+app/build/
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+app/.idea/
+app/*.iml
+app/android/.gradle/
+app/android/local.properties
+app/android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
+app/android/key.properties
+*.jks
+*.keystore
+
+# misc
+.DS_Store
+.vscode/
+dist/
