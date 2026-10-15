@@ -1,0 +1,13 @@
+services:
+  syncnotes:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "7700:7700"
+    volumes:
+      - ./data:/data
+    environment:
+      # 创建好账号后改为 false 以关闭注册
+      SYNCNOTES_ALLOW_REGISTER: "true"

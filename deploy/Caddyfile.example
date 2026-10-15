@@ -1,0 +1,4 @@
+# 用 Caddy 自动申请 HTTPS 证书并反向代理（WebSocket 自动支持）
+notes.example.com {
+    reverse_proxy 127.0.0.1:7700
+}
