@@ -1,14 +1,17 @@
 name: syncnotes
 description: "SyncNotes - 多设备实时同步笔记/消息"
 publish_to: 'none'
-version: 0.1.0+1
+version: 0.1.1+2
 
 environment:
   sdk: ^3.12.2
 
 dependencies:
+  characters: ^1.4.1
   file_picker: ^13.1.0
   flutter:
+    sdk: flutter
+  flutter_localizations:
     sdk: flutter
   flutter_foreground_task: ^11.0.3
   flutter_local_notifications: ^22.3.2

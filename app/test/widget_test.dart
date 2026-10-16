@@ -178,4 +178,24 @@ void main() {
     }
     expect(BlockTypes.creatable.map((t) => t.label), containsAll(['消息', '笔记', '文件', '文件夹']));
   });
+
+  testWidgets('Enter confirms the new-folder dialog', (tester) async {
+    await pumpApp(tester);
+    await tester.tap(find.byTooltip('新建'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('文件夹'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last, '项目');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(find.text('项目'), findsOneWidget);
+  });
+
+  testWidgets('Material widgets use Chinese localization', (tester) async {
+    await pumpApp(tester);
+    await tester.tap(find.byTooltip('设置'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.textContaining('关于'), 200);
+    expect(find.textContaining('关于'), findsOneWidget);
+  });
 }

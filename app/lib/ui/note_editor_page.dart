@@ -99,8 +99,12 @@ class _NoteEditorPageState extends State<NoteEditorPage> with SingleTickerProvid
   @override
   void dispose() {
     _debounce?.cancel();
-    if (_dirty) _save();
     _sync?.removeListener(_onRemote);
+    if (_dirty) {
+      // dispose 期间不能触发 notifyListeners（树已锁定），推迟到微任务保存。
+      final sync = _sync, id = _id, title = _title.text, body = _body.text, parent = widget.parentId;
+      Future.microtask(() => _saveDetached(sync, id, title, body, parent));
+    }
     _title.dispose();
     _body.dispose();
     _tabs.dispose();
@@ -154,5 +158,16 @@ class _NoteEditorPageState extends State<NoteEditorPage> with SingleTickerProvid
         ]),
       ),
     );
+  }
+}
+
+void _saveDetached(SyncClient? sync, String? id, String title, String body, String? parentId) {
+  if (sync == null) return;
+  final t = title.trim().isEmpty ? body.trim().split('\n').first.replaceAll('#', '').trim() : title.trim();
+  if (id == null) {
+    if (body.trim().isEmpty && title.trim().isEmpty) return;
+    sync.create(kind: BlockKind.note, title: t.isEmpty ? '新笔记' : t, payload: {'markdown': body}, parentId: parentId);
+  } else {
+    sync.update(id, title: t.isEmpty ? '新笔记' : t, payload: {'markdown': body});
   }
 }

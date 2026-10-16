@@ -38,14 +38,19 @@
 
 到 [Releases](../../releases) 下载对应平台的服务器：
 
-- `syncnotes-server-linux-x86_64`（静态链接，适用于绝大多数 Linux 服务器）
-- `syncnotes-server-linux-aarch64`（树莓派 / ARM 服务器）
-- `syncnotes-server-windows-x86_64.exe`
+- `syncnotes-server-<版本>-linux-x86_64.tar.gz`（静态链接，适用于绝大多数 Linux 服务器）
+- `syncnotes-server-<版本>-linux-aarch64.tar.gz`（树莓派 / ARM 服务器）
+- `syncnotes-server-<版本>-windows-x86_64.zip`
+
+压缩包内包含服务器程序、README 和 `deploy/`（systemd / Docker / Caddy 配置）。
 
 ```bash
-chmod +x syncnotes-server-linux-x86_64
-./syncnotes-server-linux-x86_64 --bind 0.0.0.0:7700
+tar xzf syncnotes-server-v0.1.1-linux-x86_64.tar.gz
+cd syncnotes-server-v0.1.1-linux-x86_64
+./syncnotes-server --bind 0.0.0.0:7700
 ```
+
+Windows：解压 zip 后运行 `syncnotes-server.exe`。
 
 启动后：
 
@@ -68,7 +73,7 @@ chmod +x syncnotes-server-linux-x86_64
 ```bash
 sudo useradd -r -s /usr/sbin/nologin syncnotes
 sudo mkdir -p /var/lib/syncnotes && sudo chown syncnotes /var/lib/syncnotes
-sudo cp syncnotes-server-linux-x86_64 /usr/local/bin/syncnotes-server
+sudo cp syncnotes-server /usr/local/bin/syncnotes-server
 sudo cp deploy/syncnotes.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now syncnotes
 ```
@@ -113,7 +118,7 @@ Android 上若搜索不到，请直接手动填写 IP（部分路由器/系统�
 
 | 平台 | 文件 | 安装方式 |
 |---|---|---|
-| Windows | `SyncNotes-windows-x64.zip` | 解压后运行 `syncnotes.exe` |
+| Windows | `SyncNotes-windows-x64.zip` | 解压后运行 `SyncNotes\syncnotes.exe`（已附带 VC++ 运行库） |
 | Linux | `SyncNotes-linux-x64.tar.gz` | 解压后运行 `SyncNotes/syncnotes`（需要 GTK3；托盘需 `libayatana-appindicator3-1`） |
 | Android | `SyncNotes-android.apk` | 允许"安装未知来源应用"后安装 |
 

@@ -111,8 +111,21 @@ jobs:
           else
             cargo build --release --target ${{ matrix.target }}
           fi
-          mkdir -p ../dist
-          cp target/${{ matrix.target }}/release/syncnotes-server${{ matrix.ext }} ../dist/syncnotes-server-${{ matrix.name }}${{ matrix.ext }}
+          # 打包：二进制 + README + 部署配置，Linux 用 .tar.gz（保留可执行权限），Windows 用 .zip
+          PKG=syncnotes-server-${{ github.ref_type == 'tag' && github.ref_name || 'dev' }}-${{ matrix.name }}
+          mkdir -p ../dist ../pkg/$PKG
+          cp target/${{ matrix.target }}/release/syncnotes-server${{ matrix.ext }} ../pkg/$PKG/
+          cp ../README.md ../LICENSE ../pkg/$PKG/
+          cp -r ../deploy ../pkg/$PKG/deploy
+          cd ../pkg
+          if [ "${{ matrix.ext }}" = ".exe" ]; then
+            7z a -tzip ../dist/$PKG.zip $PKG >/dev/null
+            7z l ../dist/$PKG.zip
+          else
+            chmod +x $PKG/syncnotes-server
+            tar -czf ../dist/$PKG.tar.gz $PKG
+            tar -tvzf ../dist/$PKG.tar.gz
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: server-${{ matrix.name }}
@@ -140,6 +153,7 @@ jobs:
         run: |
           mkdir -p dist
           tar -C app/build/linux/x64/release -czf dist/SyncNotes-linux-x64.tar.gz --transform 's/^bundle/SyncNotes/' bundle
+          tar -tvzf dist/SyncNotes-linux-x64.tar.gz | grep -E ' SyncNotes/syncnotes$' | grep -q '^-rwx' || (echo "launcher not executable"; exit 1)
       - uses: actions/upload-artifact@v4
         with:
           name: app-linux
@@ -164,7 +178,14 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item -Recurse app/build/windows/x64/runner/Release SyncNotes
+          # 附带 VC++ 运行库，干净的 Windows 上无需另装 VC++ Redistributable 也能启动
+          foreach ($dll in @("msvcp140.dll","vcruntime140.dll","vcruntime140_1.dll")) {
+            Copy-Item "$env:WINDIR\System32\$dll" SyncNotes\
+          }
+          if (-not (Test-Path SyncNotes\syncnotes.exe)) { throw "syncnotes.exe missing" }
+          if (-not (Test-Path SyncNotes\data\app.so)) { throw "data\app.so missing" }
           Compress-Archive -Path SyncNotes -DestinationPath dist/SyncNotes-windows-x64.zip
+          Get-ChildItem -Recurse SyncNotes | Select-Object -ExpandProperty FullName
       - uses: actions/upload-artifact@v4
         with:
           name: app-windows
@@ -192,6 +213,7 @@ jobs:
         run: |
           mkdir -p dist
           cp app/build/app/outputs/flutter-apk/app-release.apk dist/SyncNotes-android.apk
+          unzip -l dist/SyncNotes-android.apk | grep -q 'lib/arm64-v8a/libapp.so' || (echo "APK missing arm64 code"; exit 1)
       - uses: actions/upload-artifact@v4
         with:
           name: app-android

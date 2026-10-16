@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::blocks::{Block, BlockKind, ViewedMode};
+use crate::blocks::{Block, ViewedMode};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RegisterRequest {
@@ -37,7 +37,7 @@ pub enum ClientMessage {
     /// Create or update a block (idempotent by id; client may reuse ids for offline creates).
     UpsertBlock {
         id: String,
-        kind: BlockKind,
+        kind: String,
         title: String,
         payload: Value,
         parent_id: Option<String>,

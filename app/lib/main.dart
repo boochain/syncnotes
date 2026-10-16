@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'app_scope.dart';
@@ -10,6 +11,7 @@ import 'models/block.dart';
 import 'platform/android_service.dart';
 import 'platform/desktop.dart';
 import 'platform/notifications.dart';
+import 'platform/single_instance.dart';
 import 'services/auth_api.dart';
 import 'services/settings.dart';
 import 'sync/local_store.dart';
@@ -28,6 +30,8 @@ Future<void> _main(List<String> args) async {
   final settings = await Settings.load();
 
   if (isDesktop) {
+    final primary = await SingleInstance.acquire(onActivate: () => DesktopShell.instance.showNearTray());
+    if (!primary) exit(0);
     final hidden = args.contains('--hidden') || (settings.isLoggedIn && settings.startMinimized);
     await DesktopShell.instance.init(startHidden: hidden);
   }
@@ -90,6 +94,7 @@ class _SyncNotesAppState extends State<SyncNotesApp> with WidgetsBindingObserver
       channelFactory: widget.channelFactory,
     );
     c.onRemoteNew = _onRemoteNew;
+    if (isDesktop) DesktopShell.instance.onQuit = c.flush;
     c.addListener(_onSyncChanged);
     return c;
   }
@@ -128,6 +133,8 @@ class _SyncNotesAppState extends State<SyncNotesApp> with WidgetsBindingObserver
   }
 
   Future<void> _logout() async {
+    final server = widget.settings.server, token = widget.settings.token;
+    if (server != null && token != null) _api.logout(server, token);
     _sync.disconnect();
     await _sync.clearLocal();
     widget.settings.logout();
@@ -157,6 +164,8 @@ class _SyncNotesAppState extends State<SyncNotesApp> with WidgetsBindingObserver
         theme: buildTheme(Brightness.light),
         darkTheme: buildTheme(Brightness.dark),
         locale: const Locale('zh', 'CN'),
+        supportedLocales: const [Locale('zh', 'CN'), Locale('en')],
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
         home: AnimatedSwitcher(
           duration: const Duration(milliseconds: 350),
           switchInCurve: Curves.easeOutCubic,

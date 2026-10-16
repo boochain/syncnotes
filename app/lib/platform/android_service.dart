@@ -69,7 +69,7 @@ class _SyncTaskHandler extends TaskHandler {
     final token = prefs.getString('token');
     final deviceId = prefs.getString('device_id');
     if (server == null || token == null || deviceId == null) return;
-    await Notifier.init();
+    await Notifier.init(requestPermission: false);
     // 服务隔离区只负责通知：使用内存存储，首次追赶不提示。
     final c = SyncClient(store: MemoryStore(), deviceId: deviceId);
     c.onRemoteNew = (b) {

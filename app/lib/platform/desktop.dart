@@ -14,9 +14,15 @@ class DesktopShell with TrayListener, WindowListener {
   DesktopShell._();
 
   static const Size windowSize = Size(400, 640);
-  VoidCallback? onQuit;
+
+  /// 退出前调用（例如把本地缓存写完）。
+  Future<void> Function()? onQuit;
+
+  /// 托盘是否可用；不可用时点关闭直接退出，否则窗口隐藏后就再也找不回来了。
+  bool trayAvailable = false;
 
   Future<void> init({required bool startHidden}) async {
+    var hidden = startHidden;
     await windowManager.ensureInitialized();
     final opts = WindowOptions(
       size: windowSize,
@@ -27,7 +33,7 @@ class DesktopShell with TrayListener, WindowListener {
     );
     await windowManager.waitUntilReadyToShow(opts, () async {
       await windowManager.setAlignment(Alignment.bottomRight);
-      if (!startHidden) {
+      if (!hidden) {
         await windowManager.show();
         await windowManager.focus();
       }
@@ -40,10 +46,18 @@ class DesktopShell with TrayListener, WindowListener {
       if (!Platform.isLinux) await trayManager.setToolTip('SyncNotes');
       await _setMenu(unread: 0);
       trayManager.addListener(this);
+      trayAvailable = true;
     } catch (e) {
       debugPrint('tray unavailable: $e');
-      // 没有托盘时保证窗口可见
-      await windowManager.show();
+      trayAvailable = false;
+    }
+    if (!trayAvailable) {
+      // 没有托盘：不能隐藏到托盘，关闭即退出，并且启动时必须显示窗口
+      await windowManager.setPreventClose(false);
+      if (hidden) {
+        hidden = false;
+        await windowManager.show();
+      }
     }
   }
 
@@ -92,17 +106,27 @@ class DesktopShell with TrayListener, WindowListener {
         await showNearTray();
         break;
       case 'quit':
-        onQuit?.call();
-        await windowManager.setPreventClose(false);
-        await trayManager.destroy();
-        await windowManager.destroy();
-        exit(0);
+        await quit();
     }
+  }
+
+  Future<void> quit() async {
+    try {
+      await onQuit?.call().timeout(const Duration(seconds: 3));
+    } catch (_) {}
+    await windowManager.setPreventClose(false);
+    if (trayAvailable) await trayManager.destroy();
+    await windowManager.destroy();
+    exit(0);
   }
 
   /// 点关闭 → 隐藏到托盘
   @override
   void onWindowClose() async {
-    await windowManager.hide();
+    if (trayAvailable) {
+      await windowManager.hide();
+    } else {
+      await quit();
+    }
   }
 }

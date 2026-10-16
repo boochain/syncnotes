@@ -105,7 +105,10 @@ class BlockCard extends StatelessWidget {
   Future<void> _menu(BuildContext context, BlockType type) async {
     final s = AppScope.of(context);
     final extra = type.extraActions(context, block);
-    final folders = s.sync.blocks.where((b) => b.kind == BlockKind.folder && b.id != block.id).toList();
+    final banned = s.sync.descendantIds(block.id)..add(block.id);
+    final folders = s.sync.blocks
+        .where((b) => b.kind == BlockKind.folder && !banned.contains(b.id) && b.id != block.parentId)
+        .toList();
     await showModalBottomSheet(
       context: context,
       showDragHandle: true,

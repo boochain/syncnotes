@@ -26,7 +26,24 @@ class AuthApi {
     if (!s.contains('://')) s = 'http://$s';
     s = s.replaceFirst(RegExp(r'^ws'), 'http');
     final u = Uri.parse(s);
-    return u.replace(path: '');
+    var path = u.path.endsWith('/') ? u.path.substring(0, u.path.length - 1) : u.path;
+    if (path.endsWith('/ws')) path = path.substring(0, path.length - 3);
+    return u.replace(path: path);
+  }
+
+  /// 在基础地址（可能带路径前缀）后拼接 API 路径。
+  static Uri endpoint(String server, String path, [Map<String, String>? query]) {
+    final b = httpBase(server);
+    return b.replace(path: '${b.path}$path', queryParameters: query);
+  }
+
+  /// 吊销服务器上的令牌（失败忽略：离线时也允许退出）。
+  Future<void> logout(String server, String token) async {
+    try {
+      await client
+          .post(endpoint(server, '/api/logout'), headers: {'authorization': 'Bearer $token'})
+          .timeout(const Duration(seconds: 5));
+    } catch (_) {}
   }
 
   Future<AuthResult> login(String server, String user, String pw, String deviceId,
@@ -48,7 +65,7 @@ class AuthApi {
     final http.Response res;
     try {
       res = await client
-          .post(httpBase(server).replace(path: path),
+          .post(endpoint(server, path),
               headers: {'content-type': 'application/json'}, body: jsonEncode(body))
           .timeout(const Duration(seconds: 10));
     } catch (e) {
@@ -64,7 +81,7 @@ class AuthApi {
   /// 上传文件，返回 file_id。
   Future<String> uploadFile(String server, String token, String name, List<int> bytes) async {
     final res = await client.put(
-      httpBase(server).replace(path: '/api/files', queryParameters: {'name': name}),
+      endpoint(server, '/api/files', {'name': name}),
       headers: {'authorization': 'Bearer $token'},
       body: bytes,
     );
@@ -73,7 +90,7 @@ class AuthApi {
   }
 
   Uri fileUrl(String server, String token, String fileId) =>
-      httpBase(server).replace(path: '/api/files/$fileId', queryParameters: {'token': token});
+      endpoint(server, '/api/files/$fileId', {'token': token});
 
   Future<List<int>> downloadFile(String server, String token, String fileId) async {
     final res = await client.get(fileUrl(server, token, fileId));

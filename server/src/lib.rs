@@ -18,6 +18,7 @@ pub fn build_router(state: AppState) -> axum::Router {
         .route("/health", get(sync::health))
         .route("/api/register", post(sync::register))
         .route("/api/login", post(sync::login))
+        .route("/api/logout", post(sync::logout))
         .route("/ws", get(sync::ws_handler))
         .route("/api/files", axum::routing::put(files::upload))
         .route("/api/files/:id", get(files::download))
