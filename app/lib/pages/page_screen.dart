@@ -1,3 +1,4 @@
+import '../ui/glass.dart';
 import 'dart:async';
 import '../ui/tokens.dart';
 
@@ -295,7 +296,7 @@ class _PageScreenState extends State<PageScreen> {
         width: double.infinity,
         // 深色模式下压暗封面，避免大面积亮色刺眼
         foregroundDecoration: Theme.of(context).brightness == Brightness.dark
-            ? BoxDecoration(color: Colors.black.withValues(alpha: 0.38))
+            ? BoxDecoration(color: Colors.black.withValues(alpha: 0.28))
             : null,
         decoration: BoxDecoration(gradient: LinearGradient(colors: colors, begin: Alignment.topLeft, end: Alignment.bottomRight)),
       ),
@@ -374,7 +375,9 @@ class _PageScreenState extends State<PageScreen> {
           onSubmitted: (_) => _titleEnter(),
           maxLines: null,
           textInputAction: TextInputAction.next,
-          style: Theme.of(context).textTheme.headlineLarge?.merge(EditorType.pageTitle.style),
+          style: Theme.of(context).textTheme.headlineLarge?.merge(EditorType.pageTitle.style).copyWith(
+              // Notion 移动端：窄屏标题缩到 32，避免两字一行
+              fontSize: MediaQuery.sizeOf(context).width < 600 ? 32 : null),
           decoration: InputDecoration.collapsed(
             hintText: '无标题',
             hintStyle: EditorType.pageTitle.style.copyWith(color: cs.outline.withValues(alpha: 0.5)),
@@ -548,7 +551,6 @@ class _Toolbar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
     Widget b(String tip, IconData icon, VoidCallback? f, {Key? key}) => IconButton(
           key: key,
           tooltip: tip,
@@ -557,16 +559,24 @@ class _Toolbar extends StatelessWidget {
           onPressed: f,
         );
     return TextFieldTapRegion(
+      // 浮动胶囊工具栏（Notion 选区工具栏 + HIG 材质）：不再是贴底的灰条
       child: Material(
-        color: cs.surfaceContainer,
+        type: MaterialType.transparency,
         child: SafeArea(
           top: false,
-          child: SizedBox(
-            height: 46,
-            child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 8), children: [
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
+            child: Center(
+              child: Glass(
+                key: const Key('formatToolbar'),
+                radius: Radii.card,
+                strong: true,
+                child: SizedBox(
+            height: 44,
+            child: ListView(shrinkWrap: true, scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 6), children: [
               PopupMenuButton<DocType>(
                 tooltip: '转换块类型',
-                icon: const Icon(Icons.text_fields, size: 20),
+                icon: const Icon(CupertinoIcons.textformat, size: 20),
                 onSelected: (t) {
                   final id = doc.focusedId.value;
                   if (id == null) return;
@@ -579,7 +589,7 @@ class _Toolbar extends StatelessWidget {
               ),
               b('粗体 (Ctrl+B)', CupertinoIcons.bold, () => row()?.wrap('**'), key: const Key('tbBold')),
               b('斜体 (Ctrl+I)', CupertinoIcons.italic, () => row()?.wrap('*')),
-              b('行内代码 (Ctrl+E)', Icons.code, () => row()?.wrap('`')),
+              b('行内代码 (Ctrl+E)', CupertinoIcons.chevron_left_slash_chevron_right, () => row()?.wrap('`')),
               b('删除线 (Ctrl+Shift+S)', CupertinoIcons.strikethrough, () => row()?.wrap('~~')),
               b('链接 (Ctrl+Shift+K)', CupertinoIcons.link, () => row()?.promptLink()),
               b('打开链接', CupertinoIcons.arrow_up_right_square, () {
@@ -602,8 +612,11 @@ class _Toolbar extends StatelessWidget {
               const VerticalDivider(indent: 10, endIndent: 10),
               b('撤销', CupertinoIcons.arrow_uturn_left, doc.canUndo ? doc.undo : null),
               b('重做', CupertinoIcons.arrow_uturn_right, doc.canRedo ? doc.redo : null),
-              b('完成', Icons.keyboard_hide_outlined, () => FocusManager.instance.primaryFocus?.unfocus()),
+              b('完成', CupertinoIcons.keyboard_chevron_compact_down, () => FocusManager.instance.primaryFocus?.unfocus()),
             ]),
+          ),
+              ),
+            ),
           ),
         ),
       ),

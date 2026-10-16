@@ -145,7 +145,7 @@ ThemeData buildAppTheme(Brightness b, {DesignLanguage? language}) {
     ),
     switchTheme: SwitchThemeData(
       // [HIG] 开关：开启为 systemGreen；Material 开关形状由 adaptive 在 Apple 平台替换
-      trackColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? pick(HigColors.green, dark) : cs.surfaceContainer),
+      trackColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? pick(HigColors.green, dark) : (dark ? const Color(0x5C787880) : const Color(0x33787880)))  // HIG systemFill,
       thumbColor: const WidgetStatePropertyAll(Colors.white),
       trackOutlineColor: const WidgetStatePropertyAll(Colors.transparent),
       thumbIcon: const WidgetStatePropertyAll(null),

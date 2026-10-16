@@ -52,7 +52,7 @@ class _HomePageState extends State<HomePage> {
               : Row(key: const ValueKey('title'), children: [
                   Text(widget.embedded ? '收件箱' : 'SyncNotes'),
                   const SizedBox(width: 10),
-                  Flexible(child: ListenableBuilder(listenable: s.sync, builder: (c, _) => ConnectionBadge(sync: s.sync))),
+                  if (!widget.embedded) Flexible(child: ListenableBuilder(listenable: s.sync, builder: (c, _) => ConnectionBadge(sync: s.sync))),
                 ]),
         ),
         actions: [

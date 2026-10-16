@@ -12,6 +12,7 @@ import 'home_page.dart' show ConnectionBadge;
 class Sidebar extends StatelessWidget {
   final String? selectedPage; // null = 收件箱
   final bool inboxSelected;
+  final bool settingsSelected;
   final void Function(String? pageId) onSelect;
   final VoidCallback onSearch;
   final VoidCallback onSettings;
@@ -19,6 +20,7 @@ class Sidebar extends StatelessWidget {
     super.key,
     required this.selectedPage,
     required this.inboxSelected,
+    this.settingsSelected = false,
     required this.onSelect,
     required this.onSearch,
     required this.onSettings,
@@ -76,7 +78,7 @@ class Sidebar extends StatelessWidget {
                     : null,
                 onTap: () => onSelect(null),
               ),
-              _NavItem(icon: CupertinoIcons.gear, label: '设置', onTap: onSettings),
+              _NavItem(icon: CupertinoIcons.gear, label: '设置', selected: settingsSelected, onTap: onSettings),
               Padding(
                 padding: const EdgeInsets.fromLTRB(18, 18, 8, 4),
                 child: Row(children: [

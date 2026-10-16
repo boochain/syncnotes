@@ -40,7 +40,8 @@ class _SettingsPageState extends State<SettingsPage> {
     final st = s.settings;
     return Scaffold(
       appBar: AppBar(title: const Text('设置')),
-      body: ListView(children: [
+      // HIG 设置页：内容限宽居中，宽屏下开关不至于离标签太远
+      body: Align(alignment: Alignment.topCenter, child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 680), child: ListView(padding: const EdgeInsets.only(bottom: 24), children: [
         _section(context, '账号'),
         ListTile(
           leading: const Icon(CupertinoIcons.person),
@@ -175,7 +176,7 @@ class _SettingsPageState extends State<SettingsPage> {
           applicationVersion: '0.2.0',
           applicationLegalese: '多设备实时同步笔记 / 消息队列',
         ),
-      ]),
+      ]))),
     );
   }
 

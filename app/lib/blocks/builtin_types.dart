@@ -397,9 +397,15 @@ class PageType extends BlockType {
     final sync = AppScope.of(context).sync;
     final kids = sync.blocks.where((b) => b.parentId == block.id && b.kind == BlockKind.text).toList()
       ..sort((a, b) => orderOf(a).compareTo(orderOf(b)));
-    final text = kids.map((b) => plainInline(docText(b))).where((t) => t.trim().isNotEmpty).take(3).join('\n');
+    // 摘要：前三个非空块，去掉句末标点后用“ · ”连接；空页面不显示摘要（Notion 同款）
+    final parts = kids
+        .map((b) => plainInline(docText(b)).replaceAll('\n', ' ').trim().replaceAll(RegExp(r'[。．.！!？?；;，,]+$'), ''))
+        .where((t) => t.isNotEmpty)
+        .take(3)
+        .toList();
+    if (parts.isEmpty) return const SizedBox.shrink();
     return Text(
-      text.isEmpty ? '空页面' : text.replaceAll('\n', ' · '),
+      parts.join(' · '),
       maxLines: 2,
       overflow: TextOverflow.ellipsis,
     );

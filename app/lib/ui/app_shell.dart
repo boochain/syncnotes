@@ -45,6 +45,7 @@ class AppShellState extends State<AppShell> implements PageHost {
       setState(() => _page = id);
       return;
     }
+    // 宽屏：侧边栏切换目标时关掉叠在上面的设置等页面（否则点击页面没有反应）
     _navKey.currentState?.popUntil((r) => r.isFirst);
     setState(() => _page = id);
   }
@@ -63,9 +64,13 @@ class AppShellState extends State<AppShell> implements PageHost {
     }
   }
 
-  void _settings() {
+  bool _inSettings = false;
+  Future<void> _settings() async {
     _scaffold.currentState?.closeDrawer();
-    _navKey.currentState?.push(MaterialPageRoute(builder: (_) => const SettingsPage()));
+    if (_inSettings) return;
+    setState(() => _inSettings = true);
+    await _navKey.currentState?.push(MaterialPageRoute(builder: (_) => const SettingsPage()));
+    if (mounted) setState(() => _inSettings = false);
   }
 
   @override
@@ -85,8 +90,9 @@ class AppShellState extends State<AppShell> implements PageHost {
           final page = _page == null ? null : sync.byId(_page!);
           final pageId = page == null || page.deleted ? null : _page;
           final sidebar = Sidebar(
-            selectedPage: pageId,
-            inboxSelected: pageId == null,
+            selectedPage: _inSettings ? null : pageId,
+            inboxSelected: pageId == null && !_inSettings,
+            settingsSelected: _inSettings,
             onSelect: _select,
             onSearch: () {
               _scaffold.currentState?.closeDrawer();
