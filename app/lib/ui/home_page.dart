@@ -1,13 +1,21 @@
 import 'package:flutter/material.dart';
+import 'tokens.dart';
 
 import '../app_scope.dart';
+import '../models/block.dart';
+import '../platform/desktop.dart';
 import '../sync/sync_client.dart';
 import 'block_card.dart';
 import 'quick_send_bar.dart';
 import 'settings_page.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  /// 窄屏：打开侧边抽屉
+  final VoidCallback? onMenu;
+
+  /// 宽屏嵌入外壳时隐藏设置按钮（侧边栏里有）
+  final bool embedded;
+  const HomePage({super.key, this.onMenu, this.embedded = false});
   @override
   State<HomePage> createState() => _HomePageState();
 }
@@ -15,15 +23,24 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   bool _searching = false;
   String _filter = '';
+  String _kind = 'all';
+
+  static const _kinds = <String, (String, Set<BlockKind>?)>{
+    'all': ('全部', null),
+    'msg': ('消息', {BlockKind.message}),
+    'page': ('页面', {BlockKind.page, BlockKind.note}),
+    'file': ('文件', {BlockKind.file, BlockKind.folder}),
+  };
 
   @override
   Widget build(BuildContext context) {
     final s = AppScope.of(context);
     return Scaffold(
       appBar: AppBar(
-        titleSpacing: 16,
+        leading: widget.onMenu == null ? null : IconButton(key: const Key('menuButton'), icon: const Icon(Icons.menu), tooltip: '菜单', onPressed: widget.onMenu),
+        titleSpacing: widget.onMenu == null ? 16 : 0,
         title: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 200),
+          duration: Motion.short4,
           child: _searching
               ? TextField(
                   key: const ValueKey('search'),
@@ -32,9 +49,9 @@ class _HomePageState extends State<HomePage> {
                   decoration: const InputDecoration(hintText: '搜索…', border: InputBorder.none),
                 )
               : Row(key: const ValueKey('title'), children: [
-                  const Text('SyncNotes'),
+                  Text(widget.embedded ? '收件箱' : 'SyncNotes'),
                   const SizedBox(width: 10),
-                  ListenableBuilder(listenable: s.sync, builder: (c, _) => ConnectionBadge(sync: s.sync)),
+                  Flexible(child: ListenableBuilder(listenable: s.sync, builder: (c, _) => ConnectionBadge(sync: s.sync))),
                 ]),
         ),
         actions: [
@@ -46,6 +63,16 @@ class _HomePageState extends State<HomePage> {
               _filter = '';
             }),
           ),
+          if (isDesktop)
+            ValueListenableBuilder<bool>(
+              valueListenable: DesktopShell.instance.expanded,
+              builder: (c, ex, _) => IconButton(
+                tooltip: ex ? '收起为小窗' : '展开窗口',
+                icon: Icon(ex ? Icons.close_fullscreen : Icons.open_in_full),
+                onPressed: DesktopShell.instance.toggleExpanded,
+              ),
+            ),
+          if (!widget.embedded)
           IconButton(
             tooltip: '设置',
             icon: const Icon(Icons.settings_outlined),
@@ -56,7 +83,30 @@ class _HomePageState extends State<HomePage> {
       ),
       body: RefreshIndicator(
         onRefresh: () async => s.sync.reconnectNow(),
-        child: BlockList(filter: _filter),
+        child: Column(children: [
+          SizedBox(
+            height: 44,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              children: [
+                for (final e in _kinds.entries)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ChoiceChip(
+                      key: Key('filter-${e.key}'),
+                      label: Text(e.value.$1),
+                      selected: _kind == e.key,
+                      showCheckmark: false,
+                      visualDensity: VisualDensity.compact,
+                      onSelected: (_) => setState(() => _kind = e.key),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Expanded(child: BlockList(filter: _filter, kinds: _kinds[_kind]!.$2)),
+        ]),
       ),
       bottomNavigationBar: const QuickSendBar(),
     );
@@ -80,7 +130,7 @@ class ConnectionBadge extends StatelessWidget {
     return Tooltip(
       message: sync.lastError ?? label,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
+        duration: Motion.medium2,
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.15),
@@ -88,14 +138,15 @@ class ConnectionBadge extends StatelessWidget {
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           AnimatedContainer(
-            duration: const Duration(milliseconds: 300),
+            duration: Motion.medium2,
             width: 7,
             height: 7,
             decoration: BoxDecoration(color: color, shape: BoxShape.circle),
           ),
           const SizedBox(width: 5),
-          Text(pending > 0 ? '$label · $pending 待同步' : label,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(color: color)),
+          Flexible(child: Text(pending > 0 ? '$label · $pending 待同步' : label,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(color: color))),
         ]),
       ),
     );

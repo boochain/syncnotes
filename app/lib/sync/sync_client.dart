@@ -68,8 +68,11 @@ class SyncClient extends ChangeNotifier {
 
   /// 子块。根目录还会显示"孤儿"块（父文件夹已删除或尚未同步），避免内容凭空消失。
   List<Block> childrenOf(String? parentId) {
-    if (parentId != null) return blocks.where((b) => b.parentId == parentId).toList();
+    if (parentId != null) {
+      return blocks.where((b) => b.parentId == parentId && isInboxItem(b)).toList();
+    }
     return blocks.where((b) {
+      if (!isInboxItem(b)) return false;
       if (b.parentId == null) return true;
       final p = _blocks[b.parentId];
       return p == null || p.deleted;
@@ -91,7 +94,12 @@ class SyncClient extends ChangeNotifier {
     return out;
   }
 
-  int get unreadCount => blocks.where((b) => !b.isViewed && b.kind != BlockKind.folder).length;
+  /// 收件箱条目（不含页面内部的内容块）。
+  static bool isInboxItem(Block b) => b.kind != BlockKind.text;
+
+  int get unreadCount => blocks
+      .where((b) => !b.isViewed && b.kind != BlockKind.folder && b.kind != BlockKind.text && b.kind != BlockKind.page)
+      .length;
 
   Future<void> loadLocal() async {
     final d = await store.load();
@@ -283,7 +291,11 @@ class SyncClient extends ChangeNotifier {
     final result = contentChanged ? merged.copyWith(viewedLocal: false) : merged;
     _blocks[incoming.id] = result;
 
-    if (existing == null && !_catchingUp && incoming.createdBy != deviceId && !incoming.deleted) {
+    if (existing == null &&
+        !_catchingUp &&
+        incoming.createdBy != deviceId &&
+        !incoming.deleted &&
+        incoming.kind != BlockKind.text) {
       onRemoteNew?.call(result);
     }
     _persist();
@@ -363,6 +375,16 @@ class SyncClient extends ChangeNotifier {
     _enqueue(b.toUpsertMessage());
     _notify();
     return b;
+  }
+
+  /// 把块恢复为给定状态（撤销/重做用）。会生成新的 updatedAt 并同步。
+  Block restore(Block b) {
+    final old = _blocks[b.id];
+    final nb = b.copyWith(updatedAt: max(_now(), (old?.updatedAt ?? 0) + 1), pending: true);
+    _blocks[b.id] = nb;
+    _enqueue(nb.toUpsertMessage());
+    _notify();
+    return nb;
   }
 
   Block? update(String id,

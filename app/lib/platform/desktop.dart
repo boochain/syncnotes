@@ -90,6 +90,20 @@ class DesktopShell with TrayListener, WindowListener {
     await windowManager.focus();
   }
 
+  /// 在托盘小窗与大窗口（侧边栏 + 页面）之间切换。
+  final expanded = ValueNotifier<bool>(false);
+  static const Size expandedSize = Size(1120, 740);
+  Future<void> toggleExpanded() async {
+    expanded.value = !expanded.value;
+    if (expanded.value) {
+      await windowManager.setSize(expandedSize);
+      await windowManager.center();
+    } else {
+      await windowManager.setSize(windowSize);
+      await windowManager.setAlignment(Alignment.bottomRight);
+    }
+  }
+
   static Future<bool> isAutoStartEnabled() => AutoStart.isEnabled();
   static Future<void> setAutoStart(bool v) => AutoStart.setEnabled(v);
 

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'tokens.dart';
 
 import 'package:flutter/material.dart';
 
@@ -118,7 +119,7 @@ class _LoginPageState extends State<LoginPage> {
                 ),
               ),
               AnimatedSize(
-                duration: const Duration(milliseconds: 200),
+                duration: Motion.short4,
                 child: _found.length > 1
                     ? Wrap(spacing: 8, children: [
                         for (final s in _found)
@@ -147,7 +148,7 @@ class _LoginPageState extends State<LoginPage> {
                     labelText: '密码', prefixIcon: Icon(Icons.lock_outline), border: OutlineInputBorder()),
               ),
               AnimatedSwitcher(
-                duration: const Duration(milliseconds: 200),
+                duration: Motion.short4,
                 child: _error == null
                     ? const SizedBox(height: 16)
                     : Padding(

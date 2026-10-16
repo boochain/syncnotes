@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'tokens.dart';
 
 import '../app_scope.dart';
+import '../sync/sync_client.dart';
 import '../blocks/block_type.dart';
 import '../models/block.dart';
 
@@ -24,7 +26,7 @@ class BlockCard extends StatelessWidget {
     final type = BlockTypes.of(block.kind);
     final unread = !block.isViewed && block.kind != BlockKind.folder;
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 250),
+      duration: Motion.medium1,
       curve: Curves.easeOut,
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: Card(
@@ -71,7 +73,7 @@ class BlockCard extends StatelessWidget {
                     ),
                   AnimatedScale(
                     scale: unread ? 1 : 0,
-                    duration: const Duration(milliseconds: 200),
+                    duration: Motion.short4,
                     child: Container(
                       margin: const EdgeInsets.only(left: 6),
                       width: 8,
@@ -202,7 +204,10 @@ class BlockCard extends StatelessWidget {
 class BlockList extends StatelessWidget {
   final String? parentId;
   final String filter;
-  const BlockList({super.key, this.parentId, this.filter = ''});
+
+  /// 只显示这些类型（null = 全部）
+  final Set<BlockKind>? kinds;
+  const BlockList({super.key, this.parentId, this.filter = '', this.kinds});
 
   @override
   Widget build(BuildContext context) {
@@ -213,23 +218,43 @@ class BlockList extends StatelessWidget {
         var items = filter.isEmpty
             ? sync.childrenOf(parentId)
             : sync.blocks.where((b) {
+                if (!SyncClient.isInboxItem(b)) return false;
                 final q = filter.toLowerCase();
                 return b.title.toLowerCase().contains(q) ||
                     b.payload.values.whereType<String>().any((v) => v.toLowerCase().contains(q));
               }).toList();
+        if (kinds != null) items = items.where((b) => kinds!.contains(b.kind)).toList();
         // 文件夹置顶
         items = [
           ...items.where((b) => b.kind == BlockKind.folder),
           ...items.where((b) => b.kind != BlockKind.folder),
         ];
         if (items.isEmpty) {
-          return Center(
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Icon(Icons.inbox_outlined, size: 56, color: Theme.of(context).colorScheme.outlineVariant),
-              const SizedBox(height: 8),
-              Text(filter.isEmpty ? '这里还没有内容' : '没有匹配的结果',
-                  style: TextStyle(color: Theme.of(context).colorScheme.outline)),
-            ]),
+          final cs = Theme.of(context).colorScheme;
+          return LayoutBuilder(
+            builder: (context, c) => SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: c.maxHeight),
+                child: Center(
+                  child: TweenAnimationBuilder<double>(
+                    tween: Tween(begin: 0, end: 1),
+                    duration: Motion.medium4,
+                    curve: Curves.easeOutBack,
+                    builder: (context, t, child) => Opacity(opacity: t.clamp(0, 1), child: Transform.scale(scale: 0.9 + 0.1 * t, child: child)),
+                    child: Column(key: const Key('emptyState'), mainAxisSize: MainAxisSize.min, children: [
+                      Text(filter.isEmpty ? '📭' : '🔍', style: const TextStyle(fontSize: 48)),
+                      const SizedBox(height: 12),
+                      Text(filter.isEmpty ? '这里还没有内容' : '没有匹配的结果',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: cs.onSurface)),
+                      const SizedBox(height: 4),
+                      Text(filter.isEmpty ? '在下方输入框发送消息，或点击 + 新建页面、文件、文件夹' : '换个关键词试试',
+                          textAlign: TextAlign.center, style: TextStyle(color: cs.outline, fontSize: 13)),
+                    ]),
+                  ),
+                ),
+              ),
+            ),
           );
         }
         return ListView.builder(

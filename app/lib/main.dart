@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'ui/tokens.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -16,7 +17,11 @@ import 'services/auth_api.dart';
 import 'services/settings.dart';
 import 'sync/local_store.dart';
 import 'sync/sync_client.dart';
-import 'ui/home_page.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
+
+import 'ui/app_shell.dart';
+import 'ui/glass.dart';
+import 'ui/theme.dart';
 import 'ui/login_page.dart';
 
 Future<void> main(List<String> args) async {
@@ -39,23 +44,21 @@ Future<void> _main(List<String> args) async {
     AndroidSyncService.init(autoRunOnBoot: settings.autoStart);
   }
   unawaited(Notifier.init());
+  // SYNCNOTES_GLASS=0 → 退回 BackdropFilter 毛玻璃（旧显卡/远程桌面）
+  Glass.useShader = Platform.environment['SYNCNOTES_GLASS'] != '0';
+  if (Glass.useShader) await LiquidGlassWidgets.initialize(enablePerformanceMonitor: false);
 
   final dir = await getApplicationSupportDirectory();
-  runApp(SyncNotesApp(
+  runApp(LiquidGlassWidgets.wrap(
+    brightnessResolver: Theme.maybeBrightnessOf,
+    adaptiveQuality: false,
+    child: SyncNotesApp(
     settings: settings,
     store: FileStore(File('${dir.path}${Platform.pathSeparator}syncnotes_cache.json')),
-  ));
+  )));
 }
 
-ThemeData buildTheme(Brightness b) => ThemeData(
-      useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF3F6FD8), brightness: b),
-      pageTransitionsTheme: const PageTransitionsTheme(builders: {
-        TargetPlatform.android: PredictiveBackPageTransitionsBuilder(),
-        TargetPlatform.linux: FadeForwardsPageTransitionsBuilder(),
-        TargetPlatform.windows: FadeForwardsPageTransitionsBuilder(),
-      }),
-    );
+ThemeData buildTheme(Brightness b) => buildAppTheme(b);
 
 class SyncNotesApp extends StatefulWidget {
   final Settings settings;
@@ -100,7 +103,8 @@ class _SyncNotesAppState extends State<SyncNotesApp> with WidgetsBindingObserver
   }
 
   AppServices _makeServices() =>
-      AppServices(sync: _sync, settings: widget.settings, api: _api, logout: _logout);
+      AppServices(sync: _sync, settings: widget.settings, api: _api, logout: _logout, themeMode: _themeMode);
+  late final _themeMode = ValueNotifier(AppServices.parseTheme(widget.settings.themeMode));
 
   void _onRemoteNew(Block b) {
     if (!widget.settings.notifications) return;
@@ -158,7 +162,10 @@ class _SyncNotesAppState extends State<SyncNotesApp> with WidgetsBindingObserver
   Widget build(BuildContext context) {
     return AppScope(
       services: _services,
-      child: MaterialApp(
+      child: ValueListenableBuilder<ThemeMode>(
+        valueListenable: _themeMode,
+        builder: (context, mode, _) => MaterialApp(
+        themeMode: mode,
         title: 'SyncNotes',
         debugShowCheckedModeBanner: false,
         theme: buildTheme(Brightness.light),
@@ -167,11 +174,11 @@ class _SyncNotesAppState extends State<SyncNotesApp> with WidgetsBindingObserver
         supportedLocales: const [Locale('zh', 'CN'), Locale('en')],
         localizationsDelegates: GlobalMaterialLocalizations.delegates,
         home: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 350),
+          duration: Motion.medium3,
           switchInCurve: Curves.easeOutCubic,
           child: _loggedIn
-              ? const HomePage(key: ValueKey('home'))
-              : LoginPage(
+              ? const AppShell(key: ValueKey('home'))
+              : GlassBackdrop(child: LoginPage(
                   key: const ValueKey('login'),
                   settings: widget.settings,
                   api: _api,
@@ -179,8 +186,9 @@ class _SyncNotesAppState extends State<SyncNotesApp> with WidgetsBindingObserver
                     setState(() => _loggedIn = true);
                     _start();
                   },
-                ),
+                )),
         ),
+      ),
       ),
     );
   }

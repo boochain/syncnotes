@@ -15,7 +15,10 @@ void main() {
   setUpAll(registerBuiltinTypes);
 
   Future<(Settings, List<FakeChannel>)> pumpApp(WidgetTester tester,
-      {bool loggedIn = true, MemoryStore? store}) async {
+      {bool loggedIn = true, MemoryStore? store, Size size = const Size(400, 760)}) async {
+    tester.view.physicalSize = size;
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     SharedPreferences.setMockInitialValues(loggedIn
         ? {'server': 'h:1', 'token': 'tok', 'username': 'bill', 'device_id': 'dev-w'}
         : {'device_id': 'dev-w'});
@@ -142,7 +145,7 @@ void main() {
     expect(ch.sentOfType('set_viewed').single['block_id'], 'm');
   });
 
-  testWidgets('note editor creates a note with markdown', (tester) async {
+  testWidgets('"笔记" creates a Notion-style page', (tester) async {
     final (_, chans) = await pumpApp(tester);
     final ch = chans.first;
     ch.serverSend({'type': 'auth_ok', 'user_id': 'u', 'username': 'bill'});
@@ -153,13 +156,13 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('笔记'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const Key('noteBody')), '# 会议记录\n- 第一项');
-    await tester.pump(const Duration(milliseconds: 700)); // debounce autosave
+    expect(find.byKey(const Key('pageTitle')), findsOneWidget);
+    await tester.enterText(find.byKey(const Key('pageTitle')), '会议记录');
+    await tester.pump(const Duration(milliseconds: 700)); // debounce
     await tester.pumpAndSettle();
-    final up = ch.sentOfType('upsert_block').last;
-    expect(up['kind'], 'note');
-    expect(up['title'], '会议记录');
-    expect(up['payload']['markdown'], contains('第一项'));
+    final ups = ch.sentOfType('upsert_block');
+    expect(ups.first['kind'], 'page');
+    expect(ups.last['title'], '会议记录');
   });
 
   testWidgets('settings page shows viewed-mode and autostart options', (tester) async {
@@ -174,6 +177,7 @@ void main() {
 
   test('block type registry covers all kinds with Chinese labels', () {
     for (final k in BlockKind.values) {
+      if (k == BlockKind.text) continue; // 页面内容块，由页面编辑器渲染
       expect(BlockTypes.of(k).kind, k);
     }
     expect(BlockTypes.creatable.map((t) => t.label), containsAll(['消息', '笔记', '文件', '文件夹']));

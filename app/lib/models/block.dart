@@ -8,7 +8,8 @@ String shortTitle(String text, [int max = 40]) {
 }
 
 /// 同步块模型（与服务器协议一致）。
-enum BlockKind { message, note, file, folder, unknown }
+/// page = Notion 式页面（可嵌套）；text = 页面里的一个内容块（段落/标题/列表/代码…）。
+enum BlockKind { message, note, file, folder, page, text, unknown }
 
 BlockKind blockKindFrom(String? s) => BlockKind.values
     .firstWhere((k) => k.name == s, orElse: () => BlockKind.unknown);

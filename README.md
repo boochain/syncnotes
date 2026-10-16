@@ -2,15 +2,37 @@
 
 一个可以自己部署的多设备实时同步工具：在任意一台设备上发消息、写笔记、传文件，其他设备**立即**看到。
 
-- **客户端**：Windows / Linux / Android，同一套 Flutter 代码（Material 3 界面）
+- **客户端**：Windows / Linux / Android，同一套 Flutter 代码，Apple 风格 **Liquid Glass** 界面（基于设计规范的令牌系统，见 [设计系统](docs/design-system.md)）
+  - **Notion 式笔记**：块编辑器、斜杠菜单、Markdown 快捷键、拖动排序、嵌套页面、侧边栏页面树、Ctrl+K 快速切换
   - 桌面端：系统托盘常驻，右下角小窗口，关闭即隐藏到托盘
   - Android：独立应用，前台服务保持长连接，新内容本地通知推送（无需任何付费推送服务）
 - **服务器**：Rust 编写的轻量 WebSocket 同步服务（单个可执行文件 + SQLite），可部署在自己的服务器，也可以在局域网里直接运行（支持 mDNS 自动发现）
 - **离线可用**：离线时的编辑会排队保存在本地，重新连上后自动重放同步
 
-![Linux 桌面端截图](docs/screenshots/linux-home.png)
+![v0.2 编辑器（Liquid Glass）](docs/screenshots/after-editor.png)
+
+| 托盘小窗 | 深色模式 | Ctrl+K 快速切换 |
+|---|---|---|
+| ![](docs/screenshots/after-tray.png) | ![](docs/screenshots/after-editor-dark.png) | ![](docs/screenshots/after-quick-switcher.png) |
 
 ---
+
+## v0.2 新功能：Notion 式页面
+
+| 功能 | 说明 |
+|---|---|
+| 块类型 | 段落、一/二/三级标题、项目符号 / 编号 / 待办列表、折叠块、引用、提示框（callout）、代码块（语法高亮，30+ 语言）、分割线、图片、子页面 |
+| 行内格式 | **粗体** `Ctrl+B`、*斜体* `Ctrl+I`、`行内代码` `Ctrl+E`、~~删除线~~ `Ctrl+Shift+S`、链接 `Ctrl+Shift+K` |
+| 斜杠菜单 | 输入 `/` 弹出，支持中文、英文与拼音首字母搜索，↑↓ 选择、回车确认 |
+| Markdown 快捷方式 | 行首输入 `# ` `## ` `### ` `- ` `1. ` `[] ` `> ` `` ``` `` `---` 自动转换 |
+| 编辑 | 回车拆分 / 退格合并、Tab / Shift+Tab 缩进、↑↓ 跨块移动、拖动左侧手柄排序、撤销 / 重做（Ctrl+Z / Ctrl+Y） |
+| 页面 | 嵌套子页面、面包屑导航、页面图标（emoji）与渐变封面 |
+| 导航 | 侧边栏页面树（展开 / 悬停新建子页面）、Ctrl+K 快速切换器（搜索标题与正文）、收件箱分类筛选 |
+| 布局 | 宽屏（≥720）侧边栏 + 内容区；手机 / 托盘小窗使用抽屉；桌面端一键在小窗与大窗口间切换 |
+| 外观 | Liquid Glass 玻璃面板（[liquid_glass_widgets](https://pub.dev/packages/liquid_glass_widgets)）、流动渐变背景、弹簧动画、浅色 / 深色 / 跟随系统 |
+| 同步 | 每个内容块都是独立的同步块：多设备同时编辑同一页面的不同块不会互相覆盖 |
+
+> 显卡较旧或在远程桌面中运行时，可设置环境变量 `SYNCNOTES_GLASS=0`，改用轻量的毛玻璃效果。
 
 ## 功能概览（v0.1）
 
@@ -45,8 +67,8 @@
 压缩包内包含服务器程序、README 和 `deploy/`（systemd / Docker / Caddy 配置）。
 
 ```bash
-tar xzf syncnotes-server-v0.1.1-linux-x86_64.tar.gz
-cd syncnotes-server-v0.1.1-linux-x86_64
+tar xzf syncnotes-server-v0.2.0-linux-x86_64.tar.gz
+cd syncnotes-server-v0.2.0-linux-x86_64
 ./syncnotes-server --bind 0.0.0.0:7700
 ```
 

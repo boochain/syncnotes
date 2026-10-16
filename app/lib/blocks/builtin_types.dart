@@ -1,4 +1,5 @@
 import 'dart:io';
+import '../ui/tokens.dart';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -8,6 +9,8 @@ import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../app_scope.dart';
+import '../pages/doc.dart';
+import '../pages/page_nav.dart';
 import '../models/block.dart';
 import '../ui/folder_page.dart';
 import '../ui/note_editor_page.dart';
@@ -27,6 +30,7 @@ String safeFileName(String name) {
 void registerBuiltinTypes() {
   BlockTypes.register(MessageType());
   BlockTypes.register(NoteType());
+  BlockTypes.register(PageType());
   BlockTypes.register(FileType_());
   BlockTypes.register(FolderType());
   BlockTypes.register(UnknownType());
@@ -115,7 +119,7 @@ class NoteType extends BlockType {
   @override
   BlockKind get kind => BlockKind.note;
   @override
-  String get label => '笔记';
+  String get label => 'Markdown 笔记';
   @override
   IconData get icon => Icons.sticky_note_2_outlined;
   @override
@@ -359,7 +363,7 @@ class UnknownType extends BlockType {
 Route<T> _fade<T>(Widget page) => PageRouteBuilder<T>(
       pageBuilder: (_, _, _) => page,
       transitionDuration: const Duration(milliseconds: 260),
-      reverseTransitionDuration: const Duration(milliseconds: 200),
+      reverseTransitionDuration: Motion.short4,
       transitionsBuilder: (_, a, _, child) {
         final curved = CurvedAnimation(parent: a, curve: Curves.easeOutCubic);
         return FadeTransition(
@@ -371,3 +375,60 @@ Route<T> _fade<T>(Widget page) => PageRouteBuilder<T>(
         );
       },
     );
+
+// ------------------------------------------------------------------ page
+
+/// Notion 式页面（v0.2）：内容由 text 子块组成，支持嵌套子页面。
+class PageType extends BlockType {
+  @override
+  BlockKind get kind => BlockKind.page;
+  @override
+  String get label => '笔记';
+  @override
+  IconData get icon => Icons.description_outlined;
+  @override
+  Color color(ColorScheme cs) => cs.tertiary;
+  @override
+  String get executeLabel => '打开';
+
+  @override
+  Widget buildPreview(BuildContext context, Block block) {
+    final sync = AppScope.of(context).sync;
+    final kids = sync.blocks.where((b) => b.parentId == block.id && b.kind == BlockKind.text).toList()
+      ..sort((a, b) => orderOf(a).compareTo(orderOf(b)));
+    final text = kids.map(docText).where((t) => t.trim().isNotEmpty).take(3).join('\n');
+    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text((block.payload['icon'] ?? '📄') as String, style: const TextStyle(fontSize: 22)),
+      const SizedBox(width: 10),
+      Expanded(
+        child: Text(text.isEmpty ? '空页面' : text,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+      ),
+    ]);
+  }
+
+  @override
+  Future<void> execute(BuildContext context, Block block) async => openPage(context, block.id);
+
+  @override
+  Future<bool> edit(BuildContext context, Block? block, {String? parentId}) async {
+    if (block != null) {
+      openPage(context, block.id);
+      return true;
+    }
+    final sync = AppScope.of(context).sync;
+    final id = sync
+        .create(
+          kind: BlockKind.page,
+          title: '',
+          payload: {'icon': '📄', 'order': DocController.nextRootOrder(sync, parentId)},
+          parentId: parentId,
+          viewedMode: ViewedMode.global,
+        )
+        .id;
+    openPage(context, id);
+    return true;
+  }
+}
