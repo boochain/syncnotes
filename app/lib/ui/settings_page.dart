@@ -173,7 +173,7 @@ class _SettingsPageState extends State<SettingsPage> {
         const AboutListTile(
           icon: Icon(CupertinoIcons.info),
           applicationName: 'SyncNotes',
-          applicationVersion: '0.2.0',
+          applicationVersion: '0.3.0',
           applicationLegalese: '多设备实时同步笔记 / 消息队列',
         ),
       ]))),
