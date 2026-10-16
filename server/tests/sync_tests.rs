@@ -510,7 +510,15 @@ async fn unknown_block_kind_is_tolerated() {
     )
     .await;
     let v = recv_type(&mut a, "block_update").await;
-    assert_eq!(v["block"]["kind"], "unknown");
+    // Kind is preserved verbatim so newer clients don't lose data through this server.
+    assert_eq!(v["block"]["kind"], "checklist");
+    // Invalid kinds are rejected.
+    send(
+        &mut a,
+        upsert("u2", "Bad Kind!", "x", json!({}), "global", 1),
+    )
+    .await;
+    assert_eq!(recv(&mut a).await["type"], "error");
 }
 
 #[tokio::test]
@@ -575,4 +583,52 @@ async fn file_upload_download_and_isolation() {
         .await
         .unwrap();
     assert!(bad.status() == 400 || bad.status() == 404);
+}
+
+#[tokio::test]
+async fn logout_revokes_token() {
+    let addr = spawn_server().await;
+    setup_user(&addr, "bill").await;
+    let t = login(&addr, "bill", "pass1234", "pc").await.unwrap();
+    let r = reqwest::Client::new()
+        .post(format!("http://{addr}/api/logout"))
+        .bearer_auth(&t)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 204);
+    let (mut ws, _) = connect_async(format!("ws://{addr}/ws")).await.unwrap();
+    send(&mut ws, json!({"type":"auth","token":t,"device_id":"pc"})).await;
+    assert_eq!(recv(&mut ws).await["type"], "auth_error");
+}
+
+#[tokio::test]
+async fn persists_across_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("p.db");
+    {
+        let st = Storage::open(&db).unwrap();
+        st.create_user("bill", &syncnotes_server::auth::hash_password("pw12"))
+            .unwrap();
+        let u = st.find_user("bill").unwrap().unwrap();
+        st.upsert_block(
+            &u.id,
+            "pc",
+            "b1",
+            "note",
+            "t",
+            &json!({"markdown":"x"}),
+            None,
+            syncnotes_server::blocks::ViewedMode::Global,
+            5,
+            false,
+        )
+        .unwrap();
+    }
+    let st = Storage::open(&db).unwrap();
+    let u = st.find_user("bill").unwrap().unwrap();
+    let blocks = st.blocks_since(&u.id, 0).unwrap();
+    assert_eq!(blocks.len(), 1);
+    assert_eq!(blocks[0].kind, "note");
+    assert_eq!(st.latest_seq(&u.id).unwrap(), 1);
 }

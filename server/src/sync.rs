@@ -86,6 +86,20 @@ pub async fn login(
     }))
 }
 
+/// Revoke the bearer token (client logout).
+pub async fn logout(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let token = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .ok_or((StatusCode::UNAUTHORIZED, "缺少令牌".to_string()))?;
+    state.storage.revoke_token(token).map_err(internal)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 fn internal(e: impl std::fmt::Display) -> (StatusCode, String) {
     tracing::error!("storage error: {e}");
     (StatusCode::INTERNAL_SERVER_ERROR, "服务器内部错误".into())
@@ -201,6 +215,18 @@ fn handle_authed(
             client_updated_at,
             deleted,
         } => {
+            if !crate::blocks::valid_kind(&kind) {
+                let _ = tx.send(ServerMessage::Error {
+                    message: format!("非法块类型: {kind}"),
+                });
+                return;
+            }
+            if id.is_empty() || id.len() > 64 {
+                let _ = tx.send(ServerMessage::Error {
+                    message: "非法块 id".into(),
+                });
+                return;
+            }
             match state.storage.upsert_block(
                 user_id,
                 device_id,

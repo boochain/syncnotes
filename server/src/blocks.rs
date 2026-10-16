@@ -69,7 +69,9 @@ impl ViewedMode {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Block {
     pub id: String,
-    pub kind: BlockKind,
+    /// Raw kind string ("message", "note", "file", "folder", or a future type).
+    /// Stored verbatim so newer clients' types survive a round-trip through this server.
+    pub kind: String,
     pub title: String,
     /// Type-specific payload (message text, markdown, file meta, children ids…).
     pub payload: Value,
@@ -93,4 +95,27 @@ pub struct DeviceView {
     pub device_id: String,
     pub viewed: bool,
     pub updated_at: i64,
+}
+
+/// Valid kind strings: 1-32 chars of [a-z0-9_].
+pub fn valid_kind(k: &str) -> bool {
+    !k.is_empty()
+        && k.len() <= 32
+        && k.chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn kind_validation() {
+        assert!(valid_kind("note"));
+        assert!(valid_kind("check_list2"));
+        assert!(!valid_kind(""));
+        assert!(!valid_kind("Note"));
+        assert!(!valid_kind("a b"));
+        assert!(!valid_kind(&"x".repeat(33)));
+        assert_eq!(BlockKind::from_str_loose("folder"), BlockKind::Folder);
+    }
 }

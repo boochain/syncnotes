@@ -13,6 +13,17 @@ import '../ui/folder_page.dart';
 import '../ui/note_editor_page.dart';
 import 'block_type.dart';
 
+/// 清理来自其他设备的文件名：去掉路径分隔符和 Windows 非法字符，防止写到下载目录之外。
+String safeFileName(String name) {
+  var n = name.split(RegExp(r'[/\\]')).last;
+  n = n.replaceAll(RegExp(r'[<>:"|?*\x00-\x1F]'), '_').trim();
+  n = n.replaceAll(RegExp(r'^\.+'), '');
+  if (n.isEmpty) n = 'file';
+  const reserved = {'CON', 'PRN', 'AUX', 'NUL', 'COM1', 'COM2', 'COM3', 'LPT1', 'LPT2', 'LPT3'};
+  if (reserved.contains(n.split('.').first.toUpperCase())) n = '_$n';
+  return n;
+}
+
 void registerBuiltinTypes() {
   BlockTypes.register(MessageType());
   BlockTypes.register(NoteType());
@@ -82,11 +93,11 @@ class MessageType extends BlockType {
     if (ok != true || ctrl.text.trim().isEmpty || !context.mounted) return false;
     final sync = AppScope.of(context).sync;
     final text = ctrl.text.trim();
-    final title = text.split('\n').first;
+    final title = shortTitle(text);
     if (block == null) {
       sync.create(
         kind: BlockKind.message,
-        title: title.length > 40 ? '${title.substring(0, 40)}…' : title,
+        title: title,
         payload: {'text': text},
         parentId: parentId,
         viewedMode: defaultViewedMode(context),
@@ -186,7 +197,7 @@ class FileType_ extends BlockType {
       dir = await getDownloadsDirectory();
     } catch (_) {}
     dir ??= await getApplicationDocumentsDirectory();
-    final out = File('${dir.path}${Platform.pathSeparator}SyncNotes${Platform.pathSeparator}${block.payload['name'] ?? block.id}');
+    final out = File('${dir.path}${Platform.pathSeparator}SyncNotes${Platform.pathSeparator}${safeFileName((block.payload['name'] ?? block.id) as String)}');
     await out.parent.create(recursive: true);
     await out.writeAsBytes(bytes);
     return out;
@@ -227,7 +238,7 @@ class FileType_ extends BlockType {
         context: context,
         builder: (c) => AlertDialog(
           title: const Text('重命名文件'),
-          content: TextField(controller: ctrl, autofocus: true),
+          content: TextField(controller: ctrl, autofocus: true, onSubmitted: (_) => Navigator.pop(c, true)),
           actions: [
             TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('取消')),
             FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('保存')),
@@ -272,7 +283,7 @@ class FolderType extends BlockType {
   @override
   IconData get icon => Icons.folder_outlined;
   @override
-  Color color(ColorScheme cs) => cs.primaryContainer;
+  Color color(ColorScheme cs) => Colors.amber.shade700;
   @override
   String get executeLabel => '进入';
 
@@ -300,6 +311,7 @@ class FolderType extends BlockType {
         content: TextField(
             controller: ctrl,
             autofocus: true,
+            onSubmitted: (_) => Navigator.pop(c, true),
             decoration: const InputDecoration(hintText: '文件夹名称')),
         actions: [
           TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('取消')),

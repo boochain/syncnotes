@@ -20,10 +20,9 @@ class _QuickSendBarState extends State<QuickSendBar> {
   void _send() {
     final text = _ctrl.text.trim();
     if (text.isEmpty) return;
-    final first = text.split('\n').first;
     AppScope.of(context).sync.create(
           kind: BlockKind.message,
-          title: first.length > 40 ? '${first.substring(0, 40)}…' : first,
+          title: shortTitle(text),
           payload: {'text': text},
           parentId: widget.parentId,
           viewedMode: defaultViewedMode(context),

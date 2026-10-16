@@ -21,7 +21,8 @@ class Notifier {
     return uid != null && File('$uid/bus').existsSync();
   }
 
-  static Future<void> init() async {
+  /// [requestPermission] 只应在有界面的主隔离区为 true（后台服务中请求权限会失败）。
+  static Future<void> init({bool requestPermission = true}) async {
     if (_ready || kIsWeb || !_linuxBusAvailable) return;
     try {
       await _plugin.initialize(
@@ -35,7 +36,7 @@ class Notifier {
           ),
         ),
       );
-      if (Platform.isAndroid) {
+      if (Platform.isAndroid && requestPermission) {
         await _plugin
             .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
             ?.requestNotificationsPermission();
@@ -61,7 +62,7 @@ class Notifier {
   }
 
   static Future<void> showBlock(Block b) async {
-    if (!_ready) await init();
+    if (!_ready) await init(requestPermission: false);
     if (!_ready) return;
     final label = BlockTypes.isInitialized ? BlockTypes.of(b.kind).label : '新内容';
     try {

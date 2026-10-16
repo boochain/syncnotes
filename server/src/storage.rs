@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use rusqlite::{params, Connection, OptionalExtension};
 
-use crate::blocks::{Block, BlockKind, ViewedMode};
+use crate::blocks::{Block, ViewedMode};
 
 #[derive(Clone)]
 pub struct Storage {
@@ -79,11 +79,10 @@ fn now_ms() -> i64 {
 
 fn row_to_block(r: &rusqlite::Row) -> rusqlite::Result<Block> {
     let payload: String = r.get("payload")?;
-    let kind: String = r.get("kind")?;
     let vm: String = r.get("viewed_mode")?;
     Ok(Block {
         id: r.get("id")?,
-        kind: BlockKind::from_str_loose(&kind),
+        kind: r.get("kind")?,
         title: r.get("title")?,
         payload: serde_json::from_str(&payload).unwrap_or(serde_json::Value::Null),
         parent_id: r.get("parent_id")?,
@@ -219,7 +218,7 @@ impl Storage {
         user_id: &str,
         device_id: &str,
         id: &str,
-        kind: &BlockKind,
+        kind: &str,
         title: &str,
         payload: &serde_json::Value,
         parent_id: Option<&str>,
@@ -260,7 +259,7 @@ impl Storage {
                viewed_global = excluded.viewed_global, updated_at = excluded.updated_at,
                deleted = excluded.deleted, seq = excluded.seq",
             params![
-                id, user_id, kind.as_str(), title, payload_s, parent_id, viewed_mode.as_str(),
+                id, user_id, kind, title, payload_s, parent_id, viewed_mode.as_str(),
                 viewed_global as i64, created_at, client_updated_at, created_by, deleted as i64, seq
             ],
         )?;

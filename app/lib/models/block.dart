@@ -1,3 +1,12 @@
+import 'package:characters/characters.dart';
+
+/// 按字符（而非 UTF-16 码元）截断标题，避免把 emoji 截成乱码。
+String shortTitle(String text, [int max = 40]) {
+  final first = text.trim().split('\n').first;
+  final c = first.characters;
+  return c.length > max ? '${c.take(max)}…' : first;
+}
+
 /// 同步块模型（与服务器协议一致）。
 enum BlockKind { message, note, file, folder, unknown }
 

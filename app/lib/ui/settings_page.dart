@@ -73,6 +73,11 @@ class _SettingsPageState extends State<SettingsPage> {
                     await DesktopShell.setAutoStart(v);
                   } else if (Platform.isAndroid) {
                     AndroidSyncService.init(autoRunOnBoot: v);
+                    // 开机自启依赖前台服务：开启自启时一并开启后台连接
+                    if (v && !st.foregroundService) {
+                      st.foregroundService = true;
+                    }
+                    if (v) await AndroidSyncService.start();
                   }
                   setState(() => _autoStart = v);
                 },
@@ -116,7 +121,7 @@ class _SettingsPageState extends State<SettingsPage> {
           leading: const Icon(Icons.cleaning_services_outlined),
           title: const Text('清除本地缓存并重新同步'),
           onTap: () async {
-            await s.sync.clearLocal();
+            await s.sync.clearLocal(keepPending: true);
             s.sync.reconnectNow();
           },
         ),
@@ -124,6 +129,21 @@ class _SettingsPageState extends State<SettingsPage> {
           leading: Icon(Icons.logout, color: Theme.of(context).colorScheme.error),
           title: Text('退出登录', style: TextStyle(color: Theme.of(context).colorScheme.error)),
           onTap: () async {
+            final pending = s.sync.pendingCount;
+            final ok = await showDialog<bool>(
+              context: context,
+              builder: (c) => AlertDialog(
+                title: const Text('退出登录？'),
+                content: Text(pending > 0
+                    ? '还有 $pending 条修改尚未同步到服务器，退出后将丢失。确定退出吗？'
+                    : '退出后需要重新输入密码登录。'),
+                actions: [
+                  TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('取消')),
+                  FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('退出')),
+                ],
+              ),
+            );
+            if (ok != true || !context.mounted) return;
             Navigator.of(context).pop();
             await s.logout();
           },
@@ -131,7 +151,7 @@ class _SettingsPageState extends State<SettingsPage> {
         const AboutListTile(
           icon: Icon(Icons.info_outline),
           applicationName: 'SyncNotes',
-          applicationVersion: '0.1.0',
+          applicationVersion: '0.1.1',
           applicationLegalese: '多设备实时同步笔记 / 消息队列',
         ),
       ]),

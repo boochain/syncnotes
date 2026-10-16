@@ -96,7 +96,14 @@ void main() {
     await goOnline();
     final ups = ch.sentOfType('upsert_block');
     expect(ups.map((u) => u['title']), ['a', 'b']);
+    // 仍待确认，直到服务器回传
+    expect(c.pendingCount, 2);
+    for (final u in ups) {
+      ch.serverSend({'type': 'block_update', 'block': serverBlock(u['id'], title: u['title'], updated: u['client_updated_at'], createdBy: 'dev-a', seq: 9)});
+    }
+    await pump();
     expect(c.pendingCount, 0);
+    expect(c.blocks.every((b) => !b.pending), isTrue);
   });
 
   test('repeated offline edits of one block collapse into one upsert', () async {
@@ -260,5 +267,88 @@ void main() {
     await Future.wait([for (var i = 0; i < 50; i++) fs.save({'i': i})]);
     expect((await fs.load())!['i'], 49);
     await dir.delete(recursive: true);
+  });
+
+  test('op sent on a silently dead connection is resent after reconnect', () async {
+    c.connect('h:1', 't');
+    await pump();
+    await goOnline();
+    final first = ch;
+    final b = c.create(kind: BlockKind.message, title: 'lost?', payload: {'text': 'x'});
+    expect(first.sentOfType('upsert_block').single['id'], b.id);
+    // 服务器从未收到/确认就断开
+    first.serverClose();
+    await Future<void>.delayed(const Duration(milliseconds: 600));
+    expect(channels.length, greaterThanOrEqualTo(2));
+    await goOnline();
+    expect(ch.sentOfType('upsert_block').map((u) => u['id']), contains(b.id));
+    expect(c.pendingCount, 1);
+  });
+
+  test('heartbeat timeout forces reconnect on half-open connection', () async {
+    final hb = SyncClient(
+      store: MemoryStore(),
+      deviceId: 'dev-h',
+      pingInterval: const Duration(milliseconds: 40),
+      maxBackoff: const Duration(milliseconds: 20),
+      channelFactory: (_) {
+        final f = FakeChannel();
+        channels.add(f);
+        return f;
+      },
+    );
+    hb.connect('h:1', 't');
+    await pump();
+    ch.serverSend({'type': 'auth_ok', 'user_id': 'u', 'username': 'b'});
+    await pump();
+    final n = channels.length;
+    // 服务器不再回应任何消息
+    await Future<void>.delayed(const Duration(milliseconds: 800));
+    expect(channels.length, greaterThan(n));
+    hb.dispose();
+  });
+
+  test('set_viewed stays queued until confirmed', () async {
+    c.connect('h:1', 't');
+    await pump();
+    await goOnline();
+    ch.serverSend({'type': 'block_update', 'block': serverBlock('v', seq: 1)});
+    await pump();
+    c.setViewed('v', true);
+    expect(c.pendingCount, 1);
+    ch.serverSend({'type': 'viewed_update', 'block_id': 'v', 'viewed': true, 'device_id': 'dev-a', 'seq': 2});
+    await pump();
+    expect(c.pendingCount, 0);
+  });
+
+  test('cannot move a folder into its own descendant', () {
+    final a = c.create(kind: BlockKind.folder, title: 'A');
+    final b = c.create(kind: BlockKind.folder, title: 'B', parentId: a.id);
+    c.update(a.id, parentId: b.id);
+    expect(c.byId(a.id)!.parentId, isNull);
+    c.update(a.id, parentId: a.id);
+    expect(c.byId(a.id)!.parentId, isNull);
+    expect(c.descendantIds(a.id), {b.id});
+  });
+
+  test('orphaned blocks (parent deleted/missing) show at root', () async {
+    c.connect('h:1', 't');
+    await pump();
+    await goOnline();
+    ch.serverSend({'type': 'block_update', 'block': serverBlock('kid', seq: 1, parent: 'ghost')});
+    await pump();
+    expect(c.childrenOf(null).map((b) => b.id), contains('kid'));
+  });
+
+  test('clearLocal(keepPending) keeps unsynced edits', () async {
+    final b = c.create(kind: BlockKind.message, title: 'unsynced', payload: {'text': 'x'});
+    await c.clearLocal(keepPending: true);
+    expect(c.byId(b.id), isNotNull);
+    expect(c.pendingCount, 1);
+  });
+
+  test('wsUri keeps reverse-proxy path prefix', () {
+    expect(SyncClient.wsUri('https://h.com/notes').toString(), 'wss://h.com/notes/ws');
+    expect(SyncClient.wsUri('https://h.com/notes/').toString(), 'wss://h.com/notes/ws');
   });
 }
