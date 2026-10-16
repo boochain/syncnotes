@@ -1,4 +1,4 @@
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 
 import 'services/auth_api.dart';
 import 'services/settings.dart';
@@ -10,7 +10,11 @@ class AppServices {
   final Settings settings;
   final AuthApi api;
   final Future<void> Function() logout;
-  AppServices({required this.sync, required this.settings, required this.api, required this.logout});
+  final ValueNotifier<ThemeMode> themeMode;
+  AppServices({required this.sync, required this.settings, required this.api, required this.logout, ValueNotifier<ThemeMode>? themeMode})
+      : themeMode = themeMode ?? ValueNotifier(ThemeMode.system);
+
+  static ThemeMode parseTheme(String s) => switch (s) { 'light' => ThemeMode.light, 'dark' => ThemeMode.dark, _ => ThemeMode.system };
 }
 
 class AppScope extends InheritedWidget {

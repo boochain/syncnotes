@@ -60,6 +60,26 @@ class _SettingsPageState extends State<SettingsPage> {
             trailing: TextButton(onPressed: s.sync.reconnectNow, child: const Text('重连')),
           ),
         ),
+        _section(context, '外观'),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: ValueListenableBuilder<ThemeMode>(
+            valueListenable: s.themeMode,
+            builder: (c, mode, _) => SegmentedButton<ThemeMode>(
+              key: const Key('themeSelector'),
+              segments: const [
+                ButtonSegment(value: ThemeMode.system, icon: Icon(Icons.brightness_auto_outlined), label: Text('跟随系统')),
+                ButtonSegment(value: ThemeMode.light, icon: Icon(Icons.light_mode_outlined), label: Text('浅色')),
+                ButtonSegment(value: ThemeMode.dark, icon: Icon(Icons.dark_mode_outlined), label: Text('深色')),
+              ],
+              selected: {mode},
+              onSelectionChanged: (v) {
+                s.themeMode.value = v.first;
+                st.themeMode = v.first.name;
+              },
+            ),
+          ),
+        ),
         _section(context, '启动'),
         SwitchListTile(
           secondary: const Icon(Icons.power_settings_new),
@@ -151,7 +171,7 @@ class _SettingsPageState extends State<SettingsPage> {
         const AboutListTile(
           icon: Icon(Icons.info_outline),
           applicationName: 'SyncNotes',
-          applicationVersion: '0.1.1',
+          applicationVersion: '0.2.0',
           applicationLegalese: '多设备实时同步笔记 / 消息队列',
         ),
       ]),

@@ -42,6 +42,10 @@ class Settings {
   bool get foregroundService => prefs.getBool('foreground_service') ?? true;
   set foregroundService(bool v) => prefs.setBool('foreground_service', v);
 
+  /// system / light / dark
+  String get themeMode => prefs.getString('theme_mode') ?? 'system';
+  set themeMode(String v) => prefs.setString('theme_mode', v);
+
   bool get isLoggedIn => token != null && server != null;
 
   void logout() {

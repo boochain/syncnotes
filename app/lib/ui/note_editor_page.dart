@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'tokens.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
@@ -127,7 +128,7 @@ class _NoteEditorPageState extends State<NoteEditorPage> with SingleTickerProvid
           ),
           actions: [
             AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
+              duration: Motion.short4,
               child: _dirty
                   ? const Padding(
                       key: ValueKey('saving'),
