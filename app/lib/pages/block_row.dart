@@ -786,12 +786,19 @@ class SlashMenu extends StatelessWidget {
                     Container(
                       width: 34,
                       height: 34,
+                      alignment: Alignment.center,
                       decoration: BoxDecoration(
-                        color: cs.surface,
-                        border: Border.all(color: cs.outlineVariant),
+                        // 深色下不再是纯黑方块：白 7% 填充 + 细描边
+                        color: Theme.of(context).brightness == Brightness.dark ? Colors.white.withValues(alpha: 0.07) : Colors.white.withValues(alpha: 0.85),
+                        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.6), width: 0.5),
                         borderRadius: BorderRadius.circular(6),
                       ),
-                      child: Icon(c.icon, size: 18, color: cs.onSurfaceVariant),
+                      child: switch (c.type) {
+                        // Notion：标题命令用 H1/H2/H3 字形而非同一个图标
+                        DocType.h1 || DocType.h2 || DocType.h3 => Text('H${c.type!.index}',
+                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: cs.onSurfaceVariant)),
+                        _ => Icon(c.icon, size: 18, color: cs.onSurfaceVariant),
+                      },
                     ),
                     const SizedBox(width: 10),
                     Expanded(
