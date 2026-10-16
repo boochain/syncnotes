@@ -2,6 +2,7 @@ import 'dart:io';
 import '../ui/tokens.dart';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
@@ -10,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../app_scope.dart';
 import '../pages/doc.dart';
+import '../pages/inline_md.dart';
 import '../pages/page_nav.dart';
 import '../models/block.dart';
 import '../ui/folder_page.dart';
@@ -50,7 +52,7 @@ class MessageType extends BlockType {
   @override
   String get label => '消息';
   @override
-  IconData get icon => Icons.chat_bubble_outline;
+  IconData get icon => CupertinoIcons.chat_bubble;
   @override
   Color color(ColorScheme cs) => cs.primary;
   @override
@@ -61,9 +63,8 @@ class MessageType extends BlockType {
   @override
   Widget buildPreview(BuildContext context, Block block) => Text(
         textOf(block),
-        maxLines: 4,
+        maxLines: 3,
         overflow: TextOverflow.ellipsis,
-        style: Theme.of(context).textTheme.bodyMedium,
       );
 
   @override
@@ -121,7 +122,7 @@ class NoteType extends BlockType {
   @override
   String get label => 'Markdown 笔记';
   @override
-  IconData get icon => Icons.sticky_note_2_outlined;
+  IconData get icon => CupertinoIcons.square_pencil;
   @override
   Color color(ColorScheme cs) => cs.tertiary;
   @override
@@ -168,7 +169,7 @@ class FileType_ extends BlockType {
   @override
   String get label => '文件';
   @override
-  IconData get icon => Icons.insert_drive_file_outlined;
+  IconData get icon => CupertinoIcons.doc;
   @override
   Color color(ColorScheme cs) => cs.secondary;
   @override
@@ -285,7 +286,7 @@ class FolderType extends BlockType {
   @override
   String get label => '文件夹';
   @override
-  IconData get icon => Icons.folder_outlined;
+  IconData get icon => CupertinoIcons.folder;
   @override
   Color color(ColorScheme cs) => Colors.amber.shade700;
   @override
@@ -385,7 +386,7 @@ class PageType extends BlockType {
   @override
   String get label => '笔记';
   @override
-  IconData get icon => Icons.description_outlined;
+  IconData get icon => CupertinoIcons.doc_text;
   @override
   Color color(ColorScheme cs) => cs.tertiary;
   @override
@@ -396,17 +397,18 @@ class PageType extends BlockType {
     final sync = AppScope.of(context).sync;
     final kids = sync.blocks.where((b) => b.parentId == block.id && b.kind == BlockKind.text).toList()
       ..sort((a, b) => orderOf(a).compareTo(orderOf(b)));
-    final text = kids.map(docText).where((t) => t.trim().isNotEmpty).take(3).join('\n');
-    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text((block.payload['icon'] ?? '📄') as String, style: const TextStyle(fontSize: 22)),
-      const SizedBox(width: 10),
-      Expanded(
-        child: Text(text.isEmpty ? '空页面' : text,
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-      ),
-    ]);
+    // 摘要：前三个非空块，去掉句末标点后用“ · ”连接；空页面不显示摘要（Notion 同款）
+    final parts = kids
+        .map((b) => plainInline(docText(b)).replaceAll('\n', ' ').trim().replaceAll(RegExp(r'[。．.！!？?；;，,]+$'), ''))
+        .where((t) => t.isNotEmpty)
+        .take(3)
+        .toList();
+    if (parts.isEmpty) return const SizedBox.shrink();
+    return Text(
+      parts.join(' · '),
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+    );
   }
 
   @override

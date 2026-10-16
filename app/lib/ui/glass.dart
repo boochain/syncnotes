@@ -26,7 +26,7 @@ class Glass extends StatelessWidget {
     final dark = Theme.of(context).brightness == Brightness.dark;
     return dark
         ? pick(HigColors.secondarySystemBackground, true).withValues(alpha: strong ? Materials.tintContent(true) : Materials.tintRegular(true))
-        : Colors.white.withValues(alpha: strong ? Materials.tintContent(false) : (currentLanguage == DesignLanguage.fluent ? Materials.acrylicTint : Materials.tintRegular(false)));
+        : Colors.white.withValues(alpha: strong ? Materials.tintContent(false) : Materials.tintRegular(false));
   }
 
   @override
@@ -41,7 +41,7 @@ class Glass extends StatelessWidget {
         shape: LiquidRoundedSuperellipse(borderRadius: radius),
         settings: LiquidGlassSettings(
           glassColor: tint(context, strong: strong),
-          blur: strong ? Materials.blurContent : (currentLanguage == DesignLanguage.fluent ? Materials.blurAcrylic : Materials.blurRegular),
+          blur: strong ? Materials.blurContent : Materials.blurRegular,
           thickness: 22,
           saturation: 1.7,
           lightIntensity: dark ? 0.35 : 0.6,

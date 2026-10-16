@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../app_scope.dart';
@@ -40,16 +41,15 @@ class _QuickSendBarState extends State<QuickSendBar> {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
     return Material(
-      color: cs.surfaceContainer,
+      color: Colors.transparent,
       child: SafeArea(
         top: false,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
           child: Row(children: [
             IconButton(
-              icon: const Icon(Icons.add_circle_outline),
+              icon: const Icon(CupertinoIcons.add_circled),
               tooltip: '新建',
               onPressed: () => showCreateMenu(context, parentId: widget.parentId),
             ),
@@ -66,9 +66,9 @@ class _QuickSendBarState extends State<QuickSendBar> {
                   hintText: '快速发送消息…',
                   isDense: true,
                   filled: true,
-                  fillColor: cs.surfaceContainerHighest,
+                  fillColor: Theme.of(context).brightness == Brightness.dark ? const Color(0x52767680) : Colors.white.withValues(alpha: 0.75),
                   border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
+                      borderRadius: BorderRadius.circular(20), borderSide: BorderSide.none),
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 ),
               ),
@@ -76,7 +76,7 @@ class _QuickSendBarState extends State<QuickSendBar> {
             const SizedBox(width: 4),
             IconButton.filled(
               key: const Key('quickSendButton'),
-              icon: const Icon(Icons.send),
+              icon: const Icon(CupertinoIcons.arrow_up),
               tooltip: '发送',
               onPressed: _send,
             ),

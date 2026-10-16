@@ -1,9 +1,11 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'tokens.dart';
 
 import '../models/block.dart';
 import '../pages/doc.dart';
+import '../pages/inline_md.dart';
 import '../sync/sync_client.dart';
 import 'glass.dart';
 
@@ -42,7 +44,7 @@ List<SwitcherResult> searchAll(SyncClient sync, String q) {
   if (query.isEmpty) return out.take(20).toList();
   // 页面内容
   for (final b in all.where((b) => b.kind == BlockKind.text)) {
-    final t = docText(b);
+    final t = plainInline(docText(b));
     final i = t.toLowerCase().indexOf(query);
     if (i < 0) continue;
     final p = pageOf(b);
@@ -130,7 +132,7 @@ class _QuickSwitcherState extends State<_QuickSwitcher> {
                     if (results.isNotEmpty) Navigator.pop(context, results[sel].target);
                   },
                   decoration: InputDecoration(
-                    prefixIcon: const Icon(Icons.search),
+                    prefixIcon: const Icon(CupertinoIcons.search),
                     hintText: '搜索页面和内容…',
                     border: InputBorder.none,
                     contentPadding: const EdgeInsets.symmetric(vertical: 18),

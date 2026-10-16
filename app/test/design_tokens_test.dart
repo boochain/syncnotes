@@ -36,20 +36,26 @@ void main() {
     expect(Springs.smooth.stiffness, closeTo(130.5, 0.5));
   });
 
-  test('themes: Fluent on Windows, Material elsewhere; contrast of body text', () {
+  test('HIG-based theme on every platform; body contrast >= 4.5:1', () {
     for (final b in Brightness.values) {
-      final m = buildAppTheme(b, language: DesignLanguage.material);
-      final f = buildAppTheme(b, language: DesignLanguage.fluent);
-      expect(m.textTheme.bodyLarge!.fontSize, 16);
-      expect(f.textTheme.bodyLarge!.fontSize, 14);
-      expect(m.colorScheme.primary, pick(HigColors.blue, b == Brightness.dark));
-      expect(f.colorScheme.primary, pick(FluentColors.brandForeground, b == Brightness.dark));
+      final dark = b == Brightness.dark;
+      final m = buildAppTheme(b);
+      // 测试运行在 Linux 主机 → 桌面字阶（Dynamic Type Small，正文 15）
+      expect(m.textTheme.bodyLarge!.fontSize, isDesktopPlatform ? 15 : 17);
+      expect(m.colorScheme.primary, pick(HigColors.blue, dark));
       expect(m.textTheme.bodyLarge!.fontFamilyFallback, contains('Noto Sans CJK SC'));
-      // 正文与内容面板（近似为 surface）的对比度 ≥ 4.5:1（WCAG AA）
       final fg = m.colorScheme.onSurface, bg = m.colorScheme.surface;
-      double lum(Color c) => c.computeLuminance();
-      final hi = lum(fg) > lum(bg) ? lum(fg) : lum(bg), lo = lum(fg) > lum(bg) ? lum(bg) : lum(fg);
+      final l1 = fg.computeLuminance(), l2 = bg.computeLuminance();
+      final hi = l1 > l2 ? l1 : l2, lo = l1 > l2 ? l2 : l1;
       expect((hi + 0.05) / (lo + 0.05), greaterThan(4.5));
     }
+  });
+
+  test('editor typography follows Notion proportions', () {
+    expect(EditorType.body.size, 16);
+    expect(EditorType.h1.size / EditorType.body.size, closeTo(1.875, 0.01));
+    expect(EditorType.h2.size / EditorType.body.size, 1.5);
+    expect(EditorType.h3.size / EditorType.body.size, 1.25);
+    expect(EditorType.pageTitle.size, 40);
   });
 }

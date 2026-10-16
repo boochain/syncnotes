@@ -2,6 +2,7 @@ import 'dart:async';
 import '../ui/tokens.dart';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_highlight/flutter_highlight.dart';
@@ -85,6 +86,7 @@ class BlockRowState extends State<BlockRow> {
   }
 
   void _onFocusChange() {
+    _ctrl.reveal = _focus.hasFocus;
     if (_focus.hasFocus) {
       doc.focusedId.value = block.id;
     } else {
@@ -383,7 +385,7 @@ class BlockRowState extends State<BlockRow> {
       case DocType.h3:
         return body.merge(EditorType.h3.style);
       case DocType.quote:
-        return body.merge(HigType.callout.style);
+        return body; // Notion：引用与正文同字号，以左侧竖线区分
       case DocType.code:
         return body.merge(EditorType.code.style).copyWith(fontFamily: FontTokens.mono, fontFamilyFallback: FontTokens.monoFallback);
       case DocType.todo:
@@ -569,8 +571,9 @@ class BlockRowState extends State<BlockRow> {
         return Container(
           padding: const EdgeInsets.fromLTRB(12, 12, 14, 12),
           decoration: BoxDecoration(
-            color: cs.surfaceContainerHighest.withValues(alpha: dark ? 0.6 : 0.8),
-            borderRadius: BorderRadius.circular(8),
+            // Notion 灰色提示框：浅色 ≈ #F1F1EF，深色 ≈ 白 6%（叠在玻璃上用半透明实现）
+            color: dark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFF37352F).withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(Radii.small - 2),
           ),
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             InkWell(
@@ -641,12 +644,12 @@ class BlockRowState extends State<BlockRow> {
               duration: Motion.short3,
               opacity: showGutter ? (touch && !_focus.hasFocus ? 0.35 : 1) : 0,
               child: SizedBox(
-                width: 44,
+                width: gutterWidth(context),
                 child: Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-                  if (!touch)
+                  if (!touch && gutterWidth(context) >= 44)
                     _GutterButton(
                       tooltip: '在下方添加块',
-                      icon: Icons.add,
+                      icon: CupertinoIcons.add,
                       onTap: () => doc.insertAfter(block),
                     ),
                   ReorderableDragStartListener(
@@ -692,8 +695,8 @@ class BlockRowState extends State<BlockRow> {
       context: context,
       position: RelativeRect.fromLTRB(pos.dx, pos.dy, pos.dx + 1, pos.dy + 1),
       items: [
-        const PopupMenuItem(value: 'delete', child: ListTile(leading: Icon(Icons.delete_outline), title: Text('删除'), dense: true)),
-        const PopupMenuItem(value: 'dup', child: ListTile(leading: Icon(Icons.copy_all_outlined), title: Text('复制一份'), dense: true)),
+        const PopupMenuItem(value: 'delete', child: ListTile(leading: Icon(CupertinoIcons.trash), title: Text('删除'), dense: true)),
+        const PopupMenuItem(value: 'dup', child: ListTile(leading: Icon(CupertinoIcons.doc_on_doc), title: Text('复制一份'), dense: true)),
         const PopupMenuDivider(),
         for (final c in slashCommands.where((c) => c.type != null && isTextual(c.type!)))
           PopupMenuItem(value: 'type:${c.type!.name}', child: ListTile(leading: Icon(c.icon), title: Text('转换为${c.label}'), dense: true)),
@@ -783,12 +786,19 @@ class SlashMenu extends StatelessWidget {
                     Container(
                       width: 34,
                       height: 34,
+                      alignment: Alignment.center,
                       decoration: BoxDecoration(
-                        color: cs.surface,
-                        border: Border.all(color: cs.outlineVariant),
+                        // 深色下不再是纯黑方块：白 7% 填充 + 细描边
+                        color: Theme.of(context).brightness == Brightness.dark ? Colors.white.withValues(alpha: 0.07) : Colors.white.withValues(alpha: 0.85),
+                        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.6), width: 0.5),
                         borderRadius: BorderRadius.circular(6),
                       ),
-                      child: Icon(c.icon, size: 18, color: cs.onSurfaceVariant),
+                      child: switch (c.type) {
+                        // Notion：标题命令用 H1/H2/H3 字形而非同一个图标
+                        DocType.h1 || DocType.h2 || DocType.h3 => Text('H${c.type!.index}',
+                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: cs.onSurfaceVariant)),
+                        _ => Icon(c.icon, size: 18, color: cs.onSurfaceVariant),
+                      },
                     ),
                     const SizedBox(width: 10),
                     Expanded(
@@ -832,7 +842,7 @@ class _PageLinkRowState extends State<_PageLinkRow> {
         padding: const EdgeInsets.symmetric(vertical: 2),
         child: Row(children: [
           SizedBox(
-            width: 44,
+            width: gutterWidth(context),
             child: AnimatedOpacity(
               opacity: _hover ? 1 : 0,
               duration: Motion.short3,
@@ -899,7 +909,7 @@ class _ImageBlock extends StatelessWidget {
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(color: cs.surfaceContainerHighest.withValues(alpha: 0.6), borderRadius: BorderRadius.circular(8)),
         child: Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
-          Icon(Icons.image_outlined, color: cs.outline),
+          Icon(CupertinoIcons.photo, color: cs.outline),
           Text('添加图片', style: TextStyle(color: cs.outline)),
           FilledButton.tonalIcon(
             icon: const Icon(Icons.upload, size: 16),
@@ -920,7 +930,7 @@ class _ImageBlock extends StatelessWidget {
             },
           ),
           OutlinedButton.icon(
-            icon: const Icon(Icons.link, size: 16),
+            icon: const Icon(CupertinoIcons.link, size: 16),
             label: const Text('图片链接'),
             onPressed: () async {
               final c = TextEditingController();
@@ -966,6 +976,9 @@ class _ImageBlock extends StatelessWidget {
     );
   }
 }
+
+/// 左侧手柄栏宽度：宽屏 44（"+" 与拖动手柄），窄屏 24（仅手柄）。
+double gutterWidth(BuildContext context) => MediaQuery.sizeOf(context).width < 600 ? 24.0 : 44.0;
 
 /// 打开链接
 Future<void> launchLink(String url) async {

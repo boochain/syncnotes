@@ -17,6 +17,18 @@
 
 ---
 
+## v0.3：重做界面
+
+- **统一的 Apple HIG 外观**：所有平台使用同一套系统色、字号层级、Liquid Glass 材质、SF Symbols 风格图标和弹簧动效
+- **Notion 式布局**：页面图标压在封面下沿、Notion 字号比例、悬停手柄、斜杠菜单（H1/H2/H3 字形）、浮动格式工具栏、快速查找
+- **所见即所得**：未编辑时隐藏所有 Markdown 标记；中文强调用点状下划线代替难看的合成斜体；收件箱和搜索结果只显示纯文本
+- 重新设计的登录页（HIG 分组表单）、设置页（限宽居中、侧边栏正确高亮）、收件箱卡片
+- 设计说明见 [`docs/design-system.md`](docs/design-system.md)（包括混用了哪些 Material / Fluent 规范及原因），截图见 `docs/screenshots/v0.3-*.png`
+
+| 浅色 | 深色 |
+|---|---|
+| ![编辑器（浅色）](docs/screenshots/v0.3-editor-wide-light.png) | ![编辑器（深色）](docs/screenshots/v0.3-editor-wide-dark.png) |
+
 ## v0.2 新功能：Notion 式页面
 
 | 功能 | 说明 |
@@ -26,7 +38,7 @@
 | 斜杠菜单 | 输入 `/` 弹出，支持中文、英文与拼音首字母搜索，↑↓ 选择、回车确认 |
 | Markdown 快捷方式 | 行首输入 `# ` `## ` `### ` `- ` `1. ` `[] ` `> ` `` ``` `` `---` 自动转换 |
 | 编辑 | 回车拆分 / 退格合并、Tab / Shift+Tab 缩进、↑↓ 跨块移动、拖动左侧手柄排序、撤销 / 重做（Ctrl+Z / Ctrl+Y） |
-| 页面 | 嵌套子页面、面包屑导航、页面图标（emoji）与渐变封面 |
+| 页面 | 嵌套子页面、面包屑导航、页面图标（emoji）与柔和渐变封面 |
 | 导航 | 侧边栏页面树（展开 / 悬停新建子页面）、Ctrl+K 快速切换器（搜索标题与正文）、收件箱分类筛选 |
 | 布局 | 宽屏（≥720）侧边栏 + 内容区；手机 / 托盘小窗使用抽屉；桌面端一键在小窗与大窗口间切换 |
 | 外观 | Liquid Glass 玻璃面板（[liquid_glass_widgets](https://pub.dev/packages/liquid_glass_widgets)）、流动渐变背景、弹簧动画、浅色 / 深色 / 跟随系统 |
@@ -67,8 +79,8 @@
 压缩包内包含服务器程序、README 和 `deploy/`（systemd / Docker / Caddy 配置）。
 
 ```bash
-tar xzf syncnotes-server-v0.2.0-linux-x86_64.tar.gz
-cd syncnotes-server-v0.2.0-linux-x86_64
+tar xzf syncnotes-server-v0.3.0-linux-x86_64.tar.gz
+cd syncnotes-server-v0.3.0-linux-x86_64
 ./syncnotes-server --bind 0.0.0.0:7700
 ```
 

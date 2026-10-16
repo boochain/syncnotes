@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'tokens.dart';
 
@@ -25,79 +26,84 @@ class BlockCard extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final type = BlockTypes.of(block.kind);
     final unread = !block.isViewed && block.kind != BlockKind.folder;
-    return AnimatedContainer(
-      duration: Motion.medium1,
-      curve: Curves.easeOut,
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+    final tt = Theme.of(context).textTheme;
+    final tint = type.color(cs);
+    // 消息的标题就是正文前缀：正文与标题相同时不重复显示
+    final text = (block.payload['text'] ?? '') as String;
+    final showPreview = !(block.kind == BlockKind.message && text.trim() == block.title.trim());
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: Space.m, vertical: 3),
       child: Card(
-        elevation: unread ? 2 : 0,
-        color: unread ? cs.surfaceContainerHigh : cs.surfaceContainerLow,
+        margin: EdgeInsets.zero,
         clipBehavior: Clip.antiAlias,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: BorderSide(color: unread ? cs.primary.withValues(alpha: 0.5) : Colors.transparent),
-        ),
         child: InkWell(
           onTap: () => type.execute(context, block),
           onLongPress: () => _menu(context, type),
           onSecondaryTap: () => _menu(context, type),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(14, 10, 6, 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(children: [
-                  CircleAvatar(
-                    radius: 14,
-                    backgroundColor: type.color(cs).withValues(alpha: 0.18),
-                    child: Icon(type.icon, size: 16, color: type.color(cs)),
+            padding: const EdgeInsets.fromLTRB(Space.m, Space.s + 2, Space.xs, Space.s + 2),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              // [HIG] 圆角方形图标底（类似 SF Symbols 设置项图标）
+              Container(
+                width: 30,
+                height: 30,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(color: tint.withValues(alpha: 0.16), borderRadius: BorderRadius.circular(8)),
+                // 页面用自己的 emoji 图标
+                child: block.kind == BlockKind.page && ((block.payload['icon'] ?? '') as String).isNotEmpty
+                    ? Text(block.payload['icon'] as String, style: const TextStyle(fontSize: 17, height: 1))
+                    : Icon(type.icon, size: 17, color: tint),
+              ),
+              const SizedBox(width: Space.m),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  SizedBox(
+                    height: 30,
+                    child: Row(children: [
+                      Expanded(
+                        child: Text(block.title.isEmpty ? '无标题' : block.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: tt.bodyLarge?.copyWith(fontWeight: unread ? FontWeight.w600 : FontWeight.w400)),
+                      ),
+                      if (block.pending)
+                        Padding(
+                          padding: const EdgeInsets.only(left: Space.xs),
+                          child: Tooltip(message: '等待同步', child: Icon(CupertinoIcons.cloud_upload, size: 14, color: cs.outline)),
+                        ),
+                      const SizedBox(width: Space.s),
+                      Text(relTime(block.updatedAt), style: tt.bodySmall?.copyWith(color: cs.outline)),
+                      AnimatedContainer(
+                        duration: Motion.short4,
+                        margin: const EdgeInsets.only(left: Space.s),
+                        width: unread ? 8 : 0,
+                        height: 8,
+                        decoration: BoxDecoration(color: cs.primary, shape: BoxShape.circle),
+                      ),
+                    ]),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(block.title.isEmpty ? '(无标题)' : block.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: unread ? FontWeight.w700 : FontWeight.w500)),
-                  ),
-                  if (block.pending)
-                    Tooltip(
-                        message: '等待同步',
-                        child: Icon(Icons.cloud_upload_outlined, size: 16, color: cs.outline)),
-                  if (block.viewedMode == ViewedMode.global)
+                  if (showPreview)
                     Padding(
-                      padding: const EdgeInsets.only(left: 4),
-                      child: Tooltip(
-                          message: '全局已读模式',
-                          child: Icon(Icons.public, size: 14, color: cs.outline)),
+                      padding: const EdgeInsets.only(top: 2, right: Space.s, bottom: 2),
+                      child: DefaultTextStyle.merge(
+                        style: tt.bodyMedium!.copyWith(color: cs.onSurfaceVariant),
+                        child: type.buildPreview(context, block),
+                      ),
                     ),
-                  AnimatedScale(
-                    scale: unread ? 1 : 0,
-                    duration: Motion.short4,
-                    child: Container(
-                      margin: const EdgeInsets.only(left: 6),
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(color: cs.primary, shape: BoxShape.circle),
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  Text(relTime(block.updatedAt),
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(color: cs.outline)),
-                  IconButton(
-                    visualDensity: VisualDensity.compact,
-                    icon: const Icon(Icons.more_vert, size: 18),
-                    onPressed: () => _menu(context, type),
-                    tooltip: '更多',
-                  ),
                 ]),
-                const SizedBox(height: 6),
-                Padding(
-                  padding: const EdgeInsets.only(left: 38, right: 8),
-                  child: type.buildPreview(context, block),
+              ),
+              SizedBox(
+                width: 32,
+                height: 30,
+                child: IconButton(
+                  padding: EdgeInsets.zero,
+                  iconSize: 16,
+                  icon: Icon(CupertinoIcons.ellipsis, color: cs.outline),
+                  onPressed: () => _menu(context, type),
+                  tooltip: '更多',
                 ),
-              ],
-            ),
+              ),
+            ]),
           ),
         ),
       ),
@@ -126,7 +132,7 @@ class BlockCard extends StatelessWidget {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.edit_outlined),
+              leading: const Icon(CupertinoIcons.pencil),
               title: const Text('编辑'),
               onTap: () {
                 Navigator.pop(c);
@@ -143,7 +149,7 @@ class BlockCard extends StatelessWidget {
                 },
               ),
             ListTile(
-              leading: Icon(block.isViewed ? Icons.mark_email_unread_outlined : Icons.done_all),
+              leading: Icon(block.isViewed ? CupertinoIcons.envelope_badge : Icons.done_all),
               title: Text(block.isViewed ? '标为未读' : '标为已读'),
               onTap: () {
                 Navigator.pop(c);
@@ -151,7 +157,7 @@ class BlockCard extends StatelessWidget {
               },
             ),
             SwitchListTile(
-              secondary: const Icon(Icons.public),
+              secondary: const Icon(CupertinoIcons.globe),
               title: const Text('全局已读'),
               subtitle: Text(block.viewedMode == ViewedMode.global
                   ? '在任一设备查看后，所有设备都标为已读'
@@ -163,7 +169,7 @@ class BlockCard extends StatelessWidget {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.drive_file_move_outline),
+              leading: const Icon(CupertinoIcons.folder_badge_plus),
               title: const Text('移动到…'),
               onTap: () async {
                 Navigator.pop(c);
@@ -186,7 +192,7 @@ class BlockCard extends StatelessWidget {
               },
             ),
             ListTile(
-              leading: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
+              leading: Icon(CupertinoIcons.trash, color: Theme.of(context).colorScheme.error),
               title: Text('删除', style: TextStyle(color: Theme.of(context).colorScheme.error)),
               onTap: () {
                 Navigator.pop(c);
