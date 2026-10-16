@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'tokens.dart';
@@ -130,7 +131,7 @@ class _QuickSwitcherState extends State<_QuickSwitcher> {
                     if (results.isNotEmpty) Navigator.pop(context, results[sel].target);
                   },
                   decoration: InputDecoration(
-                    prefixIcon: const Icon(Icons.search),
+                    prefixIcon: const Icon(CupertinoIcons.search),
                     hintText: '搜索页面和内容…',
                     border: InputBorder.none,
                     contentPadding: const EdgeInsets.symmetric(vertical: 18),

@@ -11,14 +11,19 @@ import 'package:flutter/animation.dart';
 import 'package:flutter/painting.dart';
 import 'package:flutter/physics.dart';
 
-/// 平台设计语言：Windows → Fluent，Android/Linux → Material 3；Liquid Glass 材质在所有平台保持一致。
-enum DesignLanguage { fluent, material }
+/// v0.3 起所有平台统一以 Apple HIG 为基础设计语言（Liquid Glass、SF 字阶、系统色、弹簧动效）；
+/// Material 3 / Fluent 2 仅在明确更优处融合（见 docs/design-system.md §融合）。
+enum DesignLanguage { apple, fluent, material }
 
-DesignLanguage get currentLanguage {
+DesignLanguage get currentLanguage => DesignLanguage.apple;
+
+/// 桌面（鼠标、高密度）还是触屏
+bool get isDesktopPlatform {
   try {
-    if (Platform.isWindows) return DesignLanguage.fluent;
-  } catch (_) {}
-  return DesignLanguage.material;
+    return Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+  } catch (_) {
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------- color
@@ -149,14 +154,35 @@ abstract final class HigType {
   static const caption2 = TypeStyle(11, 13, FontWeight.w400, 0.06);
 }
 
-/// 编辑器使用的语义字号（桌面端正文 16 = [M3] bodyLarge；标题取 [HIG] title 层级）。
+/// [HIG] Dynamic Type "Small" 档：桌面端（指针设备、窗口较小）UI 字阶。
+abstract final class HigTypeSmall {
+  static const largeTitle = TypeStyle(32, 39, FontWeight.w700);
+  static const title1 = TypeStyle(26, 32, FontWeight.w700);
+  static const title2 = TypeStyle(20, 25, FontWeight.w700);
+  static const title3 = TypeStyle(18, 23, FontWeight.w600);
+  static const headline = TypeStyle(15, 20, FontWeight.w600);
+  static const body = TypeStyle(15, 20, FontWeight.w400);
+  static const callout = TypeStyle(14, 19, FontWeight.w400);
+  static const subheadline = TypeStyle(13, 18, FontWeight.w400);
+  static const footnote = TypeStyle(12, 16, FontWeight.w400);
+  static const caption1 = TypeStyle(11, 13, FontWeight.w400);
+  static const caption2 = TypeStyle(11, 13, FontWeight.w400);
+}
+
+/// 编辑器排版取自 Notion 的实际样式（正文 16px / 1.5，标题 1.875em / 1.5em / 1.25em，页面标题 40px 700），
+/// 中文行高放宽到 1.6。
 abstract final class EditorType {
-  static const pageTitle = HigType.largeTitle;
-  static const h1 = HigType.title1;
-  static const h2 = HigType.title2;
-  static const h3 = HigType.title3;
-  static const body = TypeStyle(16, 26, FontWeight.w400); // [M3] bodyLarge 16，行高放宽到 1.6 适配中文
+  static const pageTitle = TypeStyle(40, 48, FontWeight.w700);
+  static const h1 = TypeStyle(30, 39, FontWeight.w600);
+  static const h2 = TypeStyle(24, 31, FontWeight.w600);
+  static const h3 = TypeStyle(20, 26, FontWeight.w600);
+  static const body = TypeStyle(16, 26, FontWeight.w400);
   static const code = TypeStyle(14, 21, FontWeight.w400);
+
+  /// Notion：页面内容最大宽度 708 + 左右 96 留白（宽屏）
+  static const maxWidth = 900.0;
+  static const coverHeight = 200.0; // 窄屏 160
+  static const iconSize = 78.0; // Notion 页面图标 78px，压住封面下沿约一半
 }
 
 // ---------------------------------------------------------------- spacing / radius
@@ -188,14 +214,14 @@ abstract final class Radii {
   static const fluentLarge = 8.0;
   static const fluentXLarge = 12.0;
 
-  /// 控件（按钮、输入框、菜单项）
-  static double get control => currentLanguage == DesignLanguage.fluent ? fluentMedium : small;
+  /// 控件（按钮、输入框、菜单项）：[HIG] 圆角矩形按钮约 8pt（连续曲线）
+  static double get control => small;
 
-  /// 卡片 / 菜单
-  static double get card => currentLanguage == DesignLanguage.fluent ? fluentLarge : medium;
+  /// 卡片 / 菜单：[HIG] 菜单与分组列表 12pt
+  static double get card => medium;
 
-  /// 浮层（快速切换器、对话框）。[M3] Dialog = extraLarge 28；[Fluent] Dialog = XLarge 12
-  static double get dialog => currentLanguage == DesignLanguage.fluent ? fluentXLarge : extraLarge;
+  /// 浮层（快速切换器、对话框）：[HIG] Alert 14pt；sheet 顶部 ~10–12pt
+  static double get dialog => 14.0;
 
   /// 玻璃面板（侧边栏、内容区）：[HIG] Liquid Glass 使用大圆角连续曲线（superellipse），
   /// 与窗口圆角同心（concentric）：外框 large(16) + 内边距 → 22。
@@ -268,8 +294,8 @@ abstract final class MotionCurves {
   static const fluentEasyEase = Cubic(0.33, 0.0, 0.67, 1.0);
 
   /// 当前平台的"进入"曲线
-  static Curve get enter => currentLanguage == DesignLanguage.fluent ? fluentDecelerateMid : emphasizedDecelerate;
-  static Curve get exit => currentLanguage == DesignLanguage.fluent ? fluentAccelerateMid : emphasizedAccelerate;
+  static Curve get enter => emphasizedDecelerate;
+  static Curve get exit => emphasizedAccelerate;
 }
 
 /// [HIG] 弹簧动画：SwiftUI 默认 spring(response: 0.55, dampingFraction: 0.825)

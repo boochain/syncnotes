@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'tokens.dart';
 
@@ -56,14 +57,14 @@ class Sidebar extends StatelessWidget {
               const SizedBox(height: 6),
               _NavItem(
                 key: const Key('sidebarSearch'),
-                icon: Icons.search,
+                icon: CupertinoIcons.search,
                 label: '搜索',
                 trailing: Text('Ctrl+K', style: TextStyle(fontSize: 11, color: cs.outline)),
                 onTap: onSearch,
               ),
               _NavItem(
                 key: const Key('sidebarInbox'),
-                icon: Icons.inbox_outlined,
+                icon: CupertinoIcons.tray,
                 label: '收件箱',
                 selected: inboxSelected,
                 trailing: s.sync.unreadCount > 0
@@ -75,7 +76,7 @@ class Sidebar extends StatelessWidget {
                     : null,
                 onTap: () => onSelect(null),
               ),
-              _NavItem(icon: Icons.settings_outlined, label: '设置', onTap: onSettings),
+              _NavItem(icon: CupertinoIcons.gear, label: '设置', onTap: onSettings),
               Padding(
                 padding: const EdgeInsets.fromLTRB(18, 18, 8, 4),
                 child: Row(children: [
@@ -86,7 +87,7 @@ class Sidebar extends StatelessWidget {
                     tooltip: '新建页面',
                     visualDensity: VisualDensity.compact,
                     iconSize: 18,
-                    icon: const Icon(Icons.add),
+                    icon: const Icon(CupertinoIcons.add),
                     onPressed: () => onSelect(createPage(s.sync, null)),
                   ),
                 ]),
@@ -236,7 +237,7 @@ class _PageTreeTileState extends State<PageTreeTile> {
                   child: AnimatedRotation(
                     turns: _expanded ? 0.25 : 0,
                     duration: Motion.short4,
-                    child: Icon(Icons.chevron_right, size: 16, color: kids.isEmpty ? cs.outlineVariant : cs.onSurfaceVariant),
+                    child: Icon(CupertinoIcons.chevron_right, size: 16, color: kids.isEmpty ? cs.outlineVariant : cs.onSurfaceVariant),
                   ),
                 ),
               ),
@@ -258,7 +259,7 @@ class _PageTreeTileState extends State<PageTreeTile> {
                     setState(() => _expanded = true);
                     widget.onSelect(id);
                   },
-                  child: Tooltip(message: '新建子页面', child: Icon(Icons.add, size: 16, color: cs.outline)),
+                  child: Tooltip(message: '新建子页面', child: Icon(CupertinoIcons.add, size: 16, color: cs.outline)),
                 ),
               ),
             ]),

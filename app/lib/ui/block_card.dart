@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'tokens.dart';
 
@@ -69,7 +70,7 @@ class BlockCard extends StatelessWidget {
                       padding: const EdgeInsets.only(left: 4),
                       child: Tooltip(
                           message: '全局已读模式',
-                          child: Icon(Icons.public, size: 14, color: cs.outline)),
+                          child: Icon(CupertinoIcons.globe, size: 14, color: cs.outline)),
                     ),
                   AnimatedScale(
                     scale: unread ? 1 : 0,
@@ -126,7 +127,7 @@ class BlockCard extends StatelessWidget {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.edit_outlined),
+              leading: const Icon(CupertinoIcons.pencil),
               title: const Text('编辑'),
               onTap: () {
                 Navigator.pop(c);
@@ -143,7 +144,7 @@ class BlockCard extends StatelessWidget {
                 },
               ),
             ListTile(
-              leading: Icon(block.isViewed ? Icons.mark_email_unread_outlined : Icons.done_all),
+              leading: Icon(block.isViewed ? CupertinoIcons.envelope_badge : Icons.done_all),
               title: Text(block.isViewed ? '标为未读' : '标为已读'),
               onTap: () {
                 Navigator.pop(c);
@@ -151,7 +152,7 @@ class BlockCard extends StatelessWidget {
               },
             ),
             SwitchListTile(
-              secondary: const Icon(Icons.public),
+              secondary: const Icon(CupertinoIcons.globe),
               title: const Text('全局已读'),
               subtitle: Text(block.viewedMode == ViewedMode.global
                   ? '在任一设备查看后，所有设备都标为已读'
@@ -163,7 +164,7 @@ class BlockCard extends StatelessWidget {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.drive_file_move_outline),
+              leading: const Icon(CupertinoIcons.folder_badge_plus),
               title: const Text('移动到…'),
               onTap: () async {
                 Navigator.pop(c);
@@ -186,7 +187,7 @@ class BlockCard extends StatelessWidget {
               },
             ),
             ListTile(
-              leading: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
+              leading: Icon(CupertinoIcons.trash, color: Theme.of(context).colorScheme.error),
               title: Text('删除', style: TextStyle(color: Theme.of(context).colorScheme.error)),
               onTap: () {
                 Navigator.pop(c);

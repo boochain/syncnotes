@@ -1,6 +1,7 @@
 import 'dart:async';
 import '../ui/tokens.dart';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -12,15 +13,17 @@ import 'doc.dart';
 import 'page_nav.dart';
 
 /// 封面预设（渐变）
+/// 封面预设：低饱和、柔和的渐变（参考 Notion 封面与 Apple 壁纸的雾面色调）。
+/// 键名与旧版保持兼容（已同步的数据仍可显示）。
 const coverPresets = <String, List<Color>>{
-  'sunset': [Color(0xFFFF9A8B), Color(0xFFFF6A88), Color(0xFFFF99AC)],
-  'ocean': [Color(0xFF2E3192), Color(0xFF1BFFFF)],
-  'forest': [Color(0xFF134E5E), Color(0xFF71B280)],
-  'peach': [Color(0xFFFFECD2), Color(0xFFFCB69F)],
-  'lavender': [Color(0xFFA18CD1), Color(0xFFFBC2EB)],
-  'night': [Color(0xFF232526), Color(0xFF414345)],
-  'mint': [Color(0xFFD4FC79), Color(0xFF96E6A1)],
-  'sky': [Color(0xFFA1C4FD), Color(0xFFC2E9FB)],
+  'sky': [Color(0xFFDCE7F3), Color(0xFFC3D5EA)],
+  'ocean': [Color(0xFFB9CEDF), Color(0xFF9DB7CE)],
+  'mint': [Color(0xFFDDEBE3), Color(0xFFC4DCCF)],
+  'forest': [Color(0xFFB7C9B5), Color(0xFF93AD92)],
+  'peach': [Color(0xFFF6E3D6), Color(0xFFEBCDBA)],
+  'sunset': [Color(0xFFF1D9D3), Color(0xFFE3BFC0)],
+  'lavender': [Color(0xFFE3DDEE), Color(0xFFCFC6E3)],
+  'night': [Color(0xFF3B4250), Color(0xFF262B35)],
 };
 
 /// Notion 式页面：封面、图标、标题、面包屑、块编辑器。
@@ -125,7 +128,7 @@ class _PageScreenState extends State<PageScreen> {
         if (page == null || page.deleted) {
           return Scaffold(
             appBar: AppBar(),
-            body: _Empty(icon: Icons.delete_outline, title: '页面已被删除', subtitle: '可以从侧边栏打开其他页面'),
+            body: _Empty(icon: CupertinoIcons.trash, title: '页面已被删除', subtitle: '可以从侧边栏打开其他页面'),
           );
         }
         // 远程修改标题时同步（本地未在编辑）
@@ -135,7 +138,8 @@ class _PageScreenState extends State<PageScreen> {
           _rowKeys.putIfAbsent(r.block.id, () => GlobalKey<BlockRowState>());
         }
         final wide = MediaQuery.sizeOf(context).width >= 720;
-        final hPad = wide ? 48.0 : 8.0;
+        // 文字左边缘（标题、图标、正文对齐线）。正文行 = 行左内边距 + 手柄栏 + 2
+        final hPad = wide ? 56.0 : 28.0;
         return CallbackShortcuts(
           bindings: {
             const SingleActivator(LogicalKeyboardKey.keyZ, control: true): doc.undo,
@@ -147,7 +151,7 @@ class _PageScreenState extends State<PageScreen> {
             appBar: AppBar(
               automaticallyImplyLeading: widget.standalone,
               leading: widget.onMenu != null
-                  ? IconButton(icon: const Icon(Icons.menu), tooltip: '菜单', onPressed: widget.onMenu)
+                  ? IconButton(icon: const Icon(CupertinoIcons.sidebar_left), tooltip: '菜单', onPressed: widget.onMenu)
                   : null,
               titleSpacing: widget.standalone || widget.onMenu != null ? 0 : 16,
               scrolledUnderElevation: 0,
@@ -156,12 +160,12 @@ class _PageScreenState extends State<PageScreen> {
               actions: [
                 IconButton(
                   tooltip: '撤销 (Ctrl+Z)',
-                  icon: const Icon(Icons.undo_rounded),
+                  icon: const Icon(CupertinoIcons.arrow_uturn_left),
                   onPressed: doc.canUndo ? doc.undo : null,
                 ),
                 IconButton(
                   tooltip: '重做 (Ctrl+Shift+Z)',
-                  icon: const Icon(Icons.redo_rounded),
+                  icon: const Icon(CupertinoIcons.arrow_uturn_right),
                   onPressed: doc.canRedo ? doc.redo : null,
                 ),
                 _PageMenu(doc: doc, page: page),
@@ -172,18 +176,7 @@ class _PageScreenState extends State<PageScreen> {
               Expanded(
                 child: CustomScrollView(
                   slivers: [
-                    SliverToBoxAdapter(child: _cover(context, page)),
-                    SliverToBoxAdapter(
-                      child: Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 820),
-                          child: Padding(
-                            padding: EdgeInsets.symmetric(horizontal: hPad),
-                            child: _header(context, page, rows.isEmpty),
-                          ),
-                        ),
-                      ),
-                    ),
+                    SliverToBoxAdapter(child: _pageHead(context, page, rows.isEmpty, hPad)),
                     SliverPadding(
                       padding: EdgeInsets.symmetric(horizontal: wide ? 0 : 0),
                       sliver: SliverReorderableList(
@@ -202,9 +195,9 @@ class _PageScreenState extends State<PageScreen> {
                           return Center(
                             key: ValueKey('row-${r.block.id}'),
                             child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 820),
+                              constraints: const BoxConstraints(maxWidth: EditorType.maxWidth),
                               child: Padding(
-                                padding: EdgeInsets.only(left: hPad - 44 < 0 ? 0 : hPad - 44, right: hPad),
+                                padding: EdgeInsets.only(left: (hPad - gutterWidth(context) - 2).clamp(0.0, 999.0), right: hPad),
                                 child: _AppearOnce(
                                   id: r.block.id,
                                   child: BlockRow(key: _rowKeys[r.block.id], doc: doc, row: r, index: i),
@@ -234,23 +227,74 @@ class _PageScreenState extends State<PageScreen> {
     );
   }
 
-  Widget _cover(BuildContext context, Block page) {
-    final cover = page.payload['cover'] as String?;
-    final colors = coverPresets[cover];
-    return AnimatedSize(
-      duration: Motion.medium1,
-      curve: Curves.easeOutCubic,
-      child: colors == null
-          ? const SizedBox(height: 24, width: double.infinity)
-          : GestureDetector(
-              onTap: () => _pickCover(page),
-              child: Container(
-                key: const Key('pageCover'),
-                height: 150,
-                width: double.infinity,
-                decoration: BoxDecoration(gradient: LinearGradient(colors: colors, begin: Alignment.topLeft, end: Alignment.bottomRight)),
-              ),
+  /// 页面头部：封面 + 压在封面下沿的图标（Notion 布局：图标约一半在封面上、在最上层、完整可见），
+  /// 然后是悬停操作和标题。图标与内容列左对齐。
+  Widget _pageHead(BuildContext context, Block page, bool empty, double hPad) {
+    final icon = page.payload['icon'] as String?;
+    final hasIcon = icon != null && icon.isNotEmpty;
+    final colors = coverPresets[page.payload['cover']];
+    final hasCover = colors != null;
+    return LayoutBuilder(builder: (context, c) {
+      final narrow = c.maxWidth < 600;
+      final coverH = narrow ? 150.0 : EditorType.coverHeight;
+      final iconBox = narrow ? 64.0 : EditorType.iconSize;
+      final contentW = c.maxWidth.clamp(0.0, EditorType.maxWidth);
+      final left = (c.maxWidth - contentW) / 2 + hPad;
+      // 图标压住封面下沿 ~45%
+      final overlap = iconBox * 0.45;
+      final iconWidget = _iconButton(context, page, icon ?? '', iconBox);
+      return Stack(clipBehavior: Clip.none, children: [
+        Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          if (hasCover)
+            _cover(context, page, colors, coverH)
+          else
+            SizedBox(height: narrow ? 28 : 56),
+          // 为图标留位：有封面时只留下沿以下部分
+          if (hasIcon) SizedBox(height: hasCover ? iconBox - overlap + 4 : iconBox + 4) else SizedBox(height: hasCover ? 12 : 0),
+          Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: EditorType.maxWidth),
+              child: Padding(padding: EdgeInsets.symmetric(horizontal: hPad), child: _header(context, page, empty)),
             ),
+          ),
+        ]),
+        if (hasIcon)
+          Positioned(
+            key: const Key('pageIconPos'),
+            left: left - 6,
+            top: hasCover ? coverH - overlap : (narrow ? 28 : 56),
+            child: iconWidget,
+          ),
+      ]);
+    });
+  }
+
+  Widget _iconButton(BuildContext context, Block page, String icon, double box) => Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          key: const Key('pageIcon'),
+          borderRadius: BorderRadius.circular(Radii.small),
+          onTap: () async {
+            final e = await pickEmoji(context, allowRemove: true);
+            if (e != null) _doc!.sync.update(page.id, payload: {...page.payload, 'icon': e.isEmpty ? null : e});
+          },
+          child: SizedBox(
+            width: box + 12,
+            height: box,
+            child: Center(child: Text(icon, style: TextStyle(fontSize: box * 0.82, height: 1.0))),
+          ),
+        ),
+      );
+
+  Widget _cover(BuildContext context, Block page, List<Color> colors, double height) {
+    return GestureDetector(
+      onTap: () => _pickCover(page),
+      child: Container(
+        key: const Key('pageCover'),
+        height: height,
+        width: double.infinity,
+        decoration: BoxDecoration(gradient: LinearGradient(colors: colors, begin: Alignment.topLeft, end: Alignment.bottomRight)),
+      ),
     );
   }
 
@@ -277,7 +321,7 @@ class _PageScreenState extends State<PageScreen> {
                 ),
             ]),
             const SizedBox(height: 8),
-            TextButton.icon(onPressed: () => Navigator.pop(c, ''), icon: const Icon(Icons.close), label: const Text('移除封面')),
+            TextButton.icon(onPressed: () => Navigator.pop(c, ''), icon: const Icon(CupertinoIcons.xmark), label: const Text('移除封面')),
           ]),
         ),
       ),
@@ -294,19 +338,6 @@ class _PageScreenState extends State<PageScreen> {
       onEnter: (_) => setState(() => _headerHover = true),
       onExit: (_) => setState(() => _headerHover = false),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        if (icon != null && icon.isNotEmpty)
-          Transform.translate(
-            offset: Offset(0, hasCover ? -36 : 0),
-            child: InkWell(
-              key: const Key('pageIcon'),
-              borderRadius: BorderRadius.circular(8),
-              onTap: () async {
-                final e = await pickEmoji(context, allowRemove: true);
-                if (e != null) _doc!.sync.update(page.id, payload: {...page.payload, 'icon': e.isEmpty ? null : e});
-              },
-              child: Padding(padding: const EdgeInsets.all(4), child: Text(icon, style: const TextStyle(fontSize: 56))),
-            ),
-          ),
         AnimatedOpacity(
           duration: Motion.short3,
           opacity: _headerHover || empty || Theme.of(context).platform == TargetPlatform.android ? 1 : 0,
@@ -318,7 +349,7 @@ class _PageScreenState extends State<PageScreen> {
                   final e = await pickEmoji(context);
                   if (e != null) _doc!.sync.update(page.id, payload: {...page.payload, 'icon': e});
                 },
-                icon: const Icon(Icons.emoji_emotions_outlined, size: 18),
+                icon: const Icon(CupertinoIcons.smiley, size: 18),
                 label: const Text('添加图标'),
               ),
             if (!hasCover)
@@ -326,7 +357,7 @@ class _PageScreenState extends State<PageScreen> {
                 key: const Key('addCover'),
                 style: TextButton.styleFrom(foregroundColor: cs.outline),
                 onPressed: () => _pickCover(page),
-                icon: const Icon(Icons.image_outlined, size: 18),
+                icon: const Icon(CupertinoIcons.photo, size: 18),
                 label: const Text('添加封面'),
               ),
           ]),
@@ -354,7 +385,7 @@ class _PageScreenState extends State<PageScreen> {
     final cs = Theme.of(context).colorScheme;
     return Center(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 820),
+        constraints: const BoxConstraints(maxWidth: EditorType.maxWidth),
         child: GestureDetector(
           key: const Key('pageFooter'),
           behavior: HitTestBehavior.opaque,
@@ -463,7 +494,7 @@ class _PageMenu extends StatelessWidget {
   Widget build(BuildContext context) {
     return PopupMenuButton<String>(
       tooltip: '更多',
-      icon: const Icon(Icons.more_horiz),
+      icon: const Icon(CupertinoIcons.ellipsis),
       onSelected: (v) async {
         switch (v) {
           case 'sub':
@@ -495,11 +526,11 @@ class _PageMenu extends StatelessWidget {
         PopupMenuItem(
             value: 'global',
             child: ListTile(
-                leading: const Icon(Icons.public),
+                leading: const Icon(CupertinoIcons.globe),
                 title: Text(page.viewedMode == ViewedMode.global ? '改为按设备已读' : '改为全局已读'),
                 dense: true)),
         const PopupMenuDivider(),
-        const PopupMenuItem(value: 'delete', child: ListTile(leading: Icon(Icons.delete_outline), title: Text('删除页面'), dense: true)),
+        const PopupMenuItem(value: 'delete', child: ListTile(leading: Icon(CupertinoIcons.trash), title: Text('删除页面'), dense: true)),
       ],
     );
   }
@@ -542,31 +573,31 @@ class _Toolbar extends StatelessWidget {
                     PopupMenuItem(value: c.type, child: Row(children: [Icon(c.icon, size: 18), const SizedBox(width: 10), Text(c.label)])),
                 ],
               ),
-              b('粗体 (Ctrl+B)', Icons.format_bold, () => row()?.wrap('**'), key: const Key('tbBold')),
-              b('斜体 (Ctrl+I)', Icons.format_italic, () => row()?.wrap('*')),
+              b('粗体 (Ctrl+B)', CupertinoIcons.bold, () => row()?.wrap('**'), key: const Key('tbBold')),
+              b('斜体 (Ctrl+I)', CupertinoIcons.italic, () => row()?.wrap('*')),
               b('行内代码 (Ctrl+E)', Icons.code, () => row()?.wrap('`')),
-              b('删除线 (Ctrl+Shift+S)', Icons.format_strikethrough, () => row()?.wrap('~~')),
-              b('链接 (Ctrl+Shift+K)', Icons.link, () => row()?.promptLink()),
-              b('打开链接', Icons.open_in_new, () {
+              b('删除线 (Ctrl+Shift+S)', CupertinoIcons.strikethrough, () => row()?.wrap('~~')),
+              b('链接 (Ctrl+Shift+K)', CupertinoIcons.link, () => row()?.promptLink()),
+              b('打开链接', CupertinoIcons.arrow_up_right_square, () {
                 final url = row()?.linkAtCaret;
                 if (url != null) launchLink(url);
               }),
               const VerticalDivider(indent: 10, endIndent: 10),
-              b('增加缩进 (Tab)', Icons.format_indent_increase, () {
+              b('增加缩进 (Tab)', CupertinoIcons.increase_indent, () {
                 final id = doc.focusedId.value;
                 if (id != null) doc.indent(id);
               }),
-              b('减少缩进 (Shift+Tab)', Icons.format_indent_decrease, () {
+              b('减少缩进 (Shift+Tab)', CupertinoIcons.decrease_indent, () {
                 final id = doc.focusedId.value;
                 if (id != null) doc.outdent(id);
               }),
-              b('删除此块', Icons.delete_outline, () {
+              b('删除此块', CupertinoIcons.trash, () {
                 final id = doc.focusedId.value;
                 if (id != null) doc.remove(id);
               }),
               const VerticalDivider(indent: 10, endIndent: 10),
-              b('撤销', Icons.undo_rounded, doc.canUndo ? doc.undo : null),
-              b('重做', Icons.redo_rounded, doc.canRedo ? doc.redo : null),
+              b('撤销', CupertinoIcons.arrow_uturn_left, doc.canUndo ? doc.undo : null),
+              b('重做', CupertinoIcons.arrow_uturn_right, doc.canRedo ? doc.redo : null),
               b('完成', Icons.keyboard_hide_outlined, () => FocusManager.instance.primaryFocus?.unfocus()),
             ]),
           ),

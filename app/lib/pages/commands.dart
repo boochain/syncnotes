@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import 'doc.dart';
@@ -34,8 +35,8 @@ const slashCommands = <SlashCommand>[
   SlashCommand('标注', '!  醒目提示框', Icons.lightbulb_outline, ['callout', 'note', 'tip', 'bz'], type: DocType.callout),
   SlashCommand('代码', '```  语法高亮', Icons.code, ['code', 'snippet', 'dm'], type: DocType.code),
   SlashCommand('分割线', '---', Icons.horizontal_rule, ['divider', 'hr', 'line', 'fgx'], type: DocType.divider),
-  SlashCommand('图片', '上传或链接', Icons.image_outlined, ['image', 'img', 'picture', 'tp'], type: DocType.image),
-  SlashCommand('子页面', '在此页面内新建页面', Icons.description_outlined, ['page', 'subpage', 'ym'], special: 'page'),
+  SlashCommand('图片', '上传或链接', CupertinoIcons.photo, ['image', 'img', 'picture', 'tp'], type: DocType.image),
+  SlashCommand('子页面', '在此页面内新建页面', CupertinoIcons.doc_text, ['page', 'subpage', 'ym'], special: 'page'),
 ];
 
 List<SlashCommand> filterCommands(String q) => slashCommands.where((c) => c.matches(q)).toList();

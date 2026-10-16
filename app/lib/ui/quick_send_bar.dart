@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../app_scope.dart';
@@ -49,7 +50,7 @@ class _QuickSendBarState extends State<QuickSendBar> {
           padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
           child: Row(children: [
             IconButton(
-              icon: const Icon(Icons.add_circle_outline),
+              icon: const Icon(CupertinoIcons.add_circled),
               tooltip: '新建',
               onPressed: () => showCreateMenu(context, parentId: widget.parentId),
             ),
@@ -76,7 +77,7 @@ class _QuickSendBarState extends State<QuickSendBar> {
             const SizedBox(width: 4),
             IconButton.filled(
               key: const Key('quickSendButton'),
-              icon: const Icon(Icons.send),
+              icon: const Icon(CupertinoIcons.arrow_up),
               tooltip: '发送',
               onPressed: _send,
             ),

@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'tokens.dart';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../services/auth_api.dart';
@@ -105,7 +106,7 @@ class _LoginPageState extends State<LoginPage> {
                 decoration: InputDecoration(
                   labelText: '服务器地址',
                   hintText: '例如 192.168.1.10:7700 或 https://notes.example.com',
-                  prefixIcon: const Icon(Icons.dns_outlined),
+                  prefixIcon: const Icon(CupertinoIcons.globe),
                   border: const OutlineInputBorder(),
                   suffixIcon: _discovering
                       ? const Padding(
@@ -114,7 +115,7 @@ class _LoginPageState extends State<LoginPage> {
                               width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)))
                       : IconButton(
                           tooltip: '搜索局域网服务器',
-                          icon: const Icon(Icons.wifi_find),
+                          icon: const Icon(CupertinoIcons.wifi),
                           onPressed: _discover),
                 ),
               ),
@@ -136,7 +137,7 @@ class _LoginPageState extends State<LoginPage> {
                 key: const Key('userField'),
                 controller: _user,
                 decoration: const InputDecoration(
-                    labelText: '用户名', prefixIcon: Icon(Icons.person_outline), border: OutlineInputBorder()),
+                    labelText: '用户名', prefixIcon: Icon(CupertinoIcons.person), border: OutlineInputBorder()),
               ),
               const SizedBox(height: 12),
               TextField(
@@ -145,7 +146,7 @@ class _LoginPageState extends State<LoginPage> {
                 obscureText: true,
                 onSubmitted: (_) => _submit(),
                 decoration: const InputDecoration(
-                    labelText: '密码', prefixIcon: Icon(Icons.lock_outline), border: OutlineInputBorder()),
+                    labelText: '密码', prefixIcon: Icon(CupertinoIcons.lock), border: OutlineInputBorder()),
               ),
               AnimatedSwitcher(
                 duration: Motion.short4,

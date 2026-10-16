@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'tokens.dart';
 
@@ -37,7 +38,7 @@ class _HomePageState extends State<HomePage> {
     final s = AppScope.of(context);
     return Scaffold(
       appBar: AppBar(
-        leading: widget.onMenu == null ? null : IconButton(key: const Key('menuButton'), icon: const Icon(Icons.menu), tooltip: '菜单', onPressed: widget.onMenu),
+        leading: widget.onMenu == null ? null : IconButton(key: const Key('menuButton'), icon: const Icon(CupertinoIcons.sidebar_left), tooltip: '菜单', onPressed: widget.onMenu),
         titleSpacing: widget.onMenu == null ? 16 : 0,
         title: AnimatedSwitcher(
           duration: Motion.short4,
@@ -57,7 +58,7 @@ class _HomePageState extends State<HomePage> {
         actions: [
           IconButton(
             tooltip: _searching ? '关闭搜索' : '搜索',
-            icon: Icon(_searching ? Icons.close : Icons.search),
+            icon: Icon(_searching ? CupertinoIcons.xmark : CupertinoIcons.search),
             onPressed: () => setState(() {
               _searching = !_searching;
               _filter = '';
@@ -68,14 +69,14 @@ class _HomePageState extends State<HomePage> {
               valueListenable: DesktopShell.instance.expanded,
               builder: (c, ex, _) => IconButton(
                 tooltip: ex ? '收起为小窗' : '展开窗口',
-                icon: Icon(ex ? Icons.close_fullscreen : Icons.open_in_full),
+                icon: Icon(ex ? CupertinoIcons.arrow_down_right_arrow_up_left : CupertinoIcons.arrow_up_left_arrow_down_right),
                 onPressed: DesktopShell.instance.toggleExpanded,
               ),
             ),
           if (!widget.embedded)
           IconButton(
             tooltip: '设置',
-            icon: const Icon(Icons.settings_outlined),
+            icon: const Icon(CupertinoIcons.gear),
             onPressed: () => Navigator.of(context)
                 .push(MaterialPageRoute(builder: (_) => const SettingsPage())),
           ),

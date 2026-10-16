@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../app_scope.dart';
@@ -42,14 +43,14 @@ class _SettingsPageState extends State<SettingsPage> {
       body: ListView(children: [
         _section(context, '账号'),
         ListTile(
-          leading: const Icon(Icons.person_outline),
+          leading: const Icon(CupertinoIcons.person),
           title: Text(st.username ?? ''),
           subtitle: Text(st.server ?? ''),
         ),
         ListenableBuilder(
           listenable: s.sync,
           builder: (c, _) => ListTile(
-            leading: const Icon(Icons.sync),
+            leading: const Icon(CupertinoIcons.arrow_2_circlepath),
             title: Text(switch (s.sync.state) {
               ConnState.online => '已连接',
               ConnState.connecting => '连接中…',
@@ -68,9 +69,9 @@ class _SettingsPageState extends State<SettingsPage> {
             builder: (c, mode, _) => SegmentedButton<ThemeMode>(
               key: const Key('themeSelector'),
               segments: const [
-                ButtonSegment(value: ThemeMode.system, icon: Icon(Icons.brightness_auto_outlined), label: Text('跟随系统')),
-                ButtonSegment(value: ThemeMode.light, icon: Icon(Icons.light_mode_outlined), label: Text('浅色')),
-                ButtonSegment(value: ThemeMode.dark, icon: Icon(Icons.dark_mode_outlined), label: Text('深色')),
+                ButtonSegment(value: ThemeMode.system, icon: Icon(CupertinoIcons.circle_lefthalf_fill), label: Text('跟随系统')),
+                ButtonSegment(value: ThemeMode.light, icon: Icon(CupertinoIcons.sun_max), label: Text('浅色')),
+                ButtonSegment(value: ThemeMode.dark, icon: Icon(CupertinoIcons.moon), label: Text('深色')),
               ],
               selected: {mode},
               onSelectionChanged: (v) {
@@ -82,7 +83,7 @@ class _SettingsPageState extends State<SettingsPage> {
         ),
         _section(context, '启动'),
         SwitchListTile(
-          secondary: const Icon(Icons.power_settings_new),
+          secondary: const Icon(CupertinoIcons.power),
           title: Text(Platform.isAndroid ? '开机自动启动后台同步' : '登录系统时自动启动'),
           value: _autoStart ?? false,
           onChanged: _autoStart == null
@@ -104,7 +105,7 @@ class _SettingsPageState extends State<SettingsPage> {
         ),
         if (isDesktop)
           SwitchListTile(
-            secondary: const Icon(Icons.visibility_off_outlined),
+            secondary: const Icon(CupertinoIcons.eye_slash),
             title: const Text('启动时最小化到托盘'),
             value: st.startMinimized,
             onChanged: (v) => setState(() => st.startMinimized = v),
@@ -122,13 +123,13 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
         _section(context, '通知与已读'),
         SwitchListTile(
-          secondary: const Icon(Icons.notifications_outlined),
+          secondary: const Icon(CupertinoIcons.bell),
           title: const Text('新内容通知'),
           value: st.notifications,
           onChanged: (v) => setState(() => st.notifications = v),
         ),
         SwitchListTile(
-          secondary: const Icon(Icons.public),
+          secondary: const Icon(CupertinoIcons.globe),
           title: const Text('新建块默认使用全局已读'),
           subtitle: Text(st.defaultGlobalViewed
               ? '在一台设备上查看后，所有设备都标为已读'
@@ -138,7 +139,7 @@ class _SettingsPageState extends State<SettingsPage> {
         ),
         _section(context, '其他'),
         ListTile(
-          leading: const Icon(Icons.cleaning_services_outlined),
+          leading: const Icon(CupertinoIcons.clear),
           title: const Text('清除本地缓存并重新同步'),
           onTap: () async {
             await s.sync.clearLocal(keepPending: true);
@@ -146,7 +147,7 @@ class _SettingsPageState extends State<SettingsPage> {
           },
         ),
         ListTile(
-          leading: Icon(Icons.logout, color: Theme.of(context).colorScheme.error),
+          leading: Icon(CupertinoIcons.square_arrow_right, color: Theme.of(context).colorScheme.error),
           title: Text('退出登录', style: TextStyle(color: Theme.of(context).colorScheme.error)),
           onTap: () async {
             final pending = s.sync.pendingCount;
@@ -169,7 +170,7 @@ class _SettingsPageState extends State<SettingsPage> {
           },
         ),
         const AboutListTile(
-          icon: Icon(Icons.info_outline),
+          icon: Icon(CupertinoIcons.info),
           applicationName: 'SyncNotes',
           applicationVersion: '0.2.0',
           applicationLegalese: '多设备实时同步笔记 / 消息队列',

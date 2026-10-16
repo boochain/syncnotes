@@ -2,6 +2,7 @@ import 'dart:io';
 import '../ui/tokens.dart';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
@@ -50,7 +51,7 @@ class MessageType extends BlockType {
   @override
   String get label => '消息';
   @override
-  IconData get icon => Icons.chat_bubble_outline;
+  IconData get icon => CupertinoIcons.chat_bubble;
   @override
   Color color(ColorScheme cs) => cs.primary;
   @override
@@ -121,7 +122,7 @@ class NoteType extends BlockType {
   @override
   String get label => 'Markdown 笔记';
   @override
-  IconData get icon => Icons.sticky_note_2_outlined;
+  IconData get icon => CupertinoIcons.square_pencil;
   @override
   Color color(ColorScheme cs) => cs.tertiary;
   @override
@@ -168,7 +169,7 @@ class FileType_ extends BlockType {
   @override
   String get label => '文件';
   @override
-  IconData get icon => Icons.insert_drive_file_outlined;
+  IconData get icon => CupertinoIcons.doc;
   @override
   Color color(ColorScheme cs) => cs.secondary;
   @override
@@ -285,7 +286,7 @@ class FolderType extends BlockType {
   @override
   String get label => '文件夹';
   @override
-  IconData get icon => Icons.folder_outlined;
+  IconData get icon => CupertinoIcons.folder;
   @override
   Color color(ColorScheme cs) => Colors.amber.shade700;
   @override
@@ -385,7 +386,7 @@ class PageType extends BlockType {
   @override
   String get label => '笔记';
   @override
-  IconData get icon => Icons.description_outlined;
+  IconData get icon => CupertinoIcons.doc_text;
   @override
   Color color(ColorScheme cs) => cs.tertiary;
   @override

@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
 
 /// 行内 Markdown 实时渲染的输入控制器（类似 Typora）：
-/// **粗体**、*斜体*、`代码`、~~删除线~~、[链接](url)。标记符号淡化显示但保留可编辑。
+/// **粗体**、*斜体*、`代码`、~~删除线~~、[链接](url)。
+/// 所见即所得：未编辑时隐藏所有标记符号与链接地址；编辑时只显示光标所在片段的标记（类似 Obsidian 实时预览）。
 class InlineMarkdownController extends TextEditingController {
   InlineMarkdownController({super.text});
+
+  /// 由输入框焦点驱动：true 时显示光标所在片段的标记
+  bool reveal = false;
+
+  static bool _hasCjk(String s) => RegExp(r'[\u3000-\u9fff\uff00-\uffef]').hasMatch(s);
 
   static final _re = RegExp(r'(\*\*[^*\n]+\*\*)|(\*[^*\n]+\*)|(`[^`\n]+`)|(~~[^~\n]+~~)|(\[[^\]\n]+\]\([^)\s]+\))');
 
@@ -19,7 +25,10 @@ class InlineMarkdownController extends TextEditingController {
   TextSpan buildTextSpan({required BuildContext context, TextStyle? style, required bool withComposing}) {
     final base = style ?? const TextStyle();
     final cs = Theme.of(context).colorScheme;
-    final faded = base.copyWith(color: (base.color ?? cs.onSurface).withValues(alpha: 0.35));
+    final fadedBase = base.copyWith(color: (base.color ?? cs.onSurface).withValues(alpha: 0.35));
+    // 隐藏的标记：几乎零宽、透明（保留字符以便光标与编辑一致）
+    const hidden = TextStyle(fontSize: 0.01, color: Color(0x00000000), letterSpacing: 0, decoration: TextDecoration.none);
+    final caret = selection.isValid ? selection.baseOffset : -1;
     // 输入法组字期间不做样式处理，避免干扰中文输入
     if (withComposing && value.composing.isValid && !value.composing.isCollapsed) {
       return super.buildTextSpan(context: context, style: style, withComposing: withComposing);
@@ -29,6 +38,7 @@ class InlineMarkdownController extends TextEditingController {
     for (final m in _re.allMatches(text)) {
       if (m.start > last) spans.add(TextSpan(text: text.substring(last, m.start)));
       final s = m.group(0)!;
+      final faded = reveal && caret >= m.start && caret <= m.end ? fadedBase : hidden;
       if (m.group(1) != null) {
         spans.addAll([
           TextSpan(text: '**', style: faded),
@@ -38,14 +48,23 @@ class InlineMarkdownController extends TextEditingController {
       } else if (m.group(2) != null) {
         spans.addAll([
           TextSpan(text: '*', style: faded),
-          TextSpan(text: s.substring(1, s.length - 1), style: const TextStyle(fontStyle: FontStyle.italic)),
+          // 中文没有真正的斜体字形，合成倾斜容易发虚：中文斜体改为强调色
+          TextSpan(
+              text: s.substring(1, s.length - 1),
+              style: _hasCjk(s)
+                  ? TextStyle(color: cs.primary.withValues(alpha: 0.9), fontWeight: FontWeight.w500)
+                  : const TextStyle(fontStyle: FontStyle.italic)),
           TextSpan(text: '*', style: faded),
         ]);
       } else if (m.group(3) != null) {
+        // Notion 风格行内代码：暖红色文字 + 浅灰底
+        final dark = Theme.of(context).brightness == Brightness.dark;
         final code = TextStyle(
-          fontFamily: 'monospace',
-          color: cs.error,
-          backgroundColor: cs.surfaceContainerHighest,
+          fontFamily: 'JetBrains Mono',
+          fontFamilyFallback: const ['Cascadia Code', 'SF Mono', 'Menlo', 'Consolas', 'Noto Sans Mono CJK SC', 'monospace'],
+          fontSize: (base.fontSize ?? 16) * 0.88,
+          color: dark ? const Color(0xFFFF7B72) : const Color(0xFFEB5757),
+          backgroundColor: (dark ? Colors.white : const Color(0xFF878378)).withValues(alpha: dark ? 0.10 : 0.15),
         );
         spans.addAll([
           TextSpan(text: '`', style: faded),
