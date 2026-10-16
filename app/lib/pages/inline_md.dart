@@ -9,7 +9,6 @@ class InlineMarkdownController extends TextEditingController {
   /// 由输入框焦点驱动：true 时显示光标所在片段的标记
   bool reveal = false;
 
-  static bool _hasCjk(String s) => RegExp(r'[\u3000-\u9fff\uff00-\uffef]').hasMatch(s);
 
   static final _re = RegExp(r'(\*\*[^*\n]+\*\*)|(\*[^*\n]+\*)|(`[^`\n]+`)|(~~[^~\n]+~~)|(\[[^\]\n]+\]\([^)\s]+\))');
 
@@ -48,12 +47,10 @@ class InlineMarkdownController extends TextEditingController {
       } else if (m.group(2) != null) {
         spans.addAll([
           TextSpan(text: '*', style: faded),
-          // 中文没有真正的斜体字形，合成倾斜容易发虚：中文斜体改为强调色
           TextSpan(
               text: s.substring(1, s.length - 1),
-              style: _hasCjk(s)
-                  ? TextStyle(color: cs.primary.withValues(alpha: 0.9), fontWeight: FontWeight.w500)
-                  : const TextStyle(fontStyle: FontStyle.italic)),
+              // 中文斜体：合成倾斜（同 Notion / Apple Notes）；不用颜色，避免与链接混淆
+              style: const TextStyle(fontStyle: FontStyle.italic)),
           TextSpan(text: '*', style: faded),
         ]);
       } else if (m.group(3) != null) {
@@ -155,3 +152,11 @@ class InlineMarkdownController extends TextEditingController {
   }
   return null;
 }
+
+/// 去掉行内 Markdown 标记，用于预览、搜索结果、通知等纯文本场景。
+String plainInline(String s) => s
+    .replaceAllMapped(RegExp(r'\[([^\]\n]+)\]\([^)\s]+\)'), (m) => m.group(1)!)
+    .replaceAllMapped(RegExp(r'\*\*([^*\n]+)\*\*'), (m) => m.group(1)!)
+    .replaceAllMapped(RegExp(r'~~([^~\n]+)~~'), (m) => m.group(1)!)
+    .replaceAllMapped(RegExp(r'`([^`\n]+)`'), (m) => m.group(1)!)
+    .replaceAllMapped(RegExp(r'(?<![*\w])\*([^*\n]+)\*(?!\*)'), (m) => m.group(1)!);

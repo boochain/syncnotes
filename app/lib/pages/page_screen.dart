@@ -250,7 +250,7 @@ class _PageScreenState extends State<PageScreen> {
           else
             SizedBox(height: narrow ? 28 : 56),
           // 为图标留位：有封面时只留下沿以下部分
-          if (hasIcon) SizedBox(height: hasCover ? iconBox - overlap + 4 : iconBox + 4) else SizedBox(height: hasCover ? 12 : 0),
+          if (hasIcon) SizedBox(height: hasCover ? iconBox - overlap + 14 : iconBox + 14) else SizedBox(height: hasCover ? 12 : 0),
           Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: EditorType.maxWidth),
@@ -293,6 +293,10 @@ class _PageScreenState extends State<PageScreen> {
         key: const Key('pageCover'),
         height: height,
         width: double.infinity,
+        // 深色模式下压暗封面，避免大面积亮色刺眼
+        foregroundDecoration: Theme.of(context).brightness == Brightness.dark
+            ? BoxDecoration(color: Colors.black.withValues(alpha: 0.38))
+            : null,
         decoration: BoxDecoration(gradient: LinearGradient(colors: colors, begin: Alignment.topLeft, end: Alignment.bottomRight)),
       ),
     );

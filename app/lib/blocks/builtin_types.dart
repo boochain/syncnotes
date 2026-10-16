@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../app_scope.dart';
 import '../pages/doc.dart';
+import '../pages/inline_md.dart';
 import '../pages/page_nav.dart';
 import '../models/block.dart';
 import '../ui/folder_page.dart';
@@ -62,9 +63,8 @@ class MessageType extends BlockType {
   @override
   Widget buildPreview(BuildContext context, Block block) => Text(
         textOf(block),
-        maxLines: 4,
+        maxLines: 3,
         overflow: TextOverflow.ellipsis,
-        style: Theme.of(context).textTheme.bodyMedium,
       );
 
   @override
@@ -397,17 +397,12 @@ class PageType extends BlockType {
     final sync = AppScope.of(context).sync;
     final kids = sync.blocks.where((b) => b.parentId == block.id && b.kind == BlockKind.text).toList()
       ..sort((a, b) => orderOf(a).compareTo(orderOf(b)));
-    final text = kids.map(docText).where((t) => t.trim().isNotEmpty).take(3).join('\n');
-    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text((block.payload['icon'] ?? '📄') as String, style: const TextStyle(fontSize: 22)),
-      const SizedBox(width: 10),
-      Expanded(
-        child: Text(text.isEmpty ? '空页面' : text,
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-      ),
-    ]);
+    final text = kids.map((b) => plainInline(docText(b))).where((t) => t.trim().isNotEmpty).take(3).join('\n');
+    return Text(
+      text.isEmpty ? '空页面' : text.replaceAll('\n', ' · '),
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+    );
   }
 
   @override

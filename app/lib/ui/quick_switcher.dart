@@ -5,6 +5,7 @@ import 'tokens.dart';
 
 import '../models/block.dart';
 import '../pages/doc.dart';
+import '../pages/inline_md.dart';
 import '../sync/sync_client.dart';
 import 'glass.dart';
 
@@ -43,7 +44,7 @@ List<SwitcherResult> searchAll(SyncClient sync, String q) {
   if (query.isEmpty) return out.take(20).toList();
   // 页面内容
   for (final b in all.where((b) => b.kind == BlockKind.text)) {
-    final t = docText(b);
+    final t = plainInline(docText(b));
     final i = t.toLowerCase().indexOf(query);
     if (i < 0) continue;
     final p = pageOf(b);

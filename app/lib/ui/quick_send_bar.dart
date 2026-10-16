@@ -41,9 +41,8 @@ class _QuickSendBarState extends State<QuickSendBar> {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
     return Material(
-      color: cs.surfaceContainer,
+      color: Colors.transparent,
       child: SafeArea(
         top: false,
         child: Padding(
@@ -67,9 +66,9 @@ class _QuickSendBarState extends State<QuickSendBar> {
                   hintText: '快速发送消息…',
                   isDense: true,
                   filled: true,
-                  fillColor: cs.surfaceContainerHighest,
+                  fillColor: Theme.of(context).brightness == Brightness.dark ? const Color(0x52767680) : Colors.white.withValues(alpha: 0.75),
                   border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
+                      borderRadius: BorderRadius.circular(20), borderSide: BorderSide.none),
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 ),
               ),
