@@ -9,6 +9,8 @@ class InlineMarkdownController extends TextEditingController {
   /// 由输入框焦点驱动：true 时显示光标所在片段的标记
   bool reveal = false;
 
+  static bool _hasCjk(String s) => RegExp(r'[\u3000-\u9fff\uff00-\uffef]').hasMatch(s);
+
 
   static final _re = RegExp(r'(\*\*[^*\n]+\*\*)|(\*[^*\n]+\*)|(`[^`\n]+`)|(~~[^~\n]+~~)|(\[[^\]\n]+\]\([^)\s]+\))');
 
@@ -49,8 +51,15 @@ class InlineMarkdownController extends TextEditingController {
           TextSpan(text: '*', style: faded),
           TextSpan(
               text: s.substring(1, s.length - 1),
-              // 中文斜体：合成倾斜（同 Notion / Apple Notes）；不用颜色，避免与链接混淆
-              style: const TextStyle(fontStyle: FontStyle.italic)),
+              // 中文没有斜体字形，合成倾斜会与相邻字重叠：中文强调改用着重号式点状下划线
+              // （中文排版传统，GB/T 15834），西文保持斜体。
+              style: _hasCjk(s)
+                  ? TextStyle(
+                      decoration: TextDecoration.underline,
+                      decorationStyle: TextDecorationStyle.dotted,
+                      decorationThickness: 2,
+                      decorationColor: (base.color ?? cs.onSurface).withValues(alpha: 0.7))
+                  : const TextStyle(fontStyle: FontStyle.italic)),
           TextSpan(text: '*', style: faded),
         ]);
       } else if (m.group(3) != null) {

@@ -385,7 +385,7 @@ class BlockRowState extends State<BlockRow> {
       case DocType.h3:
         return body.merge(EditorType.h3.style);
       case DocType.quote:
-        return body.merge(HigType.callout.style);
+        return body; // Notion：引用与正文同字号，以左侧竖线区分
       case DocType.code:
         return body.merge(EditorType.code.style).copyWith(fontFamily: FontTokens.mono, fontFamilyFallback: FontTokens.monoFallback);
       case DocType.todo:
@@ -571,8 +571,9 @@ class BlockRowState extends State<BlockRow> {
         return Container(
           padding: const EdgeInsets.fromLTRB(12, 12, 14, 12),
           decoration: BoxDecoration(
-            color: cs.surfaceContainerHighest.withValues(alpha: dark ? 0.6 : 0.8),
-            borderRadius: BorderRadius.circular(8),
+            // Notion 灰色提示框：浅色 ≈ #F1F1EF，深色 ≈ 白 6%（叠在玻璃上用半透明实现）
+            color: dark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFF37352F).withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(Radii.small - 2),
           ),
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             InkWell(
