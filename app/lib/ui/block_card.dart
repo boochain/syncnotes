@@ -30,7 +30,7 @@ class BlockCard extends StatelessWidget {
     final tint = type.color(cs);
     // 消息的标题就是正文前缀：正文与标题相同时不重复显示
     final text = (block.payload['text'] ?? '') as String;
-    final showPreview = !(block.kind == BlockKind.message && text.trim() == block.title.trim()) && block.kind != BlockKind.folder;
+    final showPreview = !(block.kind == BlockKind.message && text.trim() == block.title.trim());
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: Space.m, vertical: 3),
       child: Card(

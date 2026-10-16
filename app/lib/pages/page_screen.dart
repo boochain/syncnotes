@@ -244,7 +244,7 @@ class _PageScreenState extends State<PageScreen> {
       // 图标压住封面下沿 ~45%
       final overlap = iconBox * 0.45;
       final iconWidget = _iconButton(context, page, icon ?? '', iconBox);
-      return Stack(clipBehavior: Clip.none, children: [
+      return Stack(key: const Key('pageHead'), clipBehavior: Clip.none, children: [
         Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           if (hasCover)
             _cover(context, page, colors, coverH)

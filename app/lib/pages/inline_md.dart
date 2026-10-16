@@ -12,7 +12,7 @@ class InlineMarkdownController extends TextEditingController {
   static bool _hasCjk(String s) => RegExp(r'[\u3000-\u9fff\uff00-\uffef]').hasMatch(s);
 
 
-  static final _re = RegExp(r'(\*\*[^*\n]+\*\*)|(\*[^*\n]+\*)|(`[^`\n]+`)|(~~[^~\n]+~~)|(\[[^\]\n]+\]\([^)\s]+\))');
+  static final _re = RegExp(r'(\*\*[^*\n]+\*\*)|(\*(?![\s*])[^*\n]*?[^\s*]\*|\*[^\s*]\*)|(`[^`\n]+`)|(~~[^~\n]+~~)|(\[[^\]\n]+\]\([^)\s]+\))');
 
   /// 光标所在位置的链接 URL（用于"打开链接"按钮）。
   String? linkAt(int offset) {
@@ -168,4 +168,4 @@ String plainInline(String s) => s
     .replaceAllMapped(RegExp(r'\*\*([^*\n]+)\*\*'), (m) => m.group(1)!)
     .replaceAllMapped(RegExp(r'~~([^~\n]+)~~'), (m) => m.group(1)!)
     .replaceAllMapped(RegExp(r'`([^`\n]+)`'), (m) => m.group(1)!)
-    .replaceAllMapped(RegExp(r'(?<![*\w])\*([^*\n]+)\*(?!\*)'), (m) => m.group(1)!);
+    .replaceAllMapped(RegExp(r'(?<![*\w])\*((?![\s*])[^*\n]*?[^\s*]|[^\s*])\*(?!\*)'), (m) => m.group(1)!);
