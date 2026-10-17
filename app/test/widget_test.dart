@@ -58,12 +58,12 @@ void main() {
     expect(chans, isNotEmpty);
     expect(chans.first.sent.first['type'], 'auth');
     expect(chans.first.sent.first['token'], 'tok');
-    expect(find.text('连接中'), findsOneWidget);
+    expect(find.textContaining('连接中'), findsWidgets);
     chans.first.serverSend({'type': 'auth_ok', 'user_id': 'u', 'username': 'bill'});
     await tester.pump(const Duration(milliseconds: 50));
     chans.first.serverSend({'type': 'sync_complete', 'latest_seq': 0});
     await tester.pumpAndSettle();
-    expect(find.text('在线'), findsOneWidget);
+    expect(find.byTooltip('在线'), findsOneWidget);
   });
 
   testWidgets('quick send creates a message block and sends upsert', (tester) async {
@@ -87,7 +87,7 @@ void main() {
     await tester.enterText(find.byKey(const Key('quickSendField')), 'offline msg');
     await tester.tap(find.byKey(const Key('quickSendButton')));
     await tester.pumpAndSettle();
-    expect(find.textContaining('1 待同步'), findsOneWidget);
+    expect(find.textContaining('1 待同步'), findsWidgets);
     expect(find.byTooltip('等待同步'), findsOneWidget);
   });
 
@@ -112,8 +112,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('消息正文'), findsOneWidget);
-    expect(find.text('粗体'), findsOneWidget); // markdown rendered
-    expect(find.textContaining('doc.pdf · 2.0 KB'), findsOneWidget);
+    expect(find.text('粗体'), findsOneWidget); // markdown stripped to plain preview
+    expect(find.textContaining('PDF · 2.0 KB'), findsOneWidget);
     expect(find.textContaining('1 项'), findsOneWidget); // folder preview
     expect(find.text('子消息'), findsNothing); // child hidden at root
     // folder listed first

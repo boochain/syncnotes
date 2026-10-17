@@ -144,7 +144,7 @@ class NoteType extends BlockType {
   @override
   String previewText(BuildContext context, Block block) => plainInline(mdOf(block)
           .split('\n')
-          .map((l) => l.replaceFirst(RegExp(r'^\s*(#{1,6}|[-*+]|\d+\.|>)\s*'), ''))
+          .map((l) => l.replaceFirst(RegExp(r'^\s*(?:#{1,6}\s+|[-*+]\s+|\d+\.\s+|>\s*|- \[[ xX]\]\s+)'), ''))
           .where((l) => l.trim().isNotEmpty && l.trim() != block.title.trim())
           .join(' · '))
       .trim();
