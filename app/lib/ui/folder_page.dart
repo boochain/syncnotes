@@ -1,7 +1,9 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../app_scope.dart';
 import 'block_card.dart';
+import 'ds.dart';
 import 'quick_send_bar.dart';
 
 class FolderPage extends StatelessWidget {
@@ -18,13 +20,13 @@ class FolderPage extends StatelessWidget {
         return Scaffold(
           appBar: AppBar(
             title: Row(children: [
-              const Icon(Icons.folder_open),
-              const SizedBox(width: 8),
-              Expanded(child: Text(f?.title ?? '文件夹', overflow: TextOverflow.ellipsis)),
+              Icon(CupertinoIcons.folder, size: Sizes.iconMd, color: AppColors.of(context).text2),
+              const SizedBox(width: Gap.m),
+              Expanded(child: Text(f?.title ?? '文件夹', maxLines: 1, overflow: TextOverflow.ellipsis)),
             ]),
           ),
           body: (f == null || f.deleted)
-              ? const Center(child: Text('文件夹已被删除'))
+              ? const EmptyState(icon: CupertinoIcons.trash, title: '文件夹已被删除', subtitle: '返回收件箱查看其他内容')
               : BlockList(parentId: folderId),
           bottomNavigationBar: QuickSendBar(parentId: folderId),
         );

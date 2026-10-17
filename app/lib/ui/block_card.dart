@@ -196,7 +196,7 @@ Future<void> showBlockMenu(BuildContext context, Block block) async {
             icon: CupertinoIcons.device_laptop,
             label: '全局已读',
             detail: block.viewedMode == ViewedMode.global ? '在任一设备查看后，所有设备都标为已读' : '每台设备独立记录已读状态',
-            trailing: Switch(
+            trailing: AppSwitch(
               value: block.viewedMode == ViewedMode.global,
               onChanged: (v) {
                 Navigator.pop(c);

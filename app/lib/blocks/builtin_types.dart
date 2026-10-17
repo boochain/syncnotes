@@ -98,7 +98,7 @@ class MessageType extends BlockType {
           autofocus: true,
           minLines: 2,
           maxLines: 8,
-          decoration: const InputDecoration(hintText: '输入消息内容', border: OutlineInputBorder()),
+          decoration: const InputDecoration(hintText: '输入消息内容'),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('取消')),

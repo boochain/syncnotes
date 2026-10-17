@@ -852,7 +852,7 @@ class SlashMenu extends StatelessWidget {
                                 // Notion：标题命令用 H1/H2/H3 字形而非同一个图标
                                 DocType.h1 || DocType.h2 || DocType.h3 => Text('H${cmd.type!.index}',
                                     textScaler: TextScaler.noScaling,
-                                    style: TextStyle(fontSize: 13, height: 1.0, fontWeight: FontWeight.w600, color: c.text2)),
+                                    style: TextStyle(fontSize: 12, height: 1.0, fontWeight: FontWeight.w600, color: c.text2)),
                                 _ => Icon(cmd.icon, size: Sizes.iconSm, color: c.text2),
                               },
                             ),

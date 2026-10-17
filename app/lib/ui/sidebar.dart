@@ -153,7 +153,7 @@ class CountBadge extends StatelessWidget {
       decoration: BoxDecoration(color: c.accent, borderRadius: BorderRadius.circular(9)),
       child: Text(count > 99 ? '99+' : '$count',
           textScaler: TextScaler.noScaling,
-          style: const TextStyle(fontSize: 11, height: 1.0, fontWeight: FontWeight.w600, color: Colors.white)),
+          style: const TextStyle(fontSize: 12, height: 1.0, fontWeight: FontWeight.w600, color: Colors.white)),
     );
   }
 }

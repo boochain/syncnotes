@@ -1,4 +1,4 @@
-import 'glass.dart';
+import 'ds.dart';
 import 'dart:io';
 import 'tokens.dart';
 
@@ -84,71 +84,68 @@ class _LoginPageState extends State<LoginPage> {
     });
   }
 
-  /// HIG 分组输入行：无边框、无填充，图标 + 输入框，多行之间用细分隔线（iOS 登录表单样式）
+  /// HIG 分组输入行：高 44，20 图标位 + 输入框，多行之间用细分隔线（iOS 登录表单样式）
   Widget _row(BuildContext context, {required Key key, required TextEditingController c, required IconData icon,
       required String hint, bool obscure = false, Widget? suffix, ValueChanged<String>? onSubmitted, String? label}) {
-    final cs = Theme.of(context).colorScheme;
-    return SizedBox(
-      height: 48,
+    final pal = AppColors.of(context);
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: Sizes.bar),
       child: Row(children: [
-        const SizedBox(width: 14),
-        Icon(icon, size: 19, color: cs.onSurfaceVariant),
-        const SizedBox(width: 12),
+        const SizedBox(width: Gap.l),
+        SizedBox.square(dimension: Sizes.iconMd, child: Icon(icon, size: Sizes.iconMd - 2, color: pal.text2)),
+        const SizedBox(width: Gap.l),
         Expanded(
           child: TextField(
             key: key,
             controller: c,
             obscureText: obscure,
             onSubmitted: onSubmitted,
-            style: const TextStyle(fontSize: 15),
+            style: Theme.of(context).textTheme.bodyMedium,
             decoration: InputDecoration.collapsed(hintText: hint).copyWith(filled: false, semanticCounterText: label),
           ),
         ),
         ?suffix,
-        const SizedBox(width: 6),
+        const SizedBox(width: Gap.xs),
       ]),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final divider = Divider(height: 0.5, thickness: 0.5, indent: 45, color: cs.outlineVariant.withValues(alpha: 0.6));
+    final pal = AppColors.of(context);
+    final tt = Theme.of(context).textTheme;
+    final divider = Divider(height: 1, thickness: 1, indent: Gap.l + Sizes.iconMd + Gap.l, color: pal.separator);
     return Scaffold(
+      backgroundColor: pal.bg,
       body: Center(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.all(Gap.x3),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 360),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              // 应用图标：HIG 圆角方形 + 柔和渐变 + SF Symbols 风格图形
+              // 应用图标：HIG 圆角方形，纯强调色（不再用渐变与彩色阴影）
               Center(
                 child: Container(
-                  width: 64,
-                  height: 64,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(15),
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: dark ? const [Color(0xFF0A84FF), Color(0xFF5E5CE6)] : const [Color(0xFF34AADC), Color(0xFF007AFF)],
-                    ),
-                    boxShadow: [BoxShadow(color: const Color(0xFF007AFF).withValues(alpha: 0.25), blurRadius: 18, offset: const Offset(0, 6))],
-                  ),
-                  child: const Icon(CupertinoIcons.arrow_2_squarepath, color: Colors.white, size: 32),
+                  key: const Key('appMark'),
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(13), color: pal.accent),
+                  child: const Icon(CupertinoIcons.arrow_2_squarepath, color: Colors.white, size: 28),
                 ),
               ),
-              const SizedBox(height: 16),
-              Text('SyncNotes',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w700, letterSpacing: 0.3)),
-              const SizedBox(height: 4),
-              Text('多设备实时同步的笔记与消息', textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: cs.onSurfaceVariant)),
-              const SizedBox(height: 28),
-              Glass(
-                radius: Radii.card,
-                strong: true,
+              const SizedBox(height: Gap.xl),
+              Text('SyncNotes', textAlign: TextAlign.center, style: tt.headlineSmall),
+              const SizedBox(height: Gap.xs),
+              Text('多设备实时同步的笔记与消息', textAlign: TextAlign.center, style: tt.bodyMedium?.copyWith(color: pal.text2)),
+              const SizedBox(height: Gap.x4 - Gap.xs),
+              Container(
+                key: const Key('loginForm'),
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(
+                  color: pal.elevated,
+                  borderRadius: BorderRadius.circular(AppRadius.l),
+                  border: Border.all(color: pal.separator),
+                ),
                 child: Column(children: [
                   _row(context,
                       key: const Key('serverField'),
@@ -157,12 +154,13 @@ class _LoginPageState extends State<LoginPage> {
                       hint: '服务器地址，如 192.168.1.10:7700',
                       label: '服务器地址',
                       suffix: _discovering
-                          ? const Padding(
-                              padding: EdgeInsets.all(12),
-                              child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)))
+                          ? const SizedBox.square(
+                              dimension: Sizes.control,
+                              child: Center(child: SizedBox.square(dimension: Sizes.iconSm, child: CircularProgressIndicator(strokeWidth: 2))))
                           : IconButton(
+                              key: const Key('discoverButton'),
                               tooltip: '搜索局域网服务器',
-                              icon: Icon(CupertinoIcons.wifi, size: 19, color: cs.primary),
+                              icon: Icon(CupertinoIcons.wifi, size: Sizes.iconMd - 2, color: pal.accent),
                               onPressed: _discover)),
                   divider,
                   _row(context, key: const Key('userField'), c: _user, icon: CupertinoIcons.person, hint: '用户名'),
@@ -180,12 +178,13 @@ class _LoginPageState extends State<LoginPage> {
                 duration: Motion.short4,
                 child: _found.length > 1
                     ? Padding(
-                        padding: const EdgeInsets.only(top: 10),
-                        child: Wrap(spacing: 8, runSpacing: 8, children: [
+                        padding: const EdgeInsets.only(top: Gap.m),
+                        child: Wrap(spacing: Gap.s, runSpacing: Gap.s, children: [
                           for (final s in _found)
-                            ActionChip(
-                              avatar: const Icon(CupertinoIcons.desktopcomputer, size: 16),
-                              label: Text('${s.name} (${s.address})'),
+                            OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(fixedSize: const Size.fromHeight(Sizes.control), minimumSize: const Size(0, Sizes.control)),
+                              icon: const Icon(CupertinoIcons.desktopcomputer, size: Sizes.iconSm),
+                              label: Text('${s.name} (${s.address})', overflow: TextOverflow.ellipsis),
                               onPressed: () => setState(() => _server.text = s.address),
                             )
                         ]),
@@ -195,25 +194,21 @@ class _LoginPageState extends State<LoginPage> {
               AnimatedSwitcher(
                 duration: Motion.short4,
                 child: _error == null
-                    ? const SizedBox(height: 20)
+                    ? const SizedBox(height: Gap.xxl)
                     : Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        child: Text(_error!, textAlign: TextAlign.center, style: TextStyle(color: cs.error, fontSize: 13)),
+                        padding: const EdgeInsets.symmetric(vertical: Gap.m),
+                        child: Text(_error!, key: const Key('loginError'), textAlign: TextAlign.center, style: tt.bodySmall?.copyWith(color: pal.danger)),
                       ),
               ),
               FilledButton(
                 key: const Key('loginButton'),
                 onPressed: _busy ? null : _submit,
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size.fromHeight(46),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Radii.card)),
-                  textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-                ),
+                style: FilledButton.styleFrom(fixedSize: const Size.fromHeight(Sizes.bar), minimumSize: const Size.fromHeight(Sizes.bar)),
                 child: _busy
-                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    ? const SizedBox.square(dimension: Sizes.iconSm, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                     : Text(_registerMode ? '注册并登录' : '登录'),
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: Gap.s),
               TextButton(
                 onPressed: () => setState(() => _registerMode = !_registerMode),
                 child: Text(_registerMode ? '已有账号？去登录' : '没有账号？注册'),

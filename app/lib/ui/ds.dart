@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 // SyncNotes v0.4 设计系统：一套调色板、一套字阶、一套高度、一套圆角、一套间距、一套图标。
 //
 // 不自创数值，全部取自成熟产品：
@@ -243,4 +244,22 @@ Future<bool> confirmDanger(BuildContext context, {required String title, require
     ),
   );
   return ok == true;
+}
+
+/// HIG 开关（51×31）：开 = systemGreen
+class AppSwitch extends StatelessWidget {
+  final bool value;
+  final ValueChanged<bool>? onChanged;
+  const AppSwitch({super.key, required this.value, this.onChanged});
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return CupertinoSwitch(
+      value: value,
+      onChanged: onChanged,
+      activeTrackColor: c.success,
+      inactiveTrackColor: dark ? const Color(0x5C787880) : const Color(0x29787880),
+    );
+  }
 }
