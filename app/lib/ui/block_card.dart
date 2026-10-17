@@ -72,19 +72,21 @@ class _BlockCardState extends State<BlockCard> {
               const SizedBox(width: Gap.l),
               Expanded(
                 child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                  Row(children: [
+                  // 标题与时间按文字基线对齐（字号不同也在同一条线上）
+                  Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
                     Expanded(
                       child: Text(block.title.isEmpty ? '无标题' : block.title,
                           key: const Key('cardTitle'), maxLines: 1, overflow: TextOverflow.ellipsis, style: tt.labelLarge),
                     ),
                     if (block.pending) ...[
                       const SizedBox(width: Gap.s),
-                      Tooltip(message: '等待同步', child: Icon(CupertinoIcons.cloud_upload, size: 12, color: c.text3)),
+                      Tooltip(message: '等待同步', child: SizedBox(height: 20, child: Center(child: Icon(CupertinoIcons.cloud_upload, size: 12, color: c.text3)))),
                     ],
                     const SizedBox(width: Gap.m),
                     Text(relTime(block.updatedAt), maxLines: 1, style: tt.bodySmall?.copyWith(color: c.text3)),
                     SizedBox(
                       width: 16,
+                      height: 20,
                       child: unread
                           ? Center(child: Container(key: const Key('unreadDot'), width: 8, height: 8, decoration: BoxDecoration(color: c.accent, shape: BoxShape.circle)))
                           : null,

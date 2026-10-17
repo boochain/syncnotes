@@ -63,10 +63,13 @@ class MessageType extends BlockType {
   @override
   String previewText(BuildContext context, Block block) {
     final t = textOf(block).replaceAll(RegExp(r'\s+'), ' ').trim();
-    // 标题就是正文开头时，第二行显示剩下的部分，避免重复
+    // 纯链接：第二行显示“链接 · 域名”
+    final u = Uri.tryParse(t);
+    if (!t.contains(' ') && u != null && u.hasScheme && u.host.isNotEmpty) return '链接 · ${u.host}';
+    // 标题就是正文开头时，第二行显示剩下的部分（去掉开头的标点），避免重复
     if (block.title.isNotEmpty && t.startsWith(block.title)) {
       final rest = t.substring(block.title.length).trim();
-      return rest.replaceFirst(RegExp(r'^[…\.]+'), '').trim();
+      return rest.replaceFirst(RegExp(r'^[…\.\s：:，,。；;、—-]+'), '').trim();
     }
     return t;
   }
