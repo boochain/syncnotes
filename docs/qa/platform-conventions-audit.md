@@ -84,3 +84,15 @@
 - 第二轮新增：`desktop_conventions_test.dart`（窗口位置、关闭到托盘）、`notification_permission_test.dart`（先说明后请求、只问一次）、`file_drop_test.dart`（拖放、分享进来的文字/文件）、Ctrl+N / Ctrl+W、200% 字号无溢出、48dp 点击区（alignment_test）。
 
 - `test/back_navigation_test.dart`：对话框、底部菜单、弹出菜单、抽屉、搜索/筛选、设置、嵌套文件夹、页面编辑器（保存）、宽屏页面 → 收件箱、根页面双击退出（mock `SystemNavigator.pop`）、超时重置、提示条位置、登录页、Esc 关搜索、Ctrl+, 设置、点击通知打开块。
+
+## 截图（Linux 构建 + Xvfb，离线状态）
+
+`docs/screenshots/platform-audit/`：phone-light / phone-dark（400 宽小窗，同时验证窗口位置和大小已恢复）、desk-light / desk-dark（宽屏）。这些是 Linux 渲染，Android 上的 48dp 点击区要在真机上看。
+
+## 仍待处理
+
+- 卡片里 28 的“更多”按钮点击区没到 48（整张卡片可点、长按也能出菜单）
+- 分享出去（share out）
+- 中文应用名（等产品决定，没改）
+- 真机验证：预测性返回动画（Android 14+）、输入法避让、中文输入法、分享进来、拖放、HiDPI、多显示器下窗口位置恢复
+- 回收站（#8）合并后的后续项（见上）
