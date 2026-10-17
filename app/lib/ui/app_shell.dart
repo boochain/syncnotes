@@ -60,7 +60,10 @@ class AppShellState extends State<AppShell> implements PageHost {
   void initState() {
     super.initState();
     Notifier.opened.addListener(_onNotificationOpened);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _onNotificationOpened());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _onNotificationOpened();
+      if (mounted) askNotificationPermission(context, AppScope.of(context).settings);
+    });
   }
 
   @override

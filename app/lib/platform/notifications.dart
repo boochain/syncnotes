@@ -1,10 +1,12 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../blocks/block_type.dart';
 import '../models/block.dart';
+import '../services/settings.dart';
 
 /// 本地通知（无需任何付费推送服务；由实时连接驱动）。
 class Notifier {
@@ -55,14 +57,33 @@ class Notifier {
           if ((launch?.didNotificationLaunchApp ?? false) && r != null) _onResponse(r);
         } catch (_) {}
       }
-      if (Platform.isAndroid && requestPermission) {
-        await _plugin
-            .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-            ?.requestNotificationsPermission();
-      }
+      // Android 13+ 的运行时权限不在这里直接弹：先由界面说明用途（见 askAndroidPermission）
       _ready = true;
     } catch (e) {
       debugPrint('notifications unavailable: $e');
+    }
+  }
+
+  static AndroidFlutterLocalNotificationsPlugin? get _android =>
+      _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+
+  /// Android：通知当前是否允许（Android 12 及以下默认允许）。
+  static Future<bool> androidEnabled() async {
+    if (!Platform.isAndroid) return true;
+    try {
+      return await _android?.areNotificationsEnabled() ?? true;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  /// Android 13+：弹出系统权限请求（调用前先向用户说明用途）。
+  static Future<bool> requestAndroidPermission() async {
+    if (!Platform.isAndroid) return true;
+    try {
+      return await _android?.requestNotificationsPermission() ?? false;
+    } catch (_) {
+      return false;
     }
   }
 
@@ -103,4 +124,27 @@ class Notifier {
       debugPrint('notify failed: $e');
     }
   }
+}
+
+/// 通知权限说明（Android 13+）：先解释用途，用户同意后再弹系统权限框；只主动询问一次。
+Future<void> askNotificationPermission(BuildContext context, Settings settings,
+    {Future<bool> Function() isEnabled = Notifier.androidEnabled,
+    Future<bool> Function() request = Notifier.requestAndroidPermission}) async {
+  if (!settings.notifications || settings.notificationRationaleShown) return;
+  if (await isEnabled()) return;
+  if (!context.mounted) return;
+  settings.notificationRationaleShown = true;
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (c) => AlertDialog(
+      key: const Key('notifRationale'),
+      title: const Text('开启通知？'),
+      content: const Text('其他设备发来新消息、笔记或文件时，SyncNotes 会用通知提醒你。可以随时在“设置”中关闭。'),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('以后再说')),
+        FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('开启')),
+      ],
+    ),
+  );
+  if (ok == true) await request();
 }

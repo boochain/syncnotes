@@ -34,6 +34,10 @@ class Settings {
   bool get notifications => prefs.getBool('notifications') ?? true;
   set notifications(bool v) => prefs.setBool('notifications', v);
 
+  /// 是否已经向用户说明过通知权限（只主动问一次）
+  bool get notificationRationaleShown => prefs.getBool('notif_rationale_shown') ?? false;
+  set notificationRationaleShown(bool v) => prefs.setBool('notif_rationale_shown', v);
+
   bool get startMinimized => prefs.getBool('start_minimized') ?? true;
   set startMinimized(bool v) => prefs.setBool('start_minimized', v);
 
