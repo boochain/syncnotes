@@ -206,7 +206,7 @@ void main() {
     expect(c.byId('x')!.isViewed, isFalse);
   });
 
-  test('deleting a folder deletes children', () async {
+  test('deleting a folder moves it (with children) to trash', () async {
     final f = c.create(kind: BlockKind.folder, title: 'f');
     c.create(kind: BlockKind.message, title: 'child', parentId: f.id);
     expect(c.childrenOf(f.id).length, 1);

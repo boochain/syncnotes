@@ -103,9 +103,17 @@ void main() {
     await waitFor(() => a.byId(offline.id) != null && b.byId(whileAway.id) != null);
     expect(b.pendingCount, 0);
 
-    // 6. delete propagates
+    // 6. delete on A → shows in B's recycle bin; restore & purge propagate
     a.delete(m.id);
-    await waitFor(() => b.byId(m.id)!.deleted);
+    await waitFor(() => b.trash.any((x) => x.id == m.id));
+    expect(b.blocks.any((x) => x.id == m.id), isFalse);
+    expect(b.byId(m.id)!.deletedBy, 'pc');
+    b.restoreAll([m.id]);
+    await waitFor(() => a.byId(m.id)!.deletedAt == null && a.blocks.any((x) => x.id == m.id));
+    a.delete(m.id);
+    await waitFor(() => b.trash.any((x) => x.id == m.id));
+    b.purge([m.id]);
+    await waitFor(() => a.byId(m.id)!.deleted);
 
     a.dispose();
     b.dispose();
