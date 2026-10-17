@@ -10,6 +10,7 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 const DAY: i64 = 24 * 3600 * 1000;
 
+#[allow(clippy::too_many_arguments)]
 fn up(
     st: &Storage,
     uid: &str,
