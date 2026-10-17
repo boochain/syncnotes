@@ -20,8 +20,17 @@ struct Srv {
 }
 
 async fn spawn_with(per_user: u32, per_ip: u32) -> Srv {
-    let files = tempfile::tempdir().unwrap().keep();
-    let state = AppState::new(Storage::in_memory().unwrap(), true)
+    spawn_on(
+        Storage::in_memory().unwrap(),
+        tempfile::tempdir().unwrap().keep(),
+        per_user,
+        per_ip,
+    )
+    .await
+}
+
+async fn spawn_on(storage: Storage, files: PathBuf, per_user: u32, per_ip: u32) -> Srv {
+    let state = AppState::new(storage, true)
         .with_files_dir(files.clone())
         .with_recovery_limits(per_user, per_ip);
     let app = build_router(state.clone());
@@ -824,4 +833,289 @@ fn legacy_database_migrates_without_touching_data() {
     let u = st.find_user("old").unwrap().unwrap();
     assert_eq!(u.id, "u1");
     assert!(u.recovery_hash.is_none() && !u.must_change_password);
+}
+
+// ---------------------------------------------------------------- script (PATH shims)
+
+fn repo_scripts() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../scripts")
+}
+
+/// Temp env dir + shim bin dir. `server` = path the `syncnotes-server` shim points at.
+fn script_env(
+    db: &std::path::Path,
+    files: &std::path::Path,
+    server: &str,
+) -> (tempfile::TempDir, String) {
+    let t = tempfile::tempdir().unwrap();
+    let env_dir = t.path().join("etc");
+    let bin = t.path().join("bin");
+    std::fs::create_dir_all(&env_dir).unwrap();
+    std::fs::create_dir_all(&bin).unwrap();
+    std::fs::write(
+        env_dir.join("syncnotes.env"),
+        format!(
+            "SYNCNOTES_INSTALL_DIR={}\nSYNCNOTES_DB={}\nSYNCNOTES_FILES={}\n",
+            t.path().join("not-installed").display(),
+            db.display(),
+            files.display()
+        ),
+    )
+    .unwrap();
+    let w = |name: &str, body: &str| {
+        let p = bin.join(name);
+        std::fs::write(&p, body).unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+    };
+    // Pretend to be root so need_root passes without sudo.
+    w(
+        "id",
+        "#!/bin/sh\n[ \"$1\" = -u ] && { echo 0; exit 0; }\nexec /usr/bin/id \"$@\"\n",
+    );
+    w("syncnotes-server", &format!("#!/bin/sh\n{server}\n"));
+    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
+    (t, path)
+}
+
+fn run_script(t: &tempfile::TempDir, path: &str, script: &str, args: &[&str]) -> (bool, String) {
+    let o = std::process::Command::new("bash")
+        .arg(repo_scripts().join(script))
+        .args(args)
+        .current_dir(t.path())
+        .env("PATH", path)
+        .env("SYNCNOTES_ENV_DIR", t.path().join("etc"))
+        .env("SYNCNOTES_SVC_USER", "root")
+        .env_remove("SUDO_USER")
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+    let out = format!(
+        "{}{}",
+        String::from_utf8_lossy(&o.stdout),
+        String::from_utf8_lossy(&o.stderr)
+    );
+    (o.status.success(), out)
+}
+
+#[test]
+fn script_passes_env_paths_and_backs_up_before_reset() {
+    let d = tempfile::tempdir().unwrap();
+    let db = d.path().join("data/s.db");
+    std::fs::create_dir_all(db.parent().unwrap()).unwrap();
+    std::fs::write(&db, b"").unwrap();
+    let log = d.path().join("calls.log");
+    let (t, path) = script_env(
+        &db,
+        &d.path().join("files"),
+        &format!("echo \"$*\" >> {}; exit 0", log.display()),
+    );
+    let (ok, out) = run_script(
+        &t,
+        &path,
+        "syncnotes-server.sh",
+        &["-y", "reset-password", "bill"],
+    );
+    assert!(ok, "{out}");
+    let calls = std::fs::read_to_string(&log).unwrap();
+    let lines: Vec<&str> = calls.lines().collect();
+    let files = d.path().join("files");
+    assert_eq!(lines[0], "admin --help");
+    assert!(
+        lines.iter().any(
+            |l| l.starts_with("admin backup ") && l.contains(&format!("--db {}", db.display()))
+        ),
+        "{calls}"
+    );
+    let reset = lines
+        .iter()
+        .position(|l| l.starts_with("admin reset-password bill"))
+        .expect(&calls);
+    let backup = lines
+        .iter()
+        .position(|l| l.starts_with("admin backup"))
+        .unwrap();
+    assert!(backup < reset, "backup before reset: {calls}");
+    assert!(
+        lines[reset].ends_with(&format!(
+            "--db {} --files-dir {}",
+            db.display(),
+            files.display()
+        )),
+        "{calls}"
+    );
+
+    std::fs::remove_file(&log).unwrap();
+    let (ok, out) = run_script(&t, &path, "syncnotes-rescue.sh", &["export", "bill"]);
+    // Shim doesn't write the zip, so mv fails — but the command line must be right.
+    assert!(!ok, "{out}");
+    let calls = std::fs::read_to_string(&log).unwrap();
+    assert!(
+        calls.contains("admin export bill ") && calls.contains("/export.zip --db"),
+        "{calls}"
+    );
+
+    let (ok, out) = run_script(&t, &path, "syncnotes-rescue.sh", &["reset", "bad/name"]);
+    assert!(!ok && out.contains("用户名无效"), "{out}");
+    let (ok, out) = run_script(&t, &path, "syncnotes-rescue.sh", &["list-users"]);
+    assert!(ok, "{out}");
+}
+
+#[test]
+fn script_rejects_old_binary_and_missing_db() {
+    let d = tempfile::tempdir().unwrap();
+    let db = d.path().join("s.db");
+    let (t, path) = script_env(
+        &db,
+        &d.path().join("f"),
+        "[ \"$1\" = admin ] && exit 2; exit 0",
+    );
+    std::fs::write(&db, b"").unwrap();
+    let (ok, out) = run_script(&t, &path, "syncnotes-rescue.sh", &["list-users"]);
+    assert!(!ok && out.contains("版本过旧"), "{out}");
+    std::fs::remove_file(&db).unwrap();
+    let (t, path) = script_env(&db, &d.path().join("f"), "exit 0");
+    let (ok, out) = run_script(&t, &path, "syncnotes-rescue.sh", &["-y", "reset", "bill"]);
+    assert!(!ok && out.contains("数据库不存在"), "{out}");
+}
+
+/// User requirement: after a rescue reset the user still has ALL old data.
+/// Real binary + running server on the same WAL database, reset via syncnotes-rescue.sh.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn e2e_rescue_script_reset_keeps_all_data() {
+    let d = tempfile::tempdir().unwrap();
+    let db = d.path().join("syncnotes.db");
+    let files = d.path().join("files");
+    std::fs::create_dir_all(&files).unwrap();
+    let s = spawn_on(Storage::open(&db).unwrap(), files.clone(), 5, 20).await;
+    let (old_pc, blobs) = seed_rich_account(&s).await;
+    let uid = s.state.storage.find_user("bill").unwrap().unwrap().id;
+    let before = serde_json::to_value(s.state.storage.all_blocks(&uid).unwrap()).unwrap();
+    let views_before = s.state.storage.all_device_views(&uid).unwrap();
+    let mut stale = connect(&s.addr, &old_pc, "pc").await;
+
+    let bin = env!("CARGO_BIN_EXE_syncnotes-server");
+    let (t, path) = script_env(&db, &files, &format!("exec {bin} \"$@\""));
+    let (ok, out) = tokio::task::spawn_blocking({
+        let path = path.clone();
+        move || {
+            let r = run_script(&t, &path, "syncnotes-rescue.sh", &["-y", "reset", "bill"]);
+            drop(t);
+            r
+        }
+    })
+    .await
+    .unwrap();
+    assert!(ok, "{out}");
+    assert!(out.contains("已备份数据库"), "{out}");
+    let temp = out
+        .lines()
+        .find_map(|l| l.strip_prefix("临时密码: "))
+        .unwrap_or_else(|| panic!("{out}"))
+        .trim()
+        .to_string();
+
+    // The old session (other process revoked it) is closed by the periodic re-check.
+    let closed = tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            match stale.next().await {
+                None | Some(Err(_)) | Some(Ok(Message::Close(_))) => break,
+                _ => {}
+            }
+        }
+    })
+    .await;
+    assert!(closed.is_ok(), "stale socket still open");
+    assert_eq!(login(&s.addr, "bill", "old-pass", "pc").await.0, 401);
+
+    // Default (temporary) password → forced change.
+    let (st, v) = login(&s.addr, "bill", &temp, "pc").await;
+    assert_eq!(st, 200);
+    assert_eq!(v["must_change_password"], true);
+    assert_eq!(v["user_id"], uid.as_str());
+    let tok = v["token"].as_str().unwrap().to_string();
+    assert_eq!(ws_auth(&s.addr, &tok, "pc").await.1["type"], "auth_error");
+    let (st, _) = post(
+        &s.addr,
+        "/api/change-password",
+        Some(&tok),
+        json!({"old_password": temp, "new_password": "brand-new"}),
+    )
+    .await;
+    assert_eq!(st, 204);
+
+    // Nothing changed in the data.
+    assert_eq!(
+        before,
+        serde_json::to_value(s.state.storage.all_blocks(&uid).unwrap()).unwrap()
+    );
+    assert_eq!(
+        views_before,
+        s.state.storage.all_device_views(&uid).unwrap()
+    );
+
+    // Old device "pc" re-logs in and replays an offline edit made before the reset.
+    let mut pc = connect(&s.addr, &tok, "pc").await;
+    send(
+        &mut pc,
+        upsert(
+            "note1",
+            "note",
+            "随手记",
+            json!({"markdown": "离线时写的修改"}),
+            None,
+            "global",
+            100,
+            None,
+        ),
+    )
+    .await;
+    loop {
+        let v = recv(&mut pc).await.unwrap();
+        if v["type"] == "block_update" && v["block"]["id"] == "note1" {
+            assert_eq!(v["block"]["payload"]["markdown"], "离线时写的修改");
+            break;
+        }
+    }
+
+    // Fresh device gets everything.
+    let tf = login(&s.addr, "bill", "brand-new", "fresh").await.1["token"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let mut fresh = connect(&s.addr, &tf, "fresh").await;
+    let (blocks, _) = full_sync(&mut fresh).await;
+    assert_eq!(blocks.len(), 10);
+    assert_eq!(blocks["p1b2c"]["parent_id"], "p1b2");
+    assert_eq!(blocks["page1"]["parent_id"], "folder1");
+    assert!(
+        blocks["trash1"]["deleted_at"].is_number() && blocks["trashfile"]["deleted_at"].is_number()
+    );
+    assert_eq!(blocks["note1"]["payload"]["markdown"], "离线时写的修改");
+    for (id, data) in &blobs {
+        assert_eq!(
+            download(&s.addr, &tf, id).await.as_deref(),
+            Some(data.as_slice())
+        );
+    }
+    let tp = login(&s.addr, "bill", "brand-new", "phone").await.1["token"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let mut ph = connect(&s.addr, &tp, "phone").await;
+    assert_eq!(full_sync(&mut ph).await.1.get("msg1"), Some(&true));
+
+    // Export via the script while the server keeps running.
+    let (t2, path2) = script_env(&db, &files, &format!("exec {bin} \"$@\""));
+    let out_zip = d.path().join("bill.zip");
+    let oz = out_zip.to_string_lossy().to_string();
+    let (ok, out) = tokio::task::spawn_blocking(move || {
+        run_script(&t2, &path2, "syncnotes-rescue.sh", &["export", "bill", &oz])
+    })
+    .await
+    .unwrap();
+    assert!(ok, "{out}");
+    let z = zip::ZipArchive::new(std::fs::File::open(&out_zip).unwrap()).unwrap();
+    assert!(z.file_names().any(|n| n == "markdown/回收站/旧笔记.md"));
+    assert!(z.file_names().filter(|n| n.starts_with("files/")).count() == 2);
 }

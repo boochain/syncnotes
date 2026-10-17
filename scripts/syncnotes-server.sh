@@ -791,7 +791,7 @@ cmd_export() {
   case "$out" in /*) ;; *) out="$PWD/$out" ;; esac
   [ -e "$out" ] && die "文件已存在：$out"
   local tmp; tmp=$(mktemp -d); TMP_DIRS+=("$tmp")
-  [ "$(id -u)" -eq 0 ] && id "$SVC_USER" >/dev/null 2>&1 && chown "$SVC_USER" "$tmp"
+  [ "$(id -u)" -eq 0 ] && [ "$SVC_USER" != root ] && id "$SVC_USER" >/dev/null 2>&1 && chown "$SVC_USER" "$tmp"
   rescue_admin export "$user" "$tmp/export.zip" || die "导出失败"
   mv -f "$tmp/export.zip" "$out" || die "无法写入 $out"
   chmod 600 "$out"
