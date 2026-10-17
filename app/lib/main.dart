@@ -40,7 +40,7 @@ Future<void> _main(List<String> args) async {
     final primary = await SingleInstance.acquire(onActivate: () => DesktopShell.instance.showNearTray());
     if (!primary) exit(0);
     final hidden = args.contains('--hidden') || (settings.isLoggedIn && settings.startMinimized);
-    await DesktopShell.instance.init(startHidden: hidden);
+    await DesktopShell.instance.init(startHidden: hidden, settings: settings);
   }
   if (Platform.isAndroid) {
     AndroidSyncService.init(autoRunOnBoot: settings.autoStart);

@@ -117,6 +117,14 @@ class _SettingsPageState extends State<SettingsPage> {
                 title: '启动时最小化到托盘',
                 trailing: sw(st.startMinimized, (v) => setState(() => st.startMinimized = v)),
               ),
+            if (isDesktop)
+              SettingsRow(
+                key: const Key('closeToTrayRow'),
+                icon: CupertinoIcons.xmark_square,
+                title: '关闭窗口时最小化到托盘',
+                subtitle: st.closeToTray ? '点关闭按钮隐藏到托盘，从托盘菜单“退出”才会结束' : '点关闭按钮直接退出 SyncNotes',
+                trailing: sw(st.closeToTray, (v) => setState(() => st.closeToTray = v), key: const Key('closeToTraySwitch')),
+              ),
             if (Platform.isAndroid)
               SettingsRow(
                 icon: CupertinoIcons.bell_circle,
