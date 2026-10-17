@@ -237,8 +237,8 @@ Future<void> showBlockMenu(BuildContext context, Block block) async {
           MenuRow(key: const Key('menuDelete'), icon: CupertinoIcons.trash, label: '删除', danger: true, onTap: () {
             Navigator.pop(c);
             final ids = s.sync.delete(block.id);
-            // 删除不再静默发生：提示条里可以撤销
-            showToast(context, '已删除“${block.title.isEmpty ? type.label : block.title}”',
+            // 删除 = 移入回收站；提示条里可以撤销（撤销 = 恢复）
+            showToast(context, '已移到回收站：“${block.title.isEmpty ? type.label : block.title}”',
                 messenger: messenger, actionLabel: '撤销', onAction: () => s.sync.restoreAll(ids));
           }),
         ]),

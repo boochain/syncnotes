@@ -114,7 +114,7 @@ class _PageScreenState extends State<PageScreen> {
       listenable: doc,
       builder: (context, _) {
         final page = doc.page;
-        if (page == null || page.deleted) {
+        if (page == null || page.deleted || doc.sync.isHidden(page)) {
           return Scaffold(
             appBar: AppBar(),
             body: const EmptyState(icon: CupertinoIcons.trash, title: '页面已被删除', subtitle: '可以从侧边栏打开其他页面'),

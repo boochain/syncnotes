@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'trash_page.dart';
 
 import '../app_scope.dart';
 import '../platform/android_service.dart';
@@ -140,6 +141,13 @@ class _SettingsPageState extends State<SettingsPage> {
               trailing: sw(st.defaultGlobalViewed, (v) => setState(() => st.defaultGlobalViewed = v), key: const Key('globalSwitch')),
             ),
             const SettingsSection('其他'),
+            SettingsRow(
+              key: const Key('settingsTrash'),
+              icon: CupertinoIcons.trash,
+              title: '回收站',
+              subtitle: '已删除的内容，可恢复或彻底删除',
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const TrashPage())),
+            ),
             SettingsRow(
               icon: CupertinoIcons.arrow_clockwise,
               title: '清除本地缓存并重新同步',
