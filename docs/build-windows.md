@@ -163,7 +163,7 @@ flutter build windows --release
 |---|---|
 | `syncnotes.exe` | 主程序 |
 | `flutter_windows.dll` | Flutter 引擎 |
-| 其他 `*.dll`（如 `tray_manager_plugin.dll`、`window_manager_plugin.dll`、`local_notifier_plugin.dll` 等） | 各插件的原生代码，必须和 exe 放在一起 |
+| 其他 `*.dll`（如 `tray_manager_plugin.dll`、`window_manager_plugin.dll` 以及通知等插件的 DLL） | 各插件的原生代码，必须和 exe 放在一起 |
 | `data\app.so` | 编译后的 Dart 代码 |
 | `data\icudtl.dat` | 文字和国际化数据 |
 | `data\flutter_assets\` | 图标、字体，以及 Liquid Glass 玻璃效果的**着色器**（`shaders\` 等） |
