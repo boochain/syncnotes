@@ -117,6 +117,11 @@ jobs:
           cp target/${{ matrix.target }}/release/syncnotes-server${{ matrix.ext }} ../pkg/$PKG/
           cp ../README.md ../LICENSE ../pkg/$PKG/
           cp -r ../deploy ../pkg/$PKG/deploy
+          # Linux 包附带一键管理脚本（与程序放在同一目录）
+          if [ -z "${{ matrix.ext }}" ]; then
+            cp ../scripts/syncnotes-server.sh ../pkg/$PKG/
+            chmod +x ../pkg/$PKG/syncnotes-server.sh
+          fi
           cd ../pkg
           if [ "${{ matrix.ext }}" = ".exe" ]; then
             7z a -tzip ../dist/$PKG.zip $PKG >/dev/null
