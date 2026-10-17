@@ -54,6 +54,8 @@ CREATE TABLE IF NOT EXISTS blocks (
     updated_at INTEGER NOT NULL,
     created_by TEXT NOT NULL,
     deleted INTEGER NOT NULL DEFAULT 0,
+    deleted_at INTEGER,
+    deleted_by TEXT,
     seq INTEGER NOT NULL,
     PRIMARY KEY (user_id, id)
 );
@@ -92,6 +94,8 @@ fn row_to_block(r: &rusqlite::Row) -> rusqlite::Result<Block> {
         updated_at: r.get("updated_at")?,
         created_by: r.get("created_by")?,
         deleted: r.get::<_, i64>("deleted")? != 0,
+        deleted_at: r.get("deleted_at")?,
+        deleted_by: r.get("deleted_by")?,
         seq: r.get("seq")?,
     })
 }
@@ -109,9 +113,27 @@ impl Storage {
 
     fn init(conn: Connection) -> rusqlite::Result<Self> {
         conn.execute_batch(SCHEMA)?;
+        Self::migrate(&conn)?;
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
         })
+    }
+
+    /// Backward-compatible migration: add recycle-bin columns to pre-trash databases.
+    fn migrate(conn: &Connection) -> rusqlite::Result<()> {
+        let cols: Vec<String> = conn
+            .prepare("PRAGMA table_info(blocks)")?
+            .query_map([], |r| r.get::<_, String>(1))?
+            .collect::<rusqlite::Result<_>>()?;
+        for (name, ty) in [("deleted_at", "INTEGER"), ("deleted_by", "TEXT")] {
+            if !cols.iter().any(|c| c == name) {
+                conn.execute_batch(&format!("ALTER TABLE blocks ADD COLUMN {name} {ty}"))?;
+            }
+        }
+        conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_blocks_trash ON blocks(deleted_at) WHERE deleted_at IS NOT NULL AND deleted = 0",
+        )?;
+        Ok(())
     }
 
     fn next_seq(conn: &Connection, user_id: &str) -> rusqlite::Result<i64> {
@@ -225,6 +247,7 @@ impl Storage {
         viewed_mode: ViewedMode,
         client_updated_at: i64,
         deleted: bool,
+        deleted_at: Option<Option<i64>>,
     ) -> rusqlite::Result<UpsertOutcome> {
         let conn = self.conn.lock().unwrap();
         let existing = Self::get_block_inner(&conn, user_id, id)?;
@@ -249,18 +272,27 @@ impl Storage {
         } else {
             viewed_global
         };
+        let (deleted_at, deleted_by) = match (deleted_at, &existing) {
+            // Old client (field absent): keep current recycle-bin state.
+            (None, Some(b)) => (b.deleted_at, b.deleted_by.clone()),
+            (None, None) | (Some(None), _) => (None, None),
+            (Some(Some(t)), Some(b)) if b.deleted_at.is_some() => (Some(t), b.deleted_by.clone()),
+            (Some(Some(t)), _) => (Some(t), Some(device_id.to_string())),
+        };
         conn.execute(
             "INSERT INTO blocks(id, user_id, kind, title, payload, parent_id, viewed_mode, viewed_global,
-                                created_at, updated_at, created_by, deleted, seq)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+                                created_at, updated_at, created_by, deleted, seq, deleted_at, deleted_by)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
              ON CONFLICT(user_id, id) DO UPDATE SET
                kind = excluded.kind, title = excluded.title, payload = excluded.payload,
                parent_id = excluded.parent_id, viewed_mode = excluded.viewed_mode,
                viewed_global = excluded.viewed_global, updated_at = excluded.updated_at,
-               deleted = excluded.deleted, seq = excluded.seq",
+               deleted = excluded.deleted, seq = excluded.seq,
+               deleted_at = excluded.deleted_at, deleted_by = excluded.deleted_by",
             params![
                 id, user_id, kind, title, payload_s, parent_id, viewed_mode.as_str(),
-                viewed_global as i64, created_at, client_updated_at, created_by, deleted as i64, seq
+                viewed_global as i64, created_at, client_updated_at, created_by, deleted as i64, seq,
+                deleted_at, deleted_by
             ],
         )?;
         let b = Self::get_block_inner(&conn, user_id, id)?.expect("just inserted");
@@ -356,5 +388,52 @@ impl Storage {
             )
             .optional()?
             .unwrap_or(0))
+    }
+
+    // ---------- recycle bin ----------
+
+    /// Permanently delete `root` and all its descendants (tombstones, new seq each).
+    /// Returns every block that changed state (root included if it wasn't already a tombstone),
+    /// plus the root itself when it was already a tombstone so callers can clean its blob.
+    pub fn purge_tree(&self, user_id: &str, root: &str) -> rusqlite::Result<Vec<Block>> {
+        let conn = self.conn.lock().unwrap();
+        let mut out = Vec::new();
+        let mut stack = vec![root.to_string()];
+        let mut seen = std::collections::HashSet::new();
+        while let Some(id) = stack.pop() {
+            if !seen.insert(id.clone()) {
+                continue;
+            }
+            if let Some(b) = Self::get_block_inner(&conn, user_id, &id)? {
+                if !b.deleted {
+                    let seq = Self::next_seq(&conn, user_id)?;
+                    conn.execute(
+                        "UPDATE blocks SET deleted = 1, seq = ?1, updated_at = MAX(updated_at, ?2)
+                         WHERE user_id = ?3 AND id = ?4",
+                        params![seq, now_ms(), user_id, id],
+                    )?;
+                    out.push(Self::get_block_inner(&conn, user_id, &id)?.unwrap());
+                } else if id == root {
+                    out.push(b);
+                }
+            }
+            let mut st =
+                conn.prepare("SELECT id FROM blocks WHERE user_id = ?1 AND parent_id = ?2")?;
+            let kids = st.query_map(params![user_id, id], |r| r.get::<_, String>(0))?;
+            for k in kids {
+                stack.push(k?);
+            }
+        }
+        Ok(out)
+    }
+
+    /// Recycle-bin entries (user_id, block_id) trashed before `cutoff_ms`.
+    pub fn expired_trash(&self, cutoff_ms: i64) -> rusqlite::Result<Vec<(String, String)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut st = conn.prepare(
+            "SELECT user_id, id FROM blocks WHERE deleted = 0 AND deleted_at IS NOT NULL AND deleted_at < ?1",
+        )?;
+        let rows = st.query_map(params![cutoff_ms], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        rows.collect()
     }
 }

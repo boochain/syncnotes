@@ -83,7 +83,15 @@ pub struct Block {
     pub created_at: i64,
     pub updated_at: i64,
     pub created_by: String,
+    /// Permanently deleted tombstone (purged from the recycle bin).
     pub deleted: bool,
+    /// Soft delete: when set, the block is in the recycle bin (回收站).
+    /// Descendants of a trashed folder stay untouched and are hidden/restored with it.
+    #[serde(default)]
+    pub deleted_at: Option<i64>,
+    /// Device that moved the block to the recycle bin.
+    #[serde(default)]
+    pub deleted_by: Option<String>,
     /// Monotonic server sequence for ordering / offline replay.
     pub seq: i64,
 }
