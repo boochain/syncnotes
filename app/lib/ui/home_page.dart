@@ -84,7 +84,8 @@ class _HomePageState extends State<HomePage> {
                   ),
                   if (!widget.embedded) ...[
                     const SizedBox(width: Gap.m),
-                    ListenableBuilder(listenable: s.sync, builder: (c, _) => ConnectionBadge(sync: s.sync, dotOnly: true)),
+                    // 窄屏 + 触屏 48dp 按钮时，状态文字可以被压缩（省略号），不溢出
+                    Flexible(child: ListenableBuilder(listenable: s.sync, builder: (c, _) => ConnectionBadge(sync: s.sync, dotOnly: true))),
                   ],
                 ]),
         ),
@@ -250,14 +251,14 @@ class ConnectionBadge extends StatelessWidget {
                 SizedBox.square(dimension: 16, child: Center(child: dot)),
                 // 在线且没有待同步时只显示圆点；其余状态把文字也露出来（离线 / 待同步一眼可见）
                 if (sync.state != ConnState.online || pending > 0)
-                  ConstrainedBox(
+                  Flexible(child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 120),
                     child: Text(text,
                         key: const Key('connLabel'),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(color: c.text3)),
-                  ),
+                  )),
               ])
             : Row(mainAxisSize: MainAxisSize.min, children: [
                 dot,

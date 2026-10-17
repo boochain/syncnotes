@@ -91,8 +91,14 @@ void main() {
 
   testWidgets('home header: buttons 32, centred with the title in a 44 bar; filter tabs 28 centred in 44 row', (tester) async {
     await pump(tester, const Size(400, 760));
-    sameRow(tester, [find.byKey(const Key('menuButton')), find.byKey(const Key('homeSearch')), find.byKey(const Key('homeSettings'))],
-        Sizes.control, why: 'header');
+    // 视觉尺寸 32（按钮的 Material 外观）；触屏点击区扩大到 48 宽、占满 44 高的顶栏
+    Finder visual(String k) => find.descendant(of: find.byKey(Key(k)), matching: find.byType(Material)).first;
+    sameRow(tester, [visual('menuButton'), visual('homeSearch'), visual('homeSettings')], Sizes.control, why: 'header');
+    for (final k in ['menuButton', 'homeSearch', 'homeSettings']) {
+      final hit = r(tester, find.byKey(Key(k)));
+      expect(hit.width, greaterThanOrEqualTo(48), reason: '$k touch target width');
+      expect(hit.height, greaterThanOrEqualTo(Sizes.bar - 1), reason: '$k touch target height');
+    }
     expect(r(tester, find.byKey(const Key('homeTitle'))).center.dy, closeTo(r(tester, find.byKey(const Key('homeSearch'))).center.dy, 1));
     final tabs = ['all', 'msg', 'page', 'file'].map((k) => find.byKey(Key('filter-$k'))).toList();
     sameRow(tester, tabs, Sizes.compact, why: 'filter');
@@ -183,7 +189,9 @@ void main() {
         await pump(tester, size, loggedIn: false, dark: dark, scale: 1.3);
         expectClean(tester, 'login');
         await pump(tester, size, loggedIn: false, dark: dark);
-        expect(r(tester, find.byKey(const Key('loginButton'))).height, Sizes.bar);
+        // 视觉 44；触屏点击区 48（MaterialTapTargetSize.padded）
+        expect(r(tester, find.descendant(of: find.byKey(const Key('loginButton')), matching: find.byType(Material)).first).height, Sizes.bar);
+        expect(r(tester, find.byKey(const Key('loginButton'))).height, greaterThanOrEqualTo(48));
         expect(r(tester, find.byKey(const Key('userField'))).center.dy, isNotNull);
         final form = r(tester, find.byKey(const Key('loginForm')));
         expect(form.height, closeTo(3 * Sizes.bar + 2 + 2, 0.01)); // 3 行 + 2 分隔线 + 上下边框

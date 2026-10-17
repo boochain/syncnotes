@@ -11,6 +11,8 @@ ThemeData buildAppTheme(Brightness b, {DesignLanguage? language}) {
   final dark = b == Brightness.dark;
   // 触屏平台（Android / iOS）：按下水波纹反馈（Material 3）；桌面用悬停高亮，不要水波纹
   final touch = defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS;
+  // 触屏：可点区域至少 48dp（Material 无障碍要求）；按钮视觉尺寸不变，只扩大点击区。桌面保持紧凑。
+  final tapTarget = touch ? MaterialTapTargetSize.padded : MaterialTapTargetSize.shrinkWrap;
   final c = dark ? AppColors.dark : AppColors.light;
 
   final cs = ColorScheme(
@@ -72,7 +74,7 @@ ThemeData buildAppTheme(Brightness b, {DesignLanguage? language}) {
         shape: WidgetStatePropertyAll(RoundedRectangleBorder(borderRadius: rM)),
         textStyle: WidgetStatePropertyAll(text.labelLarge),
         visualDensity: VisualDensity.standard,
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        tapTargetSize: tapTarget,
       );
 
   return ThemeData(
@@ -85,7 +87,7 @@ ThemeData buildAppTheme(Brightness b, {DesignLanguage? language}) {
     textTheme: text,
     primaryTextTheme: text,
     visualDensity: VisualDensity.standard,
-    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    materialTapTargetSize: tapTarget,
     scaffoldBackgroundColor: c.bg,
     canvasColor: c.bg,
     cardColor: c.bg,
@@ -117,7 +119,7 @@ ThemeData buildAppTheme(Brightness b, {DesignLanguage? language}) {
         iconSize: Sizes.iconMd,
         foregroundColor: c.text2,
         shape: RoundedRectangleBorder(borderRadius: rS),
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        tapTargetSize: tapTarget,
       ),
     ),
     dividerTheme: DividerThemeData(color: c.separator, space: 1, thickness: 1),
@@ -160,7 +162,7 @@ ThemeData buildAppTheme(Brightness b, {DesignLanguage? language}) {
         fixedSize: const WidgetStatePropertyAll(Size.fromHeight(Sizes.control)),
         minimumSize: const WidgetStatePropertyAll(Size(0, Sizes.control)),
         visualDensity: VisualDensity.standard,
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        tapTargetSize: tapTarget,
         textStyle: WidgetStatePropertyAll(text.bodyMedium),
         iconSize: const WidgetStatePropertyAll(Sizes.iconSm),
         shape: WidgetStatePropertyAll(RoundedRectangleBorder(borderRadius: rM)),
@@ -184,7 +186,7 @@ ThemeData buildAppTheme(Brightness b, {DesignLanguage? language}) {
       fillColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? c.accent : Colors.transparent),
       checkColor: const WidgetStatePropertyAll(Colors.white),
       visualDensity: VisualDensity.compact,
-      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      materialTapTargetSize: tapTarget,
     ),
     switchTheme: SwitchThemeData(
       // [HIG] 开关：开启 systemGreen；关闭 systemFill
@@ -193,7 +195,7 @@ ThemeData buildAppTheme(Brightness b, {DesignLanguage? language}) {
       thumbColor: const WidgetStatePropertyAll(Colors.white),
       trackOutlineColor: const WidgetStatePropertyAll(Colors.transparent),
       thumbIcon: const WidgetStatePropertyAll(null),
-      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      materialTapTargetSize: tapTarget,
     ),
     radioTheme: RadioThemeData(fillColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? c.accent : c.text3)),
     progressIndicatorTheme: ProgressIndicatorThemeData(color: c.accent, linearTrackColor: c.fill, circularTrackColor: Colors.transparent),

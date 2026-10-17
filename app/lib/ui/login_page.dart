@@ -104,7 +104,8 @@ class _LoginPageState extends State<LoginPage> {
             decoration: InputDecoration.collapsed(hintText: hint).copyWith(filled: false, semanticCounterText: label),
           ),
         ),
-        ?suffix,
+        // 行高固定 44：触屏 48 点击区只向宽度扩展，不把这一行撑高（同列各行等高）
+        if (suffix != null) SizedBox(height: Sizes.bar, child: Center(child: suffix)),
         const SizedBox(width: Gap.xs),
       ]),
     );
