@@ -80,6 +80,18 @@
 
 服务器只有一个可执行文件，数据保存在一个 SQLite 文件和一个文件目录中。
 
+### 一键管理脚本（Linux，推荐）
+
+从下一个版本起，Linux 服务器压缩包里附带 `syncnotes-server.sh`（也可以从仓库的 `scripts/` 目录下载，和 `syncnotes-server` 程序放在同一目录）。解压后运行：
+
+```bash
+sudo ./syncnotes-server.sh            # 打开中文菜单：临时运行 / 持久运行 / 安装为服务并开机自启 / 停止 / 状态 / 更新 / 卸载
+sudo ./syncnotes-server.sh install    # 直接安装为系统服务并开机自启（会逐项询问端口、目录等，回车用默认值）
+sudo ./syncnotes-server.sh update ./syncnotes-server-v0.5.0-linux-x86_64.tar.gz   # 升级，失败自动回滚
+```
+
+脚本会自动找出旧的安装（旧的 systemd 服务、用 nohup 或手动启动的进程及其数据库），先备份数据库再迁移到 `/opt/syncnotes`。配置保存在 `/etc/syncnotes/syncnotes.env`。详细说明见 [`docs/server-script.md`](docs/server-script.md)。
+
 ### 方式 1：直接运行预编译文件（推荐）
 
 到 [Releases](../../releases) 下载对应平台的服务器：
