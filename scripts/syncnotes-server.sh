@@ -13,6 +13,11 @@
 #   logs [-f]        查看日志（-f 持续跟踪）
 #   update [路径]    更新 / 替换为新版程序（失败自动回滚）
 #   uninstall        卸载
+#   rescue           忘记密码 / 数据救援菜单
+#   list-users       列出用户
+#   reset-password <用户名>     重置密码（自动生成临时密码，登录后强制修改；数据不变）
+#   export <用户名> [输出.zip]  导出用户全部数据（含回收站和附件）
+#   backup           在线备份数据库（服务运行中也安全）
 # 选项：
 #   -y, --yes        全部使用默认值 / 上次保存的配置，不再提问（适合脚本调用）
 #   --open-firewall  防火墙已启用时放行端口（默认从不修改防火墙；防火墙未启用时什么也不做）
@@ -28,7 +33,7 @@ ENV_FILE="$ENV_DIR/syncnotes.env"
 UNIT_NAME="syncnotes"
 UNIT_DIR="${SYNCNOTES_UNIT_DIR:-/etc/systemd/system}"
 UNIT_FILE="$UNIT_DIR/$UNIT_NAME.service"
-SVC_USER="syncnotes"
+SVC_USER="${SYNCNOTES_SVC_USER:-syncnotes}"
 BIN_NAME="syncnotes-server"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT_PATH="$SCRIPT_DIR/$(basename "${BASH_SOURCE[0]}")"
@@ -726,6 +731,95 @@ cmd_uninstall() {
     info "已卸载程序，数据保留在 $CFG_DB、$CFG_FILES，配置保留在 $ENV_FILE（重新安装时会自动使用）"
   fi
 }
+# ---------------------------------------------------------------- 忘记密码 / 数据救援
+rescue_bin() { # 结果放到 RESCUE_BIN；需要支持 admin 子命令的新版程序
+  load_config
+  RESCUE_BIN=""
+  if [ -x "$BIN" ]; then RESCUE_BIN=$BIN
+  elif command -v "$BIN_NAME" >/dev/null 2>&1; then RESCUE_BIN=$(command -v "$BIN_NAME")
+  else die "没有找到 $BIN_NAME（$BIN）。请先安装服务器"; fi
+  "$RESCUE_BIN" admin --help >/dev/null 2>&1 || die "$RESCUE_BIN 版本过旧，不支持救援功能，请先「更新 / 替换为新版」"
+  [ -f "$CFG_DB" ] || die "数据库不存在：$CFG_DB（检查 $ENV_FILE 中的 SYNCNOTES_DB）"
+}
+rescue_admin() { # 以服务用户运行 admin 子命令，避免生成 root 所有的 -wal/-shm 文件
+  as_user "$RESCUE_BIN" admin "$@" --db "$CFG_DB" --files-dir "$CFG_FILES"
+}
+valid_username() { [[ "$1" =~ ^[[:alnum:]_-]{1,32}$ ]]; }
+cmd_list_users() { rescue_bin; title "用户列表"; rescue_admin list-users; }
+cmd_backup() {
+  rescue_bin
+  local dst; dst="$CFG_DB.bak-$(date +%Y%m%d-%H%M%S)"
+  rescue_admin backup "$dst" || die "备份失败"
+  info "已备份数据库：$dst（服务运行中也是一致的快照）"
+}
+cmd_reset_password() {
+  local user=${1-}
+  rescue_bin
+  if [ -z "$user" ]; then
+    rescue_admin list-users
+    ask user "要重置密码的用户名" ""
+  fi
+  { [ -n "$user" ] && valid_username "$user"; } || die "用户名无效：$user"
+  title "重置 $user 的密码"
+  echo "  · 只修改密码，所有笔记、文件、回收站、已读状态都不变"
+  echo "  · 该用户所有已登录的设备会退出，需要用新密码重新登录（未同步的本地修改会在登录后继续上传）"
+  confirm_danger "确认重置 $user 的密码？" || { info "已取消"; return 1; }
+  cmd_backup
+  local p1="" p2=""
+  if [ "$ASSUME_YES" != 1 ] && [ -t 0 ] && ! ask_yn "自动生成临时密码？（选 n 则手动输入）" y; then
+    while true; do
+      read -r -s -p "新密码（至少 4 位）: " p1 || true; echo
+      read -r -s -p "再输入一次: " p2 || true; echo
+      [ "${#p1}" -ge 4 ] && [ "$p1" = "$p2" ] && break
+      err "两次输入不一致或少于 4 位"
+    done
+    printf '%s\n' "$p1" | rescue_admin reset-password "$user" --password-stdin || die "重置失败"
+  else
+    rescue_admin reset-password "$user" || die "重置失败"
+  fi
+  info "请把密码告诉 $user，登录后会被要求立即设置新密码，并建议在「设置 → 账号」重新生成恢复码"
+}
+cmd_export() {
+  local user=${1-} out=${2-}
+  rescue_bin
+  if [ -z "$user" ]; then
+    rescue_admin list-users
+    ask user "要导出的用户名" ""
+  fi
+  { [ -n "$user" ] && valid_username "$user"; } || die "用户名无效：$user"
+  [ -n "$out" ] || out="$PWD/syncnotes-export-$user-$(date +%Y%m%d-%H%M%S).zip"
+  case "$out" in /*) ;; *) out="$PWD/$out" ;; esac
+  [ -e "$out" ] && die "文件已存在：$out"
+  local tmp; tmp=$(mktemp -d); TMP_DIRS+=("$tmp")
+  [ "$(id -u)" -eq 0 ] && id "$SVC_USER" >/dev/null 2>&1 && chown "$SVC_USER" "$tmp"
+  rescue_admin export "$user" "$tmp/export.zip" || die "导出失败"
+  mv -f "$tmp/export.zip" "$out" || die "无法写入 $out"
+  chmod 600 "$out"
+  [ -n "${SUDO_USER-}" ] && chown "$SUDO_USER" "$out" 2>/dev/null
+  info "已导出到 $out（含 JSON、Markdown、附件；可用任何解压软件打开）"
+}
+rescue_menu() {
+  while true; do
+    title "忘记密码 / 数据救援"
+    cat <<MENU
+  1) 列出用户
+  2) 重置用户密码（数据不变）
+  3) 导出用户全部数据（zip：JSON + Markdown + 附件，含回收站）
+  4) 备份数据库
+  0) 返回
+MENU
+    local c="" u="" o=""; read -r -p "请选择 [0-4]: " c || return 0
+    case "$c" in
+      1) cmd_list_users ;;
+      2) cmd_reset_password ;;
+      3) cmd_list_users; ask u "用户名" ""; ask o "保存到" "$PWD/syncnotes-export-$u.zip"; cmd_export "$u" "$o" ;;
+      4) cmd_backup ;;
+      0|q) return 0 ;;
+      *) echo "无效选项" ;;
+    esac
+  done
+}
+
 print_summary() {
   local ip; ip=$(hostname -I 2>/dev/null | awk '{print $1}')
   title "完成"
@@ -747,9 +841,10 @@ menu() {
   6) 状态 / 日志
   7) 更新 / 替换为新版
   8) 卸载
+  9) 忘记密码 / 数据救援
   0) 退出
 MENU
-    local c=""; read -r -p "请选择 [0-8]: " c || exit 0
+    local c=""; read -r -p "请选择 [0-9]: " c || exit 0
     case "$c" in
       1) cmd_run ;;
       2) cmd_start ;;
@@ -759,16 +854,21 @@ MENU
       6) cmd_status; ask_yn "查看最近日志？" y && cmd_logs ;;
       7) local p=""; read -r -p "新版程序或 .tar.gz 的路径（回车使用脚本旁边的 $BIN_NAME）: " p || true; cmd_update "$p" ;;
       8) cmd_uninstall ;;
+      9) rescue_menu ;;
       0|q) exit 0 ;;
       *) echo "无效选项" ;;
     esac
   done
 }
 
+main_rescue() { local c=$1; shift; case "$c" in
+  list|list-users|users) cmd_list_users ;; reset|reset-password) cmd_reset_password "$@" ;;
+  export) cmd_export "$@" ;; backup) cmd_backup ;; *) die "未知救援命令：$c（可用：list-users reset export backup）" ;; esac; }
+
 main() {
   need_root "$@"
   local args=() a
-  for a in "$@"; do case "$a" in -y|--yes) ASSUME_YES=1 ;; --open-firewall) OPEN_FW=1 ;; -h|--help) sed -n '2,21p' "$SCRIPT_PATH" | sed 's/^# \{0,1\}//'; exit 0 ;; *) args+=("$a") ;; esac; done
+  for a in "$@"; do case "$a" in -y|--yes) ASSUME_YES=1 ;; --open-firewall) OPEN_FW=1 ;; -h|--help) sed -n '2,26p' "$SCRIPT_PATH" | sed 's/^# \{0,1\}//'; exit 0 ;; *) args+=("$a") ;; esac; done
   set -- "${args[@]+"${args[@]}"}"
   local cmd=${1-menu}; shift || true
   case "$cmd" in
@@ -783,7 +883,12 @@ main() {
     logs) cmd_logs "$@" ;;
     update|upgrade) cmd_update "$@" ;;
     uninstall|remove) cmd_uninstall ;;
-    *) err "未知命令：$cmd"; sed -n '2,21p' "$SCRIPT_PATH" | sed 's/^# \{0,1\}//'; exit 1 ;;
+    rescue) if [ $# -eq 0 ]; then rescue_menu; else main_rescue "$@"; fi ;;
+    list-users|users) cmd_list_users ;;
+    reset-password|reset) cmd_reset_password "$@" ;;
+    export) cmd_export "$@" ;;
+    backup) cmd_backup ;;
+    *) err "未知命令：$cmd"; sed -n '2,26p' "$SCRIPT_PATH" | sed 's/^# \{0,1\}//'; exit 1 ;;
   esac
 }
 [ "${SYNCNOTES_SOURCE_ONLY:-0}" = 1 ] || main "$@"
