@@ -238,11 +238,8 @@ Future<void> showBlockMenu(BuildContext context, Block block) async {
             Navigator.pop(c);
             final ids = s.sync.delete(block.id);
             // 删除不再静默发生：提示条里可以撤销
-            messenger?.hideCurrentSnackBar();
-            messenger?.showSnackBar(SnackBar(
-              content: Text('已删除“${block.title.isEmpty ? type.label : block.title}”', maxLines: 1, overflow: TextOverflow.ellipsis),
-              action: SnackBarAction(label: '撤销', onPressed: () => s.sync.restoreAll(ids)),
-            ));
+            showToast(context, '已删除“${block.title.isEmpty ? type.label : block.title}”',
+                messenger: messenger, actionLabel: '撤销', onAction: () => s.sync.restoreAll(ids));
           }),
         ]),
       ),

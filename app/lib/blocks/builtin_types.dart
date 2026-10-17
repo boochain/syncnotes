@@ -1,4 +1,5 @@
 import 'dart:io';
+import '../ui/ds.dart';
 import '../ui/tokens.dart';
 
 import 'package:file_picker/file_picker.dart';
@@ -38,11 +39,7 @@ void registerBuiltinTypes() {
   BlockTypes.register(UnknownType());
 }
 
-void _toast(BuildContext context, String msg) {
-  ScaffoldMessenger.maybeOf(context)
-    ?..hideCurrentSnackBar()
-    ..showSnackBar(SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating));
-}
+void _toast(BuildContext context, String msg) => showToast(context, msg);
 
 // ------------------------------------------------------------------ message
 

@@ -550,9 +550,7 @@ class BlockRowState extends State<BlockRow> {
                     icon: const Icon(CupertinoIcons.doc_on_doc, size: Sizes.iconSm),
                     onPressed: () async {
                       await Clipboard.setData(ClipboardData(text: _ctrl.text));
-                      if (context.mounted) {
-                        ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(content: Text('代码已复制'), duration: Duration(seconds: 2)));
-                      }
+                      if (context.mounted) showToast(context, '代码已复制');
                     },
                   ),
                 ),
@@ -991,7 +989,7 @@ class _ImageBlock extends StatelessWidget {
                 doc.setPayload(block.id, {'file_id': id, 'name': f.name});
               } catch (e) {
                 if (context.mounted) {
-                  ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text('上传失败（需在线）：$e')));
+                  showToast(context, '上传失败（需在线）：$e');
                 }
               }
             },

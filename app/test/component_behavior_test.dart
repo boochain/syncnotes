@@ -70,6 +70,18 @@ void main() {
     expect(find.byKey(const ValueKey('card-m2')), findsOneWidget);
   });
 
+  testWidgets('undo snackbar auto-dismisses after a few seconds', (tester) async {
+    await pump(tester);
+    await tester.tap(find.descendant(of: find.byKey(const ValueKey('card-m2')), matching: find.byKey(const Key('cardMore'))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('menuDelete')));
+    await tester.pumpAndSettle();
+    expect(find.text('撤销'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+    expect(find.text('撤销'), findsNothing);
+  });
+
   testWidgets('filter tabs filter; create menu opens and closes with Esc', (tester) async {
     await pump(tester);
     await tester.tap(find.byKey(const Key('filter-file')));

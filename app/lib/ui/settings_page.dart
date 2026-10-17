@@ -146,7 +146,7 @@ class _SettingsPageState extends State<SettingsPage> {
               onTap: () async {
                 await s.sync.clearLocal(keepPending: true);
                 s.sync.reconnectNow();
-                if (context.mounted) ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(content: Text('已清除本地缓存，正在重新同步')));
+                if (context.mounted) showToast(context, '已清除本地缓存，正在重新同步');
               },
             ),
             SettingsRow(
