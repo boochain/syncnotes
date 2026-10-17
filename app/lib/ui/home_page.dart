@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'ds.dart';
 import 'tokens.dart';
 
 import '../app_scope.dart';
@@ -36,77 +37,108 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     final s = AppScope.of(context);
-    return Scaffold(
-      appBar: AppBar(
-        leading: widget.onMenu == null ? null : IconButton(key: const Key('menuButton'), icon: const Icon(CupertinoIcons.sidebar_left), tooltip: '菜单', onPressed: widget.onMenu),
-        titleSpacing: widget.onMenu == null ? 16 : 0,
-        title: AnimatedSwitcher(
-          duration: Motion.short4,
+    final c = AppColors.of(context);
+    final tt = Theme.of(context).textTheme;
+    // 顶栏 44：左右按钮都是 32×32，标题 16/600，全部垂直居中
+    final bar = Container(
+      height: Sizes.bar,
+      padding: const EdgeInsets.symmetric(horizontal: Gap.s),
+      decoration: BoxDecoration(color: c.bg, border: Border(bottom: BorderSide(color: c.separator))),
+      child: Row(children: [
+        if (widget.onMenu != null)
+          IconButton(key: const Key('menuButton'), icon: const Icon(CupertinoIcons.sidebar_left), tooltip: '菜单', onPressed: widget.onMenu)
+        else
+          const SizedBox(width: Gap.s),
+        const SizedBox(width: Gap.xs),
+        Expanded(
           child: _searching
-              ? TextField(
-                  key: const ValueKey('search'),
-                  autofocus: true,
-                  onChanged: (v) => setState(() => _filter = v),
-                  decoration: const InputDecoration(hintText: '搜索…', border: InputBorder.none),
+              ? SizedBox(
+                  height: Sizes.control,
+                  child: TextField(
+                    key: const ValueKey('search'),
+                    autofocus: true,
+                    style: tt.bodyMedium,
+                    onChanged: (v) => setState(() => _filter = v),
+                    decoration: const InputDecoration(
+                      hintText: '搜索…',
+                      prefixIcon: Icon(CupertinoIcons.search, size: Sizes.iconSm),
+                      prefixIconConstraints: BoxConstraints(minWidth: Sizes.control, minHeight: Sizes.control),
+                      contentPadding: EdgeInsets.symmetric(horizontal: Gap.m, vertical: (Sizes.control - 20) / 2),
+                    ),
+                  ),
                 )
               : Row(key: const ValueKey('title'), children: [
-                  Text(widget.embedded ? '收件箱' : 'SyncNotes'),
-                  const SizedBox(width: 10),
-                  if (!widget.embedded) Flexible(child: ListenableBuilder(listenable: s.sync, builder: (c, _) => ConnectionBadge(sync: s.sync))),
+                  Flexible(
+                    child: Text(widget.embedded ? '收件箱' : 'SyncNotes',
+                        key: const Key('homeTitle'), maxLines: 1, overflow: TextOverflow.ellipsis, style: tt.titleMedium),
+                  ),
+                  if (!widget.embedded) ...[
+                    const SizedBox(width: Gap.m),
+                    ListenableBuilder(listenable: s.sync, builder: (c, _) => ConnectionBadge(sync: s.sync, dotOnly: true)),
+                  ],
                 ]),
         ),
-        actions: [
-          IconButton(
-            tooltip: _searching ? '关闭搜索' : '搜索',
-            icon: Icon(_searching ? CupertinoIcons.xmark : CupertinoIcons.search),
-            onPressed: () => setState(() {
-              _searching = !_searching;
-              _filter = '';
-            }),
-          ),
-          if (isDesktop)
-            ValueListenableBuilder<bool>(
-              valueListenable: DesktopShell.instance.expanded,
-              builder: (c, ex, _) => IconButton(
-                tooltip: ex ? '收起为小窗' : '展开窗口',
-                icon: Icon(ex ? CupertinoIcons.arrow_down_right_arrow_up_left : CupertinoIcons.arrow_up_left_arrow_down_right),
-                onPressed: DesktopShell.instance.toggleExpanded,
-              ),
+        const SizedBox(width: Gap.xs),
+        IconButton(
+          key: const Key('homeSearch'),
+          tooltip: _searching ? '关闭搜索' : '搜索',
+          icon: Icon(_searching ? CupertinoIcons.xmark : CupertinoIcons.search),
+          onPressed: () => setState(() {
+            _searching = !_searching;
+            _filter = '';
+          }),
+        ),
+        if (isDesktop)
+          ValueListenableBuilder<bool>(
+            valueListenable: DesktopShell.instance.expanded,
+            builder: (c, ex, _) => IconButton(
+              tooltip: ex ? '收起为小窗' : '展开窗口',
+              icon: Icon(ex ? CupertinoIcons.arrow_down_right_arrow_up_left : CupertinoIcons.arrow_up_left_arrow_down_right),
+              onPressed: DesktopShell.instance.toggleExpanded,
             ),
-          if (!widget.embedded)
+          ),
+        if (!widget.embedded)
           IconButton(
+            key: const Key('homeSettings'),
             tooltip: '设置',
             icon: const Icon(CupertinoIcons.gear),
-            onPressed: () => Navigator.of(context)
-                .push(MaterialPageRoute(builder: (_) => const SettingsPage())),
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SettingsPage())),
           ),
-        ],
-      ),
-      body: RefreshIndicator(
-        onRefresh: () async => s.sync.reconnectNow(),
+      ]),
+    );
+    return Scaffold(
+      backgroundColor: c.bg,
+      body: SafeArea(
+        bottom: false,
         child: Column(children: [
+          bar,
+          // 筛选行 44：标签 28 高、垂直居中
           SizedBox(
-            height: 44,
+            height: Sizes.bar,
             child: ListView(
+              key: const Key('filterRow'),
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: Gap.l, vertical: (Sizes.bar - Sizes.compact) / 2),
               children: [
                 for (final e in _kinds.entries)
                   Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: ChoiceChip(
+                    padding: const EdgeInsets.only(right: Gap.xs),
+                    child: FilterTab(
                       key: Key('filter-${e.key}'),
-                      label: Text(e.value.$1),
+                      label: e.value.$1,
                       selected: _kind == e.key,
-                      showCheckmark: false,
-                      visualDensity: VisualDensity.compact,
-                      onSelected: (_) => setState(() => _kind = e.key),
+                      onTap: () => setState(() => _kind = e.key),
                     ),
                   ),
               ],
             ),
           ),
-          Expanded(child: BlockList(filter: _filter, kinds: _kinds[_kind]!.$2)),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: () async => s.sync.reconnectNow(),
+              child: BlockList(filter: _filter, kinds: _kinds[_kind]!.$2),
+            ),
+          ),
         ]),
       ),
       bottomNavigationBar: const QuickSendBar(),
@@ -114,41 +146,88 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
+/// 筛选标签（Notion 视图标签样式）：高 28，圆角 6，选中为中性灰底 + 500 字重
+class FilterTab extends StatefulWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const FilterTab({super.key, required this.label, required this.selected, required this.onTap});
+  @override
+  State<FilterTab> createState() => _FilterTabState();
+}
+
+class _FilterTabState extends State<FilterTab> {
+  bool _hover = false;
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    final tt = Theme.of(context).textTheme;
+    return Semantics(
+      button: true,
+      selected: widget.selected,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hover = true),
+        onExit: (_) => setState(() => _hover = false),
+        child: GestureDetector(
+          onTap: widget.onTap,
+          child: AnimatedContainer(
+            duration: Motion.short2,
+            height: Sizes.compact,
+            padding: const EdgeInsets.symmetric(horizontal: Gap.m + 2),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: widget.selected ? c.selected : (_hover ? c.hover : Colors.transparent),
+              borderRadius: BorderRadius.circular(AppRadius.s),
+            ),
+            child: Text(widget.label,
+                maxLines: 1,
+                style: (widget.selected ? tt.labelLarge : tt.bodyMedium)?.copyWith(color: widget.selected ? c.text : c.text2)),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class ConnectionBadge extends StatelessWidget {
   final SyncClient sync;
-  const ConnectionBadge({super.key, required this.sync});
+
+  /// 只显示 8px 圆点（顶栏 / 侧边栏用）；完整状态在提示里
+  final bool dotOnly;
+  const ConnectionBadge({super.key, required this.sync, this.dotOnly = false});
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final c = AppColors.of(context);
     final (color, label) = switch (sync.state) {
-      ConnState.online => (Colors.green, '在线'),
-      ConnState.connecting => (Colors.orange, '连接中'),
-      ConnState.authError => (cs.error, '登录失效'),
-      ConnState.offline => (cs.outline, '离线'),
+      ConnState.online => (c.success, '在线'),
+      ConnState.connecting => (c.warning, '连接中'),
+      ConnState.authError => (c.danger, '登录失效'),
+      ConnState.offline => (c.text3, '离线'),
     };
     final pending = sync.pendingCount;
+    final text = pending > 0 ? '$label · $pending 待同步' : label;
+    final dot = AnimatedContainer(
+      key: const Key('connDot'),
+      duration: Motion.medium2,
+      width: 8,
+      height: 8,
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+    );
     return Tooltip(
-      message: sync.lastError ?? label,
-      child: AnimatedContainer(
-        duration: Motion.medium2,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          AnimatedContainer(
-            duration: Motion.medium2,
-            width: 7,
-            height: 7,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 5),
-          Flexible(child: Text(pending > 0 ? '$label · $pending 待同步' : label,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(color: color))),
-        ]),
+      message: sync.lastError ?? text,
+      child: Semantics(
+        label: '连接状态：$text',
+        child: dotOnly
+            ? SizedBox.square(dimension: 16, child: Center(child: dot))
+            : Row(mainAxisSize: MainAxisSize.min, children: [
+                dot,
+                const SizedBox(width: Gap.s),
+                Flexible(
+                  child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall),
+                ),
+              ]),
       ),
     );
   }

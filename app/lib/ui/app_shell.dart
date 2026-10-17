@@ -1,3 +1,4 @@
+import 'ds.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'tokens.dart';
@@ -11,7 +12,6 @@ import 'home_page.dart';
 import 'quick_switcher.dart';
 import 'settings_page.dart';
 import 'sidebar.dart';
-import 'glass.dart';
 
 /// 宽屏断点：≥ 720 显示常驻侧边栏，否则使用抽屉。
 const wideBreakpoint = 720.0;
@@ -127,21 +127,22 @@ class AppShellState extends State<AppShell> implements PageHost {
               ),
             ),
           );
-          return GlassBackdrop(
-            child: Scaffold(
-              key: _scaffold,
-              drawer: _wide ? null : Drawer(width: 300, backgroundColor: Colors.transparent, child: Glass(radius: 24, margin: const EdgeInsets.all(8), child: sidebar)),
-              body: _wide
-                  ? Padding(
-                      padding: const EdgeInsets.all(10),
-                      child: Row(children: [
-                        SizedBox(width: 260, child: Glass(radius: 22, child: sidebar)),
-                        const SizedBox(width: 10),
-                        Expanded(child: Glass(radius: 22, strong: true, child: _RebuildingHome(home: home, navKey: _navKey, child: content))),
-                      ]),
-                    )
-                  : Glass(radius: 0, strong: true, child: _RebuildingHome(home: home, navKey: _navKey, child: content)),
-            ),
+          final pal = AppColors.of(context);
+          // 布局照 Notion / AppFlowy：侧边栏与内容区平铺，中间一条细分隔线；纯色背景
+          return Scaffold(
+            key: _scaffold,
+            backgroundColor: pal.bg,
+            drawer: _wide ? null : Drawer(child: SafeArea(child: sidebar)),
+            body: _wide
+                ? Row(children: [
+                    Container(
+                      width: Sizes.sidebarWidth,
+                      decoration: BoxDecoration(color: pal.sidebar, border: Border(right: BorderSide(color: pal.separator))),
+                      child: sidebar,
+                    ),
+                    Expanded(child: _RebuildingHome(home: home, navKey: _navKey, child: content)),
+                  ])
+                : _RebuildingHome(home: home, navKey: _navKey, child: content),
           );
         }),
       ),
