@@ -10,7 +10,7 @@ use tracing_subscriber::EnvFilter;
 use syncnotes_server::{AppState, Storage};
 
 #[derive(Parser, Debug)]
-#[command(name = "syncnotes-server", about = "SyncNotes 实时同步服务器")]
+#[command(name = "syncnotes-server", version, about = "SyncNotes 实时同步服务器")]
 struct Args {
     /// Listen address
     #[arg(long, env = "SYNCNOTES_BIND", default_value = "0.0.0.0:7700")]
