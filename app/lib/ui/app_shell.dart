@@ -13,6 +13,7 @@ import '../pages/page_screen.dart';
 import '../platform/desktop.dart';
 import '../platform/notifications.dart';
 import 'back_handler.dart';
+import 'block_card.dart' show showCreateMenu;
 import 'home_page.dart';
 import 'quick_switcher.dart';
 import 'settings_page.dart';
@@ -128,6 +129,25 @@ class AppShellState extends State<AppShell> implements PageHost {
     return false;
   }
 
+  Future<void> newItem() async {
+    final ctx = _navKey.currentContext;
+    if (ctx != null) await showCreateMenu(ctx);
+  }
+
+  Future<void> closeCurrent() async {
+    final nav = _navKey.currentState;
+    if (nav != null && nav.canPop()) {
+      nav.pop();
+      if (!_wide && !nav.canPop() && _page != null) setState(() => _page = null);
+      return;
+    }
+    if (_page != null) {
+      _select(null);
+      return;
+    }
+    if (isDesktop) DesktopShell.instance.onWindowClose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final sync = AppScope.of(context).sync;
@@ -142,6 +162,9 @@ class AppShellState extends State<AppShell> implements PageHost {
         const SingleActivator(LogicalKeyboardKey.keyF, control: true): openSwitcher,
         const SingleActivator(LogicalKeyboardKey.comma, control: true): _settings,
         const SingleActivator(LogicalKeyboardKey.comma, meta: true): _settings,
+        // Ctrl+N 新建；Ctrl+W 关闭当前页面（没有页面时关闭窗口）
+        const SingleActivator(LogicalKeyboardKey.keyN, control: true): newItem,
+        const SingleActivator(LogicalKeyboardKey.keyW, control: true): closeCurrent,
       },
       child: Focus(
         autofocus: true,

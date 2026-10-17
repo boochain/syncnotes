@@ -267,4 +267,32 @@ void main() {
     expect(find.text('通知里的消息'), findsNothing);
     expect(find.byKey(const Key('homeTitle')), findsOneWidget);
   });
+
+  Future<void> ctrl(WidgetTester tester, LogicalKeyboardKey k) async {
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(k);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('desktop: Ctrl+N opens the create menu', (tester) async {
+    await pumpApp(tester, size: const Size(1200, 800));
+    await ctrl(tester, LogicalKeyboardKey.keyN);
+    expect(find.byKey(const Key('create-folder')), findsOneWidget);
+  });
+
+  testWidgets('desktop: Ctrl+W closes settings, then the open page', (tester) async {
+    await pumpApp(tester, size: const Size(1200, 800));
+    await tester.tap(find.byKey(const Key('newRootPage')));
+    await tester.pumpAndSettle();
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('pageTitle')), findsOneWidget);
+    await ctrl(tester, LogicalKeyboardKey.keyW);
+    expect(find.byKey(const Key('pageTitle')), findsNothing);
+    await ctrl(tester, LogicalKeyboardKey.comma);
+    expect(find.text('退出登录', skipOffstage: false), findsOneWidget);
+    await ctrl(tester, LogicalKeyboardKey.keyW);
+    expect(find.text('退出登录', skipOffstage: false), findsNothing);
+  });
 }
