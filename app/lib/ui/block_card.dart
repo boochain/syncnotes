@@ -101,8 +101,9 @@ class _BlockCardState extends State<BlockCard> {
                   Text(preview, key: const Key('cardPreview'), maxLines: 1, overflow: TextOverflow.ellipsis, style: tt.bodySmall?.copyWith(color: c.text2)),
                 ]),
               ),
-              SizedBox.square(
-                dimension: Sizes.compact,
+              // 视觉 28；触屏点击区 48×48（TouchTarget），图形位置不变
+              TouchTarget(
+                size: Sizes.compact,
                 child: IconButton(
                   key: const Key('cardMore'),
                   style: IconButton.styleFrom(fixedSize: const Size.square(Sizes.compact), minimumSize: const Size.square(Sizes.compact)),

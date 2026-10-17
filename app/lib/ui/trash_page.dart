@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../app_scope.dart';
 import '../blocks/block_type.dart';
@@ -47,7 +48,7 @@ class _TrashPageState extends State<TrashPage> {
     final t = BlockTypes.of(b.kind);
     if (b.title.trim().isNotEmpty) return shortTitle(b.title, 60);
     final p = t.previewText(context, b).trim();
-    return p.isEmpty ? '无标题${t.label}' : shortTitle(p, 60);
+    return p.isEmpty ? '无标题${trashTypeLabel(b.kind)}' : shortTitle(p, 60);
   }
 
   void _restore(List<String> ids) {
@@ -98,7 +99,19 @@ class _TrashPageState extends State<TrashPage> {
         final q = _query.trim().toLowerCase();
         final items = q.isEmpty ? all : all.where((b) => _title(b).toLowerCase().contains(q)).toList();
         final selecting = _selected.isNotEmpty;
-        return Scaffold(
+        // 返回键 / Esc：多选模式下先退出多选，再返回上一页
+        return PopScope(
+          canPop: !selecting,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop) setState(_selected.clear);
+          },
+          child: CallbackShortcuts(
+          bindings: {
+            const SingleActivator(LogicalKeyboardKey.escape): () {
+              if (_selected.isNotEmpty) setState(_selected.clear);
+            },
+          },
+          child: Scaffold(
           appBar: AppBar(
             title: Text(selecting ? '已选择 ${_selected.length} 项' : '回收站'),
             actions: [
@@ -192,11 +205,16 @@ class _TrashPageState extends State<TrashPage> {
               ),
             ],
           ),
+        ),
+          ),
         );
       },
     );
   }
 }
+
+/// 回收站里显示的类型名：页面类条目显示“页面”（新建菜单里同一类型叫“笔记”）
+String trashTypeLabel(BlockKind kind) => kind == BlockKind.page ? '页面' : BlockTypes.of(kind).label;
 
 class _TrashRow extends StatelessWidget {
   final Block block;
@@ -224,7 +242,7 @@ class _TrashRow extends StatelessWidget {
     final type = BlockTypes.of(block.kind);
     final kids = block.kind == BlockKind.folder || block.kind == BlockKind.page ? s.sync.trashChildCount(block.id) : 0;
     final meta = [
-      type.label,
+      trashTypeLabel(block.kind),
       if (kids > 0) '含 $kids 项',
       '${relTime(block.deletedAt ?? 0)}删除',
       deviceLabel(s.sync, block.deletedBy),
@@ -290,12 +308,12 @@ class _TrashRow extends StatelessWidget {
                       child: const Text('恢复'),
                     ),
                   ),
-                  SizedBox(
-                    width: Sizes.compact,
-                    height: Sizes.compact,
+                  TouchTarget(
+                    size: Sizes.compact,
                     child: IconButton(
                       key: Key('trashPurge-${block.id}'),
                       tooltip: '彻底删除',
+                      style: IconButton.styleFrom(fixedSize: const Size.square(Sizes.compact), minimumSize: const Size.square(Sizes.compact)),
                       padding: EdgeInsets.zero,
                       iconSize: Sizes.iconSm,
                       icon: Icon(CupertinoIcons.delete, color: c.danger),

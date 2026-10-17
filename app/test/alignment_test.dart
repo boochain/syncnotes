@@ -83,9 +83,11 @@ void main() {
       expect(tester.getSize(find.byWidget(e.widget)).height, Sizes.listRow, reason: '${e.widget.key}');
     }
     // 卡片内：标题与时间在同一基线行，“更多”按钮 28 并与卡片垂直居中
-    final more = r(tester, find.byKey(const Key('cardMore')).first);
+    // 视觉 28（按钮外观）；触屏点击区 48（TouchTarget）
+    final more = r(tester, find.descendant(of: find.byKey(const Key('cardMore')).first, matching: find.byType(Material)).first);
     final card = r(tester, cards.first);
     expect(more.height, Sizes.compact);
+    expect(r(tester, find.byKey(const Key('cardMore')).first).height, greaterThanOrEqualTo(48));
     expect(more.center.dy, closeTo(card.center.dy, 0.51));
   });
 

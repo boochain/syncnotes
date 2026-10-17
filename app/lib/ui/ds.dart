@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/cupertino.dart';
 // SyncNotes v0.4 设计系统：一套调色板、一套字阶、一套高度、一套圆角、一套间距、一套图标。
@@ -345,3 +346,25 @@ void showToast(BuildContext context, String message,
 
 /// 只有真正的鼠标才显示悬停态：触屏（含模拟器触摸、手写笔）上悬停高亮会"粘住"不消失。
 bool isMouseHover(PointerEvent e) => e.kind == PointerDeviceKind.mouse;
+
+bool get isTouchPlatform => defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS;
+
+/// 行尾的小按钮（视觉 [size]，如 28）：触屏上点击区扩大到 48×48，视觉位置不变。
+/// [child] 应是带 `fixedSize: size` 样式的按钮：主题在触屏上用 MaterialTapTargetSize.padded，
+/// 按钮在 48 的格子里会把整个 48×48 的点击都转发给自己。布局多出的宽度用平移移到行尾外侧。
+class TouchTarget extends StatelessWidget {
+  final double size;
+  final Widget child;
+  const TouchTarget({super.key, required this.size, required this.child});
+  static const minTouch = 48.0;
+  @override
+  Widget build(BuildContext context) {
+    if (!isTouchPlatform || size >= minTouch) return SizedBox.square(dimension: size, child: child);
+    final rtl = Directionality.of(context) == TextDirection.rtl;
+    final dx = (minTouch - size) / 2;
+    return Transform.translate(
+      offset: Offset(rtl ? -dx : dx, 0),
+      child: SizedBox.square(dimension: minTouch, child: Center(child: child)),
+    );
+  }
+}

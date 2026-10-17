@@ -181,8 +181,9 @@ class _RecoveryCodeDialogState extends State<RecoveryCodeDialog> {
   Widget build(BuildContext context) {
     final pal = AppColors.of(context);
     final tt = Theme.of(context).textTheme;
+    // 返回键：勾选“我已保存”之前不能关闭（和“完成”按钮一致）
     return PopScope(
-      canPop: false,
+      canPop: _ack,
       child: AlertDialog(
         key: const Key('recoveryCodeDialog'),
         title: const Text('请保存你的恢复码'),
@@ -323,8 +324,9 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
   Widget build(BuildContext context) {
     final pal = AppColors.of(context);
     final tt = Theme.of(context).textTheme;
+    // 返回键 = “取消”/“返回登录”按钮（强制改密时回到登录页，不会进入应用）；提交中不响应
     return PopScope(
-      canPop: !widget.forced,
+      canPop: !_busy,
       child: AlertDialog(
         key: const Key('changePasswordDialog'),
         title: Text(widget.forced ? '请设置新密码' : '修改密码'),
@@ -490,7 +492,15 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
   Widget build(BuildContext context) {
     final pal = AppColors.of(context);
     final tt = Theme.of(context).textTheme;
-    return Scaffold(
+    // 桌面：Esc / Ctrl+W 返回登录页
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.escape): () => Navigator.of(context).maybePop(),
+        const SingleActivator(LogicalKeyboardKey.keyW, control: true): () => Navigator.of(context).maybePop(),
+      },
+      child: Focus(
+      autofocus: true,
+      child: Scaffold(
       backgroundColor: pal.bg,
       appBar: AppBar(title: const Text('忘记密码')),
       body: Center(
@@ -551,6 +561,8 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
           ),
         ),
       ),
+    ),
+    ),
     );
   }
 }
