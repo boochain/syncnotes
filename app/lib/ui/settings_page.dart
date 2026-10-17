@@ -9,6 +9,8 @@ import '../platform/android_service.dart';
 import '../platform/desktop.dart';
 import '../sync/sync_client.dart';
 import 'ds.dart';
+import 'recovery_ui.dart';
+import '../services/local_export.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -66,6 +68,30 @@ class _SettingsPageState extends State<SettingsPage> {
                     '同步序号 ${s.sync.lastSeq} · 待发送 ${s.sync.pendingCount} · 设备 ${st.deviceId.length > 8 ? st.deviceId.substring(0, 8) : st.deviceId}',
                 trailing: TextButton(onPressed: s.sync.reconnectNow, child: const Text('重连')),
               ),
+            ),
+            SettingsRow(
+              key: const Key('settingsRecoveryCode'),
+              icon: CupertinoIcons.lock_shield,
+              title: '生成 / 重置恢复码',
+              subtitle: '忘记密码时用于自助重置，生成后旧恢复码失效',
+              onTap: () => generateRecoveryCodeFlow(context,
+                  api: s.api, server: st.server!, token: st.token!, username: st.username ?? ''),
+            ),
+            SettingsRow(
+              key: const Key('settingsChangePassword'),
+              icon: CupertinoIcons.lock_rotation,
+              title: '修改密码',
+              onTap: () async {
+                final ok = await showChangePasswordDialog(context, api: s.api, server: st.server!, token: st.token!);
+                if (ok != null && context.mounted) showToast(context, '密码已修改，其他设备需要重新登录');
+              },
+            ),
+            SettingsRow(
+              key: const Key('settingsExportData'),
+              icon: CupertinoIcons.arrow_down_doc,
+              title: '导出我的数据',
+              subtitle: '把本机缓存的全部笔记、回收站和附件导出为 zip（不需要服务器）',
+              onTap: () => exportMyData(context, s),
             ),
             const SettingsSection('外观'),
             Padding(

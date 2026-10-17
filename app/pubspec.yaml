@@ -30,6 +30,7 @@ dependencies:
   url_launcher: ^6.3.3
   liquid_glass_widgets: ^1.13.0
   cupertino_icons: ^1.0.9
+  archive: ^4.5.2
 
 dev_dependencies:
   flutter_test:
