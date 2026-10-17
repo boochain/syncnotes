@@ -12,6 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../app_scope.dart';
 import '../models/block.dart';
+import '../ui/ds.dart';
 import '../ui/glass.dart';
 import 'commands.dart';
 import 'doc.dart';
@@ -375,8 +376,8 @@ class BlockRowState extends State<BlockRow> {
 
   TextStyle _style(BuildContext context) {
     final tt = Theme.of(context).textTheme;
-    final cs = Theme.of(context).colorScheme;
-    final body = tt.bodyLarge!.merge(EditorType.body.style).copyWith(color: cs.onSurface);
+    final c = AppColors.of(context);
+    final body = tt.bodyLarge!.merge(EditorType.body.style).copyWith(color: c.text);
     switch (type) {
       case DocType.h1:
         return body.merge(EditorType.h1.style);
@@ -390,7 +391,7 @@ class BlockRowState extends State<BlockRow> {
         return body.merge(EditorType.code.style).copyWith(fontFamily: FontTokens.mono, fontFamilyFallback: FontTokens.monoFallback);
       case DocType.todo:
         return block.payload['checked'] == true
-            ? body.copyWith(color: cs.outline, decoration: TextDecoration.lineThrough, decorationColor: cs.outline)
+            ? body.copyWith(color: c.text3, decoration: TextDecoration.lineThrough, decorationColor: c.text3)
             : body;
       default:
         return body;
@@ -442,28 +443,34 @@ class BlockRowState extends State<BlockRow> {
           onChanged: _onChanged,
           decoration: InputDecoration.collapsed(
             hintText: _placeholder(),
-            hintStyle: _style(context).copyWith(color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.6)),
+            hintStyle: _style(context).copyWith(color: AppColors.of(context).text3.withValues(alpha: 0.7)),
           ).copyWith(enabledBorder: InputBorder.none, focusedBorder: InputBorder.none, filled: false),
         ),
       ),
     );
   }
 
+  /// 当前块首行的行高（手柄、复选框、项目符号都按它垂直居中）
+  double lineBox(BuildContext context) {
+    final st = _style(context);
+    return (st.fontSize ?? 16) * (st.height ?? 1.5);
+  }
+
   Widget _prefix(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final pal = AppColors.of(context);
     final st = _style(context);
     final lineBox = (st.fontSize ?? 16) * (st.height ?? 1.5);
-    Widget box(Widget c) => SizedBox(width: 26, height: lineBox, child: Center(child: c));
+    Widget box(Widget c) => SizedBox(width: Gap.x3, height: lineBox, child: Center(child: c));
     switch (type) {
       case DocType.bullet:
         final glyph = ['•', '◦', '▪'][widget.row.depth % 3];
-        return box(Text(glyph, style: st.copyWith(fontSize: 18)));
+        return box(Text(glyph, textScaler: TextScaler.noScaling, style: st.copyWith(fontSize: 18, height: 1.0, color: pal.text)));
       case DocType.numbered:
         return box(Text('${widget.row.number}.', style: st.copyWith(fontFeatures: const [FontFeature.tabularFigures()])));
       case DocType.todo:
         return box(SizedBox(
-          width: 20,
-          height: 20,
+          width: 18,
+          height: 18,
           child: Checkbox(
             key: ValueKey('check-${block.id}'),
             value: block.payload['checked'] == true,
@@ -476,12 +483,15 @@ class BlockRowState extends State<BlockRow> {
         final collapsed = block.payload['collapsed'] == true;
         return box(InkWell(
           key: ValueKey('toggle-${block.id}'),
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: BorderRadius.circular(AppRadius.xs),
           onTap: () => doc.setPayload(block.id, {'collapsed': !collapsed}),
-          child: AnimatedRotation(
-            turns: collapsed ? 0 : 0.25,
-            duration: Motion.short4,
-            child: Icon(Icons.play_arrow_rounded, size: 18, color: cs.onSurfaceVariant),
+          child: SizedBox.square(
+            dimension: Sizes.iconMd,
+            child: AnimatedRotation(
+              turns: collapsed ? 0 : 0.25,
+              duration: Motion.short4,
+              child: Icon(CupertinoIcons.play_arrow_solid, size: 12, color: pal.text2),
+            ),
           ),
         ));
       default:
@@ -490,7 +500,7 @@ class BlockRowState extends State<BlockRow> {
   }
 
   Widget _content(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final pal = AppColors.of(context);
     final dark = Theme.of(context).brightness == Brightness.dark;
     switch (type) {
       case DocType.divider:
@@ -500,9 +510,9 @@ class BlockRowState extends State<BlockRow> {
           child: GestureDetector(
             onTap: () => _focus.requestFocus(),
             child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              color: _focus.hasFocus ? cs.primary.withValues(alpha: 0.08) : Colors.transparent,
-              child: Divider(height: 1, thickness: 1, color: cs.outlineVariant),
+              padding: const EdgeInsets.symmetric(vertical: Gap.l),
+              color: _focus.hasFocus ? pal.selected : Colors.transparent,
+              child: Divider(height: 1, thickness: 1, color: pal.separator),
             ),
           ),
         );
@@ -510,34 +520,45 @@ class BlockRowState extends State<BlockRow> {
         return Focus(focusNode: _focus, onKeyEvent: _onKey, child: _ImageBlock(doc: doc, block: block, selected: _focus.hasFocus));
       case DocType.code:
         final lang = (block.payload['lang'] ?? 'plaintext') as String;
+        // 代码块（AppFlowy / Notion）：中性灰底、圆角 8；顶部一行 28 高放语言与复制按钮
         return Container(
-          decoration: BoxDecoration(
-            color: dark ? const Color(0xFF282C34) : const Color(0xFFF6F8FA),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.5)),
-          ),
-          padding: const EdgeInsets.fromLTRB(14, 6, 10, 12),
+          key: ValueKey('code-${block.id}'),
+          decoration: BoxDecoration(color: pal.fill, borderRadius: BorderRadius.circular(AppRadius.m)),
+          padding: const EdgeInsets.fromLTRB(Gap.xl, Gap.xs, Gap.xs, Gap.l),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              PopupMenuButton<String>(
-                tooltip: '选择语言',
-                initialValue: lang,
-                onSelected: (v) => doc.setPayload(block.id, {'lang': v}),
-                itemBuilder: (_) => [for (final l in codeLanguages) PopupMenuItem(value: l, child: Text(l))],
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Text(lang, style: TextStyle(fontSize: 12, color: cs.outline)),
+            SizedBox(
+              height: Sizes.compact,
+              child: Row(children: [
+                PopupMenuButton<String>(
+                  tooltip: '选择语言',
+                  initialValue: lang,
+                  onSelected: (v) => doc.setPayload(block.id, {'lang': v}),
+                  itemBuilder: (_) => [for (final l in codeLanguages) PopupMenuItem(height: Sizes.control, value: l, child: Text(l))],
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Text(lang, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: pal.text2)),
+                    const SizedBox(width: 2),
+                    Icon(CupertinoIcons.chevron_down, size: 10, color: pal.text3),
+                  ]),
                 ),
-              ),
-              const Spacer(),
-              IconButton(
-                tooltip: '复制代码',
-                visualDensity: VisualDensity.compact,
-                iconSize: 16,
-                icon: const Icon(Icons.copy_rounded),
-                onPressed: () => Clipboard.setData(ClipboardData(text: _ctrl.text)),
-              ),
-            ]),
+                const Spacer(),
+                SizedBox.square(
+                  dimension: Sizes.compact,
+                  child: IconButton(
+                    key: ValueKey('copyCode-${block.id}'),
+                    tooltip: '复制代码',
+                    style: IconButton.styleFrom(fixedSize: const Size.square(Sizes.compact), minimumSize: const Size.square(Sizes.compact)),
+                    icon: const Icon(CupertinoIcons.doc_on_doc, size: Sizes.iconSm),
+                    onPressed: () async {
+                      await Clipboard.setData(ClipboardData(text: _ctrl.text));
+                      if (context.mounted) {
+                        ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(content: Text('代码已复制'), duration: Duration(seconds: 2)));
+                      }
+                    },
+                  ),
+                ),
+              ]),
+            ),
+            const SizedBox(height: Gap.xs),
             AnimatedCrossFade(
               duration: Motion.short3,
               crossFadeState: _focus.hasFocus || _ctrl.text.isEmpty ? CrossFadeState.showFirst : CrossFadeState.showSecond,
@@ -551,7 +572,7 @@ class BlockRowState extends State<BlockRow> {
                     language: lang,
                     theme: {
                       ...(dark ? atomOneDarkTheme : githubTheme),
-                      'root': TextStyle(backgroundColor: Colors.transparent, color: dark ? const Color(0xFFABB2BF) : const Color(0xFF24292E)),
+                      'root': TextStyle(backgroundColor: Colors.transparent, color: pal.text),
                     },
                     textStyle: EditorType.code.style.copyWith(fontFamily: FontTokens.mono, fontFamilyFallback: FontTokens.monoFallback),
                   ),
@@ -562,27 +583,27 @@ class BlockRowState extends State<BlockRow> {
         );
       case DocType.quote:
         return Container(
-          padding: const EdgeInsets.only(left: 14),
-          decoration: BoxDecoration(border: Border(left: BorderSide(color: cs.onSurface, width: 3))),
+          padding: const EdgeInsets.only(left: Gap.l + 2),
+          decoration: BoxDecoration(border: Border(left: BorderSide(color: pal.text, width: 3))),
           child: _textField(context),
         );
       case DocType.callout:
         final icon = (block.payload['icon'] ?? '💡') as String;
+        // 提示框（Notion 灰色 callout）：中性灰底、圆角 8；emoji 与首行文字同一行高、垂直居中
         return Container(
-          padding: const EdgeInsets.fromLTRB(12, 12, 14, 12),
-          decoration: BoxDecoration(
-            // Notion 灰色提示框：浅色 ≈ #F1F1EF，深色 ≈ 白 6%（叠在玻璃上用半透明实现）
-            color: dark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFF37352F).withValues(alpha: 0.05),
-            borderRadius: BorderRadius.circular(Radii.small - 2),
-          ),
+          key: ValueKey('callout-${block.id}'),
+          padding: const EdgeInsets.fromLTRB(Gap.l, Gap.l, Gap.xl, Gap.l),
+          decoration: BoxDecoration(color: pal.fill, borderRadius: BorderRadius.circular(AppRadius.m)),
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             InkWell(
+              borderRadius: BorderRadius.circular(AppRadius.xs),
               onTap: () async {
                 final e = await pickEmoji(context);
                 if (e != null) doc.setPayload(block.id, {'icon': e});
               },
-              child: Padding(padding: const EdgeInsets.only(right: 10, top: 1), child: Text(icon, style: const TextStyle(fontSize: 20))),
+              child: SizedBox(width: lineBox(context), height: lineBox(context), child: Center(child: Emoji(icon, size: Sizes.iconMd))),
             ),
+            const SizedBox(width: Gap.m),
             Expanded(child: _textField(context)),
           ]),
         );
@@ -598,7 +619,6 @@ class BlockRowState extends State<BlockRow> {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
     if (widget.row.isPage) return _PageLinkRow(doc: doc, page: block, index: widget.index);
     final topPad = switch (type) {
       DocType.h1 => 18.0,
@@ -643,8 +663,10 @@ class BlockRowState extends State<BlockRow> {
             AnimatedOpacity(
               duration: Motion.short3,
               opacity: showGutter ? (touch && !_focus.hasFocus ? 0.35 : 1) : 0,
-              child: SizedBox(
+              child: Container(
                 width: gutterWidth(context),
+                // 手柄（24 高）与首行文字垂直居中
+                padding: EdgeInsets.only(top: 3 + ((lineBox(context) - 24) / 2).clamp(0.0, 99.0) + (type == DocType.code ? Gap.xs : 0) + (type == DocType.callout ? Gap.l : 0)),
                 child: Row(mainAxisAlignment: MainAxisAlignment.end, children: [
                   if (!touch && gutterWidth(context) >= 44)
                     _GutterButton(
@@ -661,7 +683,7 @@ class BlockRowState extends State<BlockRow> {
                       child: _GutterButton(
                         key: ValueKey('handle-${block.id}'),
                         tooltip: '拖动排序 / 点击打开菜单',
-                        icon: Icons.drag_indicator,
+                        icon: null,
                         onTap: () => _blockMenu(context),
                         cursor: SystemMouseCursors.grab,
                       ),
@@ -671,17 +693,12 @@ class BlockRowState extends State<BlockRow> {
               ),
             ),
             Expanded(
-              child: AnimatedContainer(
-                duration: Motion.short3,
-                decoration: BoxDecoration(
-                  color: _hover && !touch && !_focus.hasFocus ? cs.onSurface.withValues(alpha: 0.025) : Colors.transparent,
-                  borderRadius: BorderRadius.circular(4),
-                ),
+              child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 2),
                 child: _content(context),
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: Gap.m),
           ]),
         ),
       ),
@@ -695,11 +712,11 @@ class BlockRowState extends State<BlockRow> {
       context: context,
       position: RelativeRect.fromLTRB(pos.dx, pos.dy, pos.dx + 1, pos.dy + 1),
       items: [
-        const PopupMenuItem(value: 'delete', child: ListTile(leading: Icon(CupertinoIcons.trash), title: Text('删除'), dense: true)),
-        const PopupMenuItem(value: 'dup', child: ListTile(leading: Icon(CupertinoIcons.doc_on_doc), title: Text('复制一份'), dense: true)),
-        const PopupMenuDivider(),
+        menuItem(context, 'dup', CupertinoIcons.doc_on_doc, '复制一份'),
+        menuItem(context, 'delete', CupertinoIcons.trash, '删除', danger: true),
+        const PopupMenuDivider(height: Gap.m + 1),
         for (final c in slashCommands.where((c) => c.type != null && isTextual(c.type!)))
-          PopupMenuItem(value: 'type:${c.type!.name}', child: ListTile(leading: Icon(c.icon), title: Text('转换为${c.label}'), dense: true)),
+          menuItem(context, 'type:${c.type!.name}', c.icon, '转换为${c.label}'),
       ],
     );
     if (v == null) return;
@@ -717,27 +734,57 @@ class BlockRowState extends State<BlockRow> {
 
 class _GutterButton extends StatelessWidget {
   final String tooltip;
-  final IconData icon;
+  final IconData? icon; // null = 六点拖动手柄
   final VoidCallback onTap;
   final MouseCursor cursor;
   const _GutterButton({super.key, required this.tooltip, required this.icon, required this.onTap, this.cursor = SystemMouseCursors.click});
 
   @override
-  Widget build(BuildContext context) => Tooltip(
-        message: tooltip,
-        waitDuration: const Duration(milliseconds: 600),
-        child: MouseRegion(
-          cursor: cursor,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(4),
-            onTap: onTap,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 1),
-              child: Icon(icon, size: 18, color: Theme.of(context).colorScheme.outline),
-            ),
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    return Tooltip(
+      message: tooltip,
+      waitDuration: const Duration(milliseconds: 600),
+      child: MouseRegion(
+        cursor: cursor,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppRadius.xs),
+          hoverColor: c.hover,
+          onTap: onTap,
+          child: SizedBox(
+            width: 20,
+            height: 24,
+            child: Center(child: icon == null ? DragDots(color: c.text3) : Icon(icon, size: Sizes.iconSm, color: c.text3)),
           ),
         ),
-      );
+      ),
+    );
+  }
+}
+
+/// 六点拖动手柄（Notion / AppFlowy 的 ⋮⋮ 字形），自绘以免混用第二套图标
+class DragDots extends StatelessWidget {
+  final Color color;
+  const DragDots({super.key, required this.color});
+  @override
+  Widget build(BuildContext context) => CustomPaint(size: const Size(10, 14), painter: _DotsPainter(color));
+}
+
+class _DotsPainter extends CustomPainter {
+  final Color color;
+  _DotsPainter(this.color);
+  @override
+  void paint(Canvas canvas, Size size) {
+    final p = Paint()..color = color;
+    for (var col = 0; col < 2; col++) {
+      for (var row = 0; row < 3; row++) {
+        canvas.drawCircle(Offset(2 + col * 6.0, 2 + row * 5.0), 1.5, p);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DotsPainter old) => old.color != color;
 }
 
 /// "/" 命令菜单
@@ -749,72 +796,81 @@ class SlashMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final c = AppColors.of(context);
+    final tt = Theme.of(context).textTheme;
     final list = filterCommands(query);
+    final maxW = (MediaQuery.sizeOf(context).width - 72).clamp(200.0, 300.0);
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0, end: 1),
       duration: Motion.medium4,
       curve: springCurve,
       builder: (_, t, child) => Opacity(
           opacity: t.clamp(0.0, 1.0),
-          child: Transform.scale(scale: 0.92 + 0.08 * t, alignment: Alignment.topLeft, child: child)),
+          child: Transform.scale(scale: 0.96 + 0.04 * t, alignment: Alignment.topLeft, child: child)),
       child: Glass(
         key: const Key('slashMenu'),
-        radius: 16,
-        strong: true,
+        radius: AppRadius.l,
         child: Material(
-        type: MaterialType.transparency,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 300, maxHeight: 320),
-          child: ListView.builder(
-            padding: const EdgeInsets.symmetric(vertical: 6),
-            shrinkWrap: true,
-            itemCount: list.length,
-            itemBuilder: (context, i) {
-              final c = list[i];
-              final sel = i == selected;
-              return InkWell(
-                onTap: () => onSelect(c),
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 6),
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: sel ? cs.primary.withValues(alpha: 0.1) : Colors.transparent,
-                    borderRadius: BorderRadius.circular(6),
+          type: MaterialType.transparency,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: maxW, minWidth: maxW, maxHeight: 320),
+            child: list.isEmpty
+                ? SizedBox(
+                    height: Sizes.bar,
+                    child: Center(child: Text('没有匹配的块类型', style: tt.bodyMedium?.copyWith(color: c.text3))),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.all(Gap.xs),
+                    shrinkWrap: true,
+                    itemCount: list.length,
+                    itemBuilder: (context, i) {
+                      final cmd = list[i];
+                      final sel = i == selected;
+                      // 每行 44：32 的图标方块 + 标题 / 说明两行
+                      return InkWell(
+                        key: ValueKey('slash-${cmd.label}'),
+                        borderRadius: BorderRadius.circular(AppRadius.s),
+                        onTap: () => onSelect(cmd),
+                        child: Container(
+                          height: Sizes.bar,
+                          padding: const EdgeInsets.symmetric(horizontal: Gap.s),
+                          decoration: BoxDecoration(
+                            color: sel ? c.selected : Colors.transparent,
+                            borderRadius: BorderRadius.circular(AppRadius.s),
+                          ),
+                          child: Row(children: [
+                            Container(
+                              width: Sizes.control,
+                              height: Sizes.control,
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: c.bg,
+                                border: Border.all(color: c.separator),
+                                borderRadius: BorderRadius.circular(AppRadius.s),
+                              ),
+                              child: switch (cmd.type) {
+                                // Notion：标题命令用 H1/H2/H3 字形而非同一个图标
+                                DocType.h1 || DocType.h2 || DocType.h3 => Text('H${cmd.type!.index}',
+                                    textScaler: TextScaler.noScaling,
+                                    style: TextStyle(fontSize: 13, height: 1.0, fontWeight: FontWeight.w600, color: c.text2)),
+                                _ => Icon(cmd.icon, size: Sizes.iconSm, color: c.text2),
+                              },
+                            ),
+                            const SizedBox(width: Gap.m),
+                            Expanded(
+                              child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                Text(cmd.label, maxLines: 1, overflow: TextOverflow.ellipsis, style: tt.bodyMedium?.copyWith(color: c.text, height: 1.25)),
+                                Text(cmd.hint, maxLines: 1, overflow: TextOverflow.ellipsis, style: tt.bodySmall?.copyWith(color: c.text3, height: 1.25)),
+                              ]),
+                            ),
+                          ]),
+                        ),
+                      );
+                    },
                   ),
-                  child: Row(children: [
-                    Container(
-                      width: 34,
-                      height: 34,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        // 深色下不再是纯黑方块：白 7% 填充 + 细描边
-                        color: Theme.of(context).brightness == Brightness.dark ? Colors.white.withValues(alpha: 0.07) : Colors.white.withValues(alpha: 0.85),
-                        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.6), width: 0.5),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: switch (c.type) {
-                        // Notion：标题命令用 H1/H2/H3 字形而非同一个图标
-                        DocType.h1 || DocType.h2 || DocType.h3 => Text('H${c.type!.index}',
-                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: cs.onSurfaceVariant)),
-                        _ => Icon(c.icon, size: 18, color: cs.onSurfaceVariant),
-                      },
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text(c.label, style: const TextStyle(fontSize: 14)),
-                        Text(c.hint, style: TextStyle(fontSize: 11.5, color: cs.outline)),
-                      ]),
-                    ),
-                  ]),
-                ),
-              );
-            },
           ),
         ),
       ),
-      )
     );
   }
 }
@@ -833,7 +889,7 @@ class _PageLinkRowState extends State<_PageLinkRow> {
   bool _hover = false;
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final c = AppColors.of(context);
     final icon = (widget.page.payload['icon'] ?? '📄') as String;
     return MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
@@ -850,29 +906,32 @@ class _PageLinkRowState extends State<_PageLinkRow> {
                 alignment: Alignment.centerRight,
                 child: ReorderableDragStartListener(
                   index: widget.index,
-                  child: Icon(Icons.drag_indicator, size: 18, color: cs.outline),
+                  child: SizedBox(width: 20, height: 24, child: Center(child: DragDots(color: c.text3))),
                 ),
               ),
             ),
           ),
           Expanded(
             child: InkWell(
-              borderRadius: BorderRadius.circular(4),
+              key: ValueKey('pageLink-${widget.page.id}'),
+              borderRadius: BorderRadius.circular(AppRadius.xs),
               onTap: () => openPage(context, widget.page.id),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
+              child: Container(
+                height: Sizes.control,
+                padding: const EdgeInsets.symmetric(horizontal: 2),
                 child: Row(children: [
-                  Text(icon, style: const TextStyle(fontSize: 17)),
-                  const SizedBox(width: 8),
+                  Emoji(icon, size: Sizes.iconMd),
+                  const SizedBox(width: Gap.s),
                   Flexible(
                     child: Text(
                       widget.page.title.isEmpty ? '无标题' : widget.page.title,
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 16,
+                      style: EditorType.body.style.copyWith(
+                        color: c.text,
                         fontWeight: FontWeight.w500,
                         decoration: TextDecoration.underline,
-                        decorationColor: cs.outlineVariant,
+                        decorationColor: c.separator,
                       ),
                     ),
                   ),
@@ -896,7 +955,7 @@ class _ImageBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final c = AppColors.of(context);
     final s = AppScope.of(context);
     final url = block.payload['url'] as String?;
     final fileId = block.payload['file_id'] as String?;
@@ -906,13 +965,21 @@ class _ImageBlock extends StatelessWidget {
     }
     if (src == null) {
       return Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(color: cs.surfaceContainerHighest.withValues(alpha: 0.6), borderRadius: BorderRadius.circular(8)),
-        child: Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
-          Icon(CupertinoIcons.photo, color: cs.outline),
-          Text('添加图片', style: TextStyle(color: cs.outline)),
-          FilledButton.tonalIcon(
-            icon: const Icon(Icons.upload, size: 16),
+        key: ValueKey('imagePlaceholder-${block.id}'),
+        padding: const EdgeInsets.all(Gap.l),
+        decoration: BoxDecoration(color: c.fill, borderRadius: BorderRadius.circular(AppRadius.m)),
+        child: Wrap(spacing: Gap.m, runSpacing: Gap.m, crossAxisAlignment: WrapCrossAlignment.center, children: [
+          SizedBox(
+            height: Sizes.control,
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(CupertinoIcons.photo, size: Sizes.iconMd, color: c.text2),
+              const SizedBox(width: Gap.m),
+              Text('添加图片', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: c.text2)),
+            ]),
+          ),
+          OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(fixedSize: const Size.fromHeight(Sizes.control), minimumSize: const Size(0, Sizes.control), backgroundColor: c.bg),
+            icon: const Icon(CupertinoIcons.cloud_upload, size: Sizes.iconSm),
             label: const Text('上传'),
             onPressed: () async {
               final files = await FilePicker.pickFiles(type: FileType.image);
@@ -930,7 +997,8 @@ class _ImageBlock extends StatelessWidget {
             },
           ),
           OutlinedButton.icon(
-            icon: const Icon(CupertinoIcons.link, size: 16),
+            style: OutlinedButton.styleFrom(fixedSize: const Size.fromHeight(Sizes.control), minimumSize: const Size(0, Sizes.control), backgroundColor: c.bg),
+            icon: const Icon(CupertinoIcons.link, size: Sizes.iconSm),
             label: const Text('图片链接'),
             onPressed: () async {
               final c = TextEditingController();
@@ -938,8 +1006,11 @@ class _ImageBlock extends StatelessWidget {
                 context: context,
                 builder: (d) => AlertDialog(
                   title: const Text('图片链接'),
-                  content: TextField(controller: c, autofocus: true, onSubmitted: (v) => Navigator.pop(d, v)),
-                  actions: [FilledButton(onPressed: () => Navigator.pop(d, c.text), child: const Text('确定'))],
+                  content: TextField(controller: c, autofocus: true, decoration: const InputDecoration(hintText: 'https://…'), onSubmitted: (v) => Navigator.pop(d, v)),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(d), child: const Text('取消')),
+                    FilledButton(onPressed: () => Navigator.pop(d, c.text), child: const Text('确定')),
+                  ],
                 ),
               );
               if (v != null && v.trim().isNotEmpty) doc.setPayload(block.id, {'url': v.trim()});
@@ -951,24 +1022,32 @@ class _ImageBlock extends StatelessWidget {
     return AnimatedContainer(
       duration: Motion.short3,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: selected ? cs.primary : Colors.transparent, width: 2),
+        borderRadius: BorderRadius.circular(AppRadius.m),
+        border: Border.all(color: selected ? c.accent : Colors.transparent, width: 2),
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(AppRadius.s),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxHeight: 420),
           child: Image.network(
             src,
             fit: BoxFit.contain,
-            loadingBuilder: (c, child, p) => p == null
+            loadingBuilder: (ctx, child, p) => p == null
                 ? child
-                : const SizedBox(height: 120, child: Center(child: CircularProgressIndicator(strokeWidth: 2))),
-            errorBuilder: (c, e, st) => Container(
+                : Container(
+                    height: 120,
+                    color: c.fill,
+                    child: const Center(child: SizedBox.square(dimension: Sizes.iconMd, child: CircularProgressIndicator(strokeWidth: 2))),
+                  ),
+            errorBuilder: (ctx, e, st) => Container(
+              key: const Key('imageError'),
               height: 80,
-              alignment: Alignment.center,
-              color: cs.surfaceContainerHighest,
-              child: Text('图片加载失败', style: TextStyle(color: cs.outline)),
+              color: c.fill,
+              child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                Icon(CupertinoIcons.exclamationmark_triangle, size: Sizes.iconSm, color: c.text3),
+                const SizedBox(width: Gap.m),
+                Text('图片加载失败', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: c.text3)),
+              ]),
             ),
           ),
         ),
@@ -994,22 +1073,29 @@ const _emojis = [
 
 Future<String?> pickEmoji(BuildContext context, {bool allowRemove = false}) => showDialog<String>(
       context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('选择图标'),
-        content: SizedBox(
-          width: 320,
-          child: Wrap(spacing: 4, runSpacing: 4, children: [
-            for (final e in _emojis)
-              InkWell(
-                borderRadius: BorderRadius.circular(6),
-                onTap: () => Navigator.pop(c, e),
-                child: Padding(padding: const EdgeInsets.all(6), child: Text(e, style: const TextStyle(fontSize: 22))),
-              ),
-          ]),
-        ),
-        actions: [
-          if (allowRemove) TextButton(onPressed: () => Navigator.pop(c, ''), child: const Text('移除')),
-          TextButton(onPressed: () => Navigator.pop(c), child: const Text('取消')),
-        ],
-      ),
+      builder: (c) {
+        // 8 列 × 40 的网格；窄屏自动减少列数，不会溢出
+        final w = (MediaQuery.sizeOf(c).width - 96).clamp(200.0, 8 * 40.0 + 7 * Gap.xs);
+        return AlertDialog(
+          title: const Text('选择图标'),
+          content: SizedBox(
+            width: w,
+            child: SingleChildScrollView(
+              child: Wrap(spacing: Gap.xs, runSpacing: Gap.xs, children: [
+                for (final e in _emojis)
+                  InkWell(
+                    key: ValueKey('emoji-$e'),
+                    borderRadius: BorderRadius.circular(AppRadius.s),
+                    onTap: () => Navigator.pop(c, e),
+                    child: SizedBox.square(dimension: 40, child: Center(child: Emoji(e, size: 28))),
+                  ),
+              ]),
+            ),
+          ),
+          actions: [
+            if (allowRemove) TextButton(onPressed: () => Navigator.pop(c, ''), child: const Text('移除')),
+            TextButton(onPressed: () => Navigator.pop(c), child: const Text('取消')),
+          ],
+        );
+      },
     );
