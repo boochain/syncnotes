@@ -52,6 +52,7 @@ class _LoginPageState extends State<LoginPage> {
           server, _user.text.trim(), _pw.text, widget.settings.deviceId,
           deviceName: _deviceName());
       if (!mounted) return;
+      setState(() => _busy = false); // 对话框期间不显示转圈
       if (r.mustChangePassword) {
         // 管理员重置的临时密码：先改密码才能同步（取消则留在登录页）
         final changed = await showChangePasswordDialog(context,

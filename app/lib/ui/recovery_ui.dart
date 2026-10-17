@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
@@ -475,6 +474,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
     try {
       final r = await widget.api.recover(server, user, code, _pw1.text, widget.deviceId, deviceName: widget.deviceName);
       if (!mounted) return;
+      setState(() => _busy = false);
       if (r.recoveryCode != null) {
         await showRecoveryCodeDialog(context, code: r.recoveryCode!, username: r.username, server: server);
       }
