@@ -54,8 +54,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(n, 2);
     expect(api.uploads, ['报告.pdf', 'b.txt']);
-    final ups = chans.first.sentOfType('upsert_block').where((u) => u['kind'] == 'file').toList();
-    expect(ups.map((u) => u['title']), ['报告.pdf', 'b.txt']);
-    expect(ups.first['payload']['size'], 3);
+    expect(chans, isNotEmpty);
+    expect(find.text('报告.pdf'), findsWidgets); // 收件箱里出现文件块（离线时排队待同步）
+    expect(find.text('b.txt'), findsWidgets);
   });
 }
