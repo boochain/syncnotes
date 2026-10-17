@@ -22,6 +22,7 @@
 | 输入法避让 | 输入栏在键盘上方 | `adjustResize` + Scaffold `bottomNavigationBar` 跟随 viewInsets | ✅ ❓ |
 | 滚动收起键盘 | 拖动列表收起键盘 | 收件箱/文件夹列表、设置页 `keyboardDismissBehavior.onDrag` | 🔧 |
 | 按压反馈 | Material 水波纹 | 原来全局 `NoSplash`，Android 没有任何按压反馈。现在触屏平台用 `InkRipple`，桌面仍用悬停高亮 | 🔧 |
+| 悬停态不粘住 | 触屏上不应出现/残留悬停高亮 | 所有自定义 `MouseRegion` 悬停（卡片、筛选标签、侧边栏行、页面头部、块行、斜杠菜单）只接受鼠标指针 `isMouseHover` | 🔧 |
 | 长按菜单 + 触感 | 长按出菜单并有触感反馈 | 卡片长按加 `Feedback.forLongPress` | 🔧 |
 | 触摸目标 48dp | 可点区域 ≥ 48dp | 主题 `materialTapTargetSize: shrinkWrap`，顶栏图标按钮 32×32。改动会影响全部布局/尺寸测试 | ⏳ |
 | 下拉刷新 | 有 | 收件箱 `RefreshIndicator` | ✅ |
@@ -71,6 +72,12 @@
 | 提示条在发送栏上方 | `showToast` 统一边距；新增测试验证"再按一次退出"不挡发送栏 | ✅ |
 | 中文文案/全角标点 | 抽查一致 | ✅ |
 | 不溢出 | 响应式测试 | ✅ |
+
+## 后续（依赖其它分支）
+
+- 回收站（PR #8 `feature/trash`，未合并）：页面类条目的类型标签显示为"笔记"，应为"页面"。#8 合并后修。
+- 回收站页面的悬停态：#8 合并后改用 `isMouseHover`。
+- 回收站页面的返回键：#8 合并后确认它是内容区嵌套 Navigator 里的路由（这样会自动支持逐级返回）。
 
 ## 测试
 

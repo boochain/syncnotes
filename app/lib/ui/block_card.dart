@@ -44,7 +44,7 @@ class _BlockCardState extends State<BlockCard> {
       button: true,
       label: '${block.title}，$preview${unread ? '，未读' : ''}',
       child: MouseRegion(
-        onEnter: (_) => setState(() => _hover = true),
+        onEnter: (e) { if (isMouseHover(e)) setState(() => _hover = true); },
         onExit: (_) => setState(() => _hover = false),
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,

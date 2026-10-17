@@ -211,7 +211,7 @@ class _SidebarRowState extends State<SidebarRow> {
     final touch = Theme.of(context).platform == TargetPlatform.android || Theme.of(context).platform == TargetPlatform.iOS;
     final trailing = (_hover || touch) && widget.hoverTrailing != null ? widget.hoverTrailing : widget.trailing;
     return MouseRegion(
-      onEnter: (_) => setState(() => _hover = true),
+      onEnter: (e) { if (isMouseHover(e)) setState(() => _hover = true); },
       onExit: (_) => setState(() => _hover = false),
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,

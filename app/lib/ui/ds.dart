@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/cupertino.dart';
 // SyncNotes v0.4 设计系统：一套调色板、一套字阶、一套高度、一套圆角、一套间距、一套图标。
 //
@@ -341,3 +342,6 @@ void showToast(BuildContext context, String message,
     action: actionLabel == null ? null : SnackBarAction(label: actionLabel, onPressed: onAction ?? () {}),
   ));
 }
+
+/// 只有真正的鼠标才显示悬停态：触屏（含模拟器触摸、手写笔）上悬停高亮会"粘住"不消失。
+bool isMouseHover(PointerEvent e) => e.kind == PointerDeviceKind.mouse;

@@ -193,7 +193,7 @@ class _FilterTabState extends State<FilterTab> {
       selected: widget.selected,
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
-        onEnter: (_) => setState(() => _hover = true),
+        onEnter: (e) { if (isMouseHover(e)) setState(() => _hover = true); },
         onExit: (_) => setState(() => _hover = false),
         child: GestureDetector(
           onTap: widget.onTap,

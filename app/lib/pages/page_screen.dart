@@ -382,7 +382,7 @@ class _PageScreenState extends State<PageScreen> {
         );
     final title = MediaQuery.sizeOf(context).width < 600 ? EditorType.h1 : EditorType.pageTitle;
     return MouseRegion(
-      onEnter: (_) => setState(() => _headerHover = true),
+      onEnter: (e) { if (isMouseHover(e)) setState(() => _headerHover = true); },
       onExit: (_) => setState(() => _headerHover = false),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         if ((icon == null || icon.isEmpty) || !hasCover)
