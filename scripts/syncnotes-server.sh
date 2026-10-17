@@ -15,6 +15,7 @@
 #   uninstall        卸载
 # 选项：
 #   -y, --yes        全部使用默认值 / 上次保存的配置，不再提问（适合脚本调用）
+#   --open-firewall  防火墙已启用时放行端口（默认从不修改防火墙；防火墙未启用时什么也不做）
 #
 # 配置保存在 /etc/syncnotes/syncnotes.env，下次运行时作为默认值。
 
@@ -32,6 +33,7 @@ BIN_NAME="syncnotes-server"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT_PATH="$SCRIPT_DIR/$(basename "${BASH_SOURCE[0]}")"
 ASSUME_YES=0
+OPEN_FW=0
 TMP_DIRS=()
 
 # 默认值（会被 ENV_FILE 覆盖）
@@ -431,14 +433,86 @@ configure() {
   save_config
 }
 
-open_firewall() {
-  if command -v ufw >/dev/null 2>&1 && grep -q "Status: active" <<<"$(ufw status 2>/dev/null)"; then
-    ask_yn "检测到 ufw 防火墙，放行 TCP 端口 $CFG_PORT ？" y && ufw allow "$CFG_PORT/tcp"
-  elif command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then
-    ask_yn "检测到 firewalld 防火墙，放行 TCP 端口 $CFG_PORT ？" y && firewall-cmd --permanent --add-port="$CFG_PORT/tcp" && firewall-cmd --reload
+# ---------------------------------------------------------------- 防火墙
+# 原则：绝不自动修改防火墙。先只读检测；只有防火墙处于启用状态时才询问（默认不修改）；
+# 不会启用防火墙、不会安装防火墙、不会改默认策略。脚本自己添加的规则记录在 FW_RECORD，卸载时询问后才删除。
+FW_RECORD="$ENV_DIR/firewall-rules"
+fw_detect() { # 输出：ufw | firewalld | nftables | iptables | none（只读）
+  if command -v ufw >/dev/null 2>&1 && grep -qi "Status: active" <<<"$(ufw status 2>/dev/null)"; then echo ufw; return; fi
+  if command -v firewall-cmd >/dev/null 2>&1; then
+    if { command -v systemctl >/dev/null 2>&1 && [ "$(systemctl is-active firewalld 2>/dev/null)" = active ]; } \
+      || [ "$(firewall-cmd --state 2>/dev/null)" = running ]; then echo firewalld; return; fi
   fi
+  if command -v nft >/dev/null 2>&1; then
+    local rs; rs=$(nft list ruleset 2>/dev/null)
+    if grep -q "hook input" <<<"$rs" && grep -Eq "policy drop|[[:space:]](drop|reject)([[:space:]]|$)" <<<"$rs"; then echo nftables; return; fi
+  fi
+  if command -v iptables >/dev/null 2>&1; then
+    local rl; rl=$(iptables -S INPUT 2>/dev/null)
+    if grep -Eq "^-P INPUT (DROP|REJECT)|-j (DROP|REJECT)" <<<"$rl"; then echo iptables; return; fi
+  fi
+  echo none
+}
+fw_port_allowed() { # 只读检查端口是否已放行
+  case "$1" in
+    ufw) grep -Eq "^$CFG_PORT(/tcp)?[[:space:]].*ALLOW" <<<"$(ufw status 2>/dev/null)" ;;
+    firewalld) [ "$(firewall-cmd --query-port="$CFG_PORT/tcp" 2>/dev/null)" = yes ] ;;
+    *) return 1 ;;
+  esac
+}
+cloud_reminder() {
   [ "$CFG_ADDR" = 127.0.0.1 ] && return 0
   warn "如果是云服务器（阿里云、腾讯云、AWS 等），还需要在控制台的「安全组 / 防火墙」中放行 TCP $CFG_PORT"
+}
+firewall_step() {
+  local fw c=""
+  fw=$(fw_detect)
+  title "防火墙"
+  case "$fw" in
+    none)
+      info "本机防火墙未启用（或未安装），不做任何修改"
+      cloud_reminder; return 0 ;;
+    nftables|iptables)
+      info "检测到 $fw 规则正在生效。脚本不会修改 $fw 规则；如需放行，请手动添加 TCP $CFG_PORT 的放行规则"
+      cloud_reminder; return 0 ;;
+  esac
+  info "检测到防火墙 $fw 已启用"
+  if fw_port_allowed "$fw"; then info "端口 $CFG_PORT/tcp 已经放行，无需修改"; cloud_reminder; return 0; fi
+  if [ "$OPEN_FW" = 1 ]; then c=2
+  elif [ "$ASSUME_YES" = 1 ] || [ ! -t 0 ]; then
+    info "非交互模式：不修改防火墙（如需放行请加 --open-firewall）"; c=1
+  else
+    echo "  [1] 不修改"
+    echo "  [2] 放行端口 $CFG_PORT/tcp"
+    read -r -p "请选择 [默认: 1]: " c || c=1
+  fi
+  if [ "${c:-1}" = 2 ]; then
+    case "$fw" in
+      ufw) ufw allow "$CFG_PORT/tcp" ;;
+      firewalld) firewall-cmd --permanent --add-port="$CFG_PORT/tcp" && firewall-cmd --reload ;;
+    esac && {
+      mkdir -p "$ENV_DIR"; echo "$fw $CFG_PORT/tcp" >> "$FW_RECORD"
+      info "已在 $fw 中放行 $CFG_PORT/tcp（记录在 $FW_RECORD，卸载时可以删除）"; }
+  else
+    info "未修改防火墙；如果客户端连不上，请手动放行 TCP $CFG_PORT"
+  fi
+  cloud_reminder
+}
+firewall_cleanup() { # 只删除脚本自己添加的规则，删除前询问（默认不删）
+  [ -s "$FW_RECORD" ] || return 0
+  local fw rule left=()
+  while read -r fw rule <&3; do
+    [ -n "$fw" ] || continue
+    if ask_yn "删除本脚本之前在 $fw 中添加的放行规则 $rule ？" n; then
+      local ok=0
+      case "$fw" in
+        ufw) ufw delete allow "$rule" && ok=1 ;;
+        firewalld) firewall-cmd --permanent --remove-port="$rule" && firewall-cmd --reload && ok=1 ;;
+      esac
+      if [ "$ok" = 1 ]; then info "已删除 $fw 规则 $rule"; else warn "删除 $fw 规则 $rule 失败"; left+=("$fw $rule"); fi
+    else left+=("$fw $rule"); fi
+  done 3< "$FW_RECORD"
+  if [ "${#left[@]}" -gt 0 ]; then printf '%s\n' "${left[@]}" > "$FW_RECORD"; else rm -f "$FW_RECORD"; fi
 }
 
 # ---------------------------------------------------------------- 运行
@@ -556,7 +630,7 @@ cmd_install() { # 安装 / 重新安装 / 升级为系统服务（可重复执�
   local ok=0
   if has_systemd; then start_service && ok=1; else start_bg && ok=1; fi
   if [ "$ok" != 1 ]; then rollback; return 1; fi
-  open_firewall
+  firewall_step
   print_summary
 }
 rollback() {
@@ -641,6 +715,7 @@ cmd_uninstall() {
   stop_all
   if has_systemd; then cmd_disable >/dev/null; fi
   rm -f "$BIN" "$BIN.old" "$BIN.new" "$PIDFILE"
+  firewall_cleanup
   if ask_yn "同时删除数据（数据库 $CFG_DB 和文件目录 $CFG_FILES）？此操作不可恢复" n; then
     backup_db "$CFG_DB" >/dev/null 2>&1 || true
     rm -rf "$CFG_FILES" "$CFG_DB" "$CFG_DB-wal" "$CFG_DB-shm" "$LOGFILE"
@@ -693,7 +768,7 @@ MENU
 main() {
   need_root "$@"
   local args=() a
-  for a in "$@"; do case "$a" in -y|--yes) ASSUME_YES=1 ;; -h|--help) sed -n '2,20p' "$SCRIPT_PATH" | sed 's/^# \{0,1\}//'; exit 0 ;; *) args+=("$a") ;; esac; done
+  for a in "$@"; do case "$a" in -y|--yes) ASSUME_YES=1 ;; --open-firewall) OPEN_FW=1 ;; -h|--help) sed -n '2,21p' "$SCRIPT_PATH" | sed 's/^# \{0,1\}//'; exit 0 ;; *) args+=("$a") ;; esac; done
   set -- "${args[@]+"${args[@]}"}"
   local cmd=${1-menu}; shift || true
   case "$cmd" in
@@ -708,7 +783,7 @@ main() {
     logs) cmd_logs "$@" ;;
     update|upgrade) cmd_update "$@" ;;
     uninstall|remove) cmd_uninstall ;;
-    *) err "未知命令：$cmd"; sed -n '2,20p' "$SCRIPT_PATH" | sed 's/^# \{0,1\}//'; exit 1 ;;
+    *) err "未知命令：$cmd"; sed -n '2,21p' "$SCRIPT_PATH" | sed 's/^# \{0,1\}//'; exit 1 ;;
   esac
 }
-main "$@"
+[ "${SYNCNOTES_SOURCE_ONLY:-0}" = 1 ] || main "$@"

@@ -25,7 +25,7 @@ sudo ./syncnotes-server.sh
 | 7 更新 / 替换为新版 | `update [程序或 .tar.gz]` | 备份数据库，原子替换程序，重启并检查；新版本启动失败时自动回滚 |
 | 8 卸载 | `uninstall` | 需要输入 `yes` 确认；会询问是否同时删除数据（默认保留） |
 
-在子命令后加 `-y` / `--yes` 时不再提问，直接使用上次保存的配置或默认值，适合在其他脚本中调用。
+在子命令后加 `-y` / `--yes` 时不再提问，直接使用上次保存的配置或默认值，适合在其他脚本中调用；此时不会修改防火墙，除非再加 `--open-firewall`。
 
 ## 参数（回车使用默认值）
 
@@ -42,7 +42,20 @@ sudo ./syncnotes-server.sh
 配置保存在 `/etc/syncnotes/syncnotes.env`（systemd 的 EnvironmentFile，变量名与服务器的环境变量相同：`SYNCNOTES_BIND`、`SYNCNOTES_DB`、`SYNCNOTES_FILES`、`SYNCNOTES_ALLOW_REGISTER`、`SYNCNOTES_MDNS`、`SYNCNOTES_MDNS_NAME`），下次运行时作为默认值。
 
 服务以系统用户 `syncnotes` 运行（脚本自动创建，无法创建时退回 root）。
-检测到 ufw 或 firewalld 时会询问是否放行端口；云服务器还需要在控制台的安全组中放行该端口。
+## 防火墙（从不自动修改）
+
+脚本**不会自动改动防火墙**：不会启用防火墙、不会安装防火墙、不会修改默认策略（例如从不执行 `ufw enable`）。
+
+1. 先只读检测：ufw（`ufw status`）、firewalld（`systemctl is-active firewalld` / `firewall-cmd --state`）、nftables / iptables 规则
+2. 防火墙未启用或未安装：什么也不做，只提示本机防火墙未启用，并提醒在云服务器控制台的安全组中放行端口
+3. 防火墙已启用（ufw / firewalld）：显示是哪一种，并让你选择，默认是"不修改"：
+   ```
+     [1] 不修改
+     [2] 放行端口 7700/tcp
+   ```
+   端口已经放行时不会重复添加。nftables / iptables 只提示手动放行，脚本不修改
+4. 非交互（`--yes`）时默认不修改防火墙；只有加上 `--open-firewall`，且防火墙已启用时，才会放行端口
+5. 脚本自己添加的规则记录在 `/etc/syncnotes/firewall-rules`。卸载时只会删除这里记录的规则，并且会先询问（默认不删除）
 
 ## 旧版本与升级
 
@@ -67,6 +80,7 @@ Alpine（OpenRC）、Docker 容器或 WSL1 等没有 systemd 时，脚本会说�
 ```bash
 sudo ./syncnotes-server.sh                    # 菜单
 sudo ./syncnotes-server.sh install            # 安装为系统服务并开机自启
+sudo ./syncnotes-server.sh install --yes --open-firewall   # 非交互安装，防火墙已启用时放行端口
 sudo ./syncnotes-server.sh status             # 状态
 sudo ./syncnotes-server.sh logs -f            # 跟踪日志
 sudo ./syncnotes-server.sh update 新版.tar.gz  # 升级（失败自动回滚）
