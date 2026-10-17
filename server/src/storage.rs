@@ -17,6 +17,23 @@ pub struct UserRow {
     pub id: String,
     pub username: String,
     pub password_hash: String,
+    /// Argon2 hash of the current one-time recovery code (None = never generated).
+    pub recovery_hash: Option<String>,
+    /// Set by admin reset: the user must choose a new password after next login.
+    pub must_change_password: bool,
+}
+
+/// Summary row for `admin list-users`.
+#[derive(Debug, Clone)]
+pub struct UserSummary {
+    pub id: String,
+    pub username: String,
+    pub created_at: i64,
+    pub blocks: i64,
+    pub trashed: i64,
+    pub tokens: i64,
+    pub has_recovery_code: bool,
+    pub must_change_password: bool,
 }
 
 /// Result of applying an upsert.
@@ -114,6 +131,8 @@ impl Storage {
     fn init(conn: Connection) -> rusqlite::Result<Self> {
         conn.execute_batch(SCHEMA)?;
         Self::migrate(&conn)?;
+        // Let admin CLI and the running server share the WAL database without SQLITE_BUSY.
+        conn.busy_timeout(std::time::Duration::from_secs(10))?;
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
         })
@@ -128,6 +147,19 @@ impl Storage {
         for (name, ty) in [("deleted_at", "INTEGER"), ("deleted_by", "TEXT")] {
             if !cols.iter().any(|c| c == name) {
                 conn.execute_batch(&format!("ALTER TABLE blocks ADD COLUMN {name} {ty}"))?;
+            }
+        }
+        // Password recovery columns (v0.5). Never touches ids, so all data stays owned by the user.
+        let ucols: Vec<String> = conn
+            .prepare("PRAGMA table_info(users)")?
+            .query_map([], |r| r.get::<_, String>(1))?
+            .collect::<rusqlite::Result<_>>()?;
+        for (name, ty) in [
+            ("recovery_hash", "TEXT"),
+            ("must_change_password", "INTEGER NOT NULL DEFAULT 0"),
+        ] {
+            if !ucols.iter().any(|c| c == name) {
+                conn.execute_batch(&format!("ALTER TABLE users ADD COLUMN {name} {ty}"))?;
             }
         }
         conn.execute_batch(
@@ -162,23 +194,157 @@ impl Storage {
             id,
             username: username.into(),
             password_hash: password_hash.into(),
+            recovery_hash: None,
+            must_change_password: false,
+        })
+    }
+
+    fn row_to_user(r: &rusqlite::Row) -> rusqlite::Result<UserRow> {
+        Ok(UserRow {
+            id: r.get(0)?,
+            username: r.get(1)?,
+            password_hash: r.get(2)?,
+            recovery_hash: r.get(3)?,
+            must_change_password: r.get::<_, i64>(4)? != 0,
         })
     }
 
     pub fn find_user(&self, username: &str) -> rusqlite::Result<Option<UserRow>> {
         let conn = self.conn.lock().unwrap();
         conn.query_row(
-            "SELECT id, username, password_hash FROM users WHERE username = ?1",
+            "SELECT id, username, password_hash, recovery_hash, must_change_password FROM users WHERE username = ?1",
             params![username],
-            |r| {
-                Ok(UserRow {
-                    id: r.get(0)?,
-                    username: r.get(1)?,
-                    password_hash: r.get(2)?,
-                })
-            },
+            Self::row_to_user,
         )
         .optional()
+    }
+
+    pub fn find_user_by_id(&self, user_id: &str) -> rusqlite::Result<Option<UserRow>> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT id, username, password_hash, recovery_hash, must_change_password FROM users WHERE id = ?1",
+            params![user_id],
+            Self::row_to_user,
+        )
+        .optional()
+    }
+
+    /// Replace the password hash and revoke every token of the user (all devices logged out),
+    /// optionally keeping one token (the caller's current session). Only `users.password_hash`,
+    /// `users.must_change_password` and `tokens` are touched: the user id, blocks, files,
+    /// recycle bin and read state are untouched, so every old note stays accessible.
+    pub fn set_password(
+        &self,
+        user_id: &str,
+        password_hash: &str,
+        must_change: bool,
+        keep_token: Option<&str>,
+    ) -> rusqlite::Result<usize> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        let n = tx.execute(
+            "UPDATE users SET password_hash = ?1, must_change_password = ?2 WHERE id = ?3",
+            params![password_hash, must_change as i64, user_id],
+        )?;
+        if n == 1 {
+            tx.execute(
+                "DELETE FROM tokens WHERE user_id = ?1 AND token IS NOT ?2",
+                params![user_id, keep_token],
+            )?;
+        }
+        tx.commit()?;
+        Ok(n)
+    }
+
+    pub fn set_recovery_hash(&self, user_id: &str, hash: Option<&str>) -> rusqlite::Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE users SET recovery_hash = ?1 WHERE id = ?2",
+            params![hash, user_id],
+        )?;
+        Ok(())
+    }
+
+    /// Atomically consume a recovery code: only succeeds if the stored hash is still `expected`
+    /// (prevents two concurrent requests from both using the same one-time code).
+    #[allow(clippy::too_many_arguments)]
+    pub fn recover_account(
+        &self,
+        user_id: &str,
+        expected_recovery_hash: &str,
+        new_password_hash: &str,
+        new_recovery_hash: &str,
+    ) -> rusqlite::Result<bool> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        let n = tx.execute(
+            "UPDATE users SET password_hash = ?1, recovery_hash = ?2, must_change_password = 0
+             WHERE id = ?3 AND recovery_hash = ?4",
+            params![new_password_hash, new_recovery_hash, user_id, expected_recovery_hash],
+        )?;
+        if n == 1 {
+            tx.execute("DELETE FROM tokens WHERE user_id = ?1", params![user_id])?;
+        }
+        tx.commit()?;
+        Ok(n == 1)
+    }
+
+    pub fn token_count(&self, user_id: &str) -> rusqlite::Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT COUNT(*) FROM tokens WHERE user_id = ?1",
+            params![user_id],
+            |r| r.get(0),
+        )
+    }
+
+    pub fn list_users(&self) -> rusqlite::Result<Vec<UserSummary>> {
+        let conn = self.conn.lock().unwrap();
+        let mut st = conn.prepare(
+            "SELECT u.id, u.username, u.created_at,
+                    (SELECT COUNT(*) FROM blocks b WHERE b.user_id = u.id AND b.deleted = 0),
+                    (SELECT COUNT(*) FROM blocks b WHERE b.user_id = u.id AND b.deleted = 0 AND b.deleted_at IS NOT NULL),
+                    (SELECT COUNT(*) FROM tokens t WHERE t.user_id = u.id),
+                    u.recovery_hash IS NOT NULL, u.must_change_password
+             FROM users u ORDER BY u.username",
+        )?;
+        let rows = st.query_map([], |r| {
+            Ok(UserSummary {
+                id: r.get(0)?,
+                username: r.get(1)?,
+                created_at: r.get(2)?,
+                blocks: r.get(3)?,
+                trashed: r.get(4)?,
+                tokens: r.get(5)?,
+                has_recovery_code: r.get::<_, i64>(6)? != 0,
+                must_change_password: r.get::<_, i64>(7)? != 0,
+            })
+        })?;
+        rows.collect()
+    }
+
+    /// Every block of a user (live, recycle bin and purged tombstones), ordered by seq.
+    pub fn all_blocks(&self, user_id: &str) -> rusqlite::Result<Vec<Block>> {
+        self.blocks_since(user_id, i64::MIN)
+    }
+
+    /// All per-device read states of a user: (block_id, device_id, viewed).
+    pub fn all_device_views(&self, user_id: &str) -> rusqlite::Result<Vec<(String, String, bool)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut st = conn.prepare(
+            "SELECT block_id, device_id, viewed FROM device_views WHERE user_id = ?1 ORDER BY block_id, device_id",
+        )?;
+        let rows = st.query_map(params![user_id], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? != 0))
+        })?;
+        rows.collect()
+    }
+
+    /// Online-safe consistent copy of the whole database (works while the server runs, WAL).
+    pub fn backup_to(&self, out: &Path) -> rusqlite::Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("VACUUM INTO ?1", params![out.to_string_lossy()])?;
+        Ok(())
     }
 
     pub fn create_token(

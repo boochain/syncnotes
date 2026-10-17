@@ -24,6 +24,41 @@ pub struct AuthResponse {
     pub token: String,
     pub user_id: String,
     pub username: String,
+    /// Plain one-time recovery code; only present right after it was generated (show once).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recovery_code: Option<String>,
+    /// False for legacy accounts that never generated a code (client prompts once).
+    #[serde(default)]
+    pub has_recovery_code: bool,
+    /// Admin reset with a temporary password: client must force a password change.
+    #[serde(default)]
+    pub must_change_password: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecoverRequest {
+    pub username: String,
+    pub recovery_code: String,
+    pub new_password: String,
+    pub device_id: String,
+    pub device_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecoveryCodeRequest {
+    /// Current password (re-authentication; a stolen token alone can't rotate the code).
+    pub password: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecoveryCodeResponse {
+    pub recovery_code: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChangePasswordRequest {
+    pub old_password: String,
+    pub new_password: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
