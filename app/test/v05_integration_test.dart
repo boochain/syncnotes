@@ -9,6 +9,7 @@ import 'package:syncnotes/models/block.dart';
 import 'package:syncnotes/services/settings.dart';
 import 'package:syncnotes/sync/local_store.dart';
 import 'package:syncnotes/ui/back_handler.dart';
+import 'package:syncnotes/platform/share_out.dart';
 import 'package:syncnotes/ui/recovery_ui.dart';
 import 'package:syncnotes/ui/theme.dart';
 
@@ -133,5 +134,19 @@ void main() {
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await tester.pumpAndSettle();
     expect(find.widgetWithText(AppBar, '回收站'), findsNothing);
+  });
+
+  testWidgets('note: share-out (desktop = copy Markdown) from the block menu', (tester) async {
+    await pumpApp(tester);
+    final shared = <String?>[];
+    ShareOut.debugShare = (p) async => shared.add(p.text);
+    addTearDown(() => ShareOut.debugShare = null);
+    services(tester).sync.create(kind: BlockKind.note, title: '周报', payload: {'markdown': '- 完成 A'});
+    await tester.pumpAndSettle();
+    await tester.longPress(find.text('周报'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('复制 Markdown'));
+    await tester.pumpAndSettle();
+    expect(shared, ['# 周报\n\n- 完成 A']);
   });
 }

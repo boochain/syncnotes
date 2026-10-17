@@ -11,6 +11,7 @@ import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../app_scope.dart';
+import '../platform/share_out.dart';
 import '../pages/doc.dart';
 import '../pages/inline_md.dart';
 import '../pages/page_nav.dart';
@@ -56,6 +57,13 @@ class MessageType extends BlockType {
   String get executeLabel => '复制';
 
   static String textOf(Block b) => (b.payload['text'] ?? '') as String;
+
+  /// Android：分享到其它应用（桌面点一下就是复制，不需要额外入口）
+  @override
+  List<BlockAction> extraActions(BuildContext context, Block block) => [
+        if (ShareOut.useSystemSheet)
+          BlockAction('分享', CupertinoIcons.share, () => ShareOut.text(context, textOf(block))),
+      ];
 
   @override
   String previewText(BuildContext context, Block block) {
@@ -128,6 +136,16 @@ class MessageType extends BlockType {
 // ------------------------------------------------------------------ note
 
 class NoteType extends BlockType {
+  /// 分享（Android 系统分享面板）/ 复制 Markdown（桌面）
+  @override
+  List<BlockAction> extraActions(BuildContext context, Block block) => [
+        BlockAction(ShareOut.useSystemSheet ? '分享' : '复制 Markdown', CupertinoIcons.share, () {
+          final md = (block.payload['markdown'] ?? '') as String;
+          final title = block.title.trim();
+          return ShareOut.text(context, title.isEmpty || md.trimLeft().startsWith('#') ? md : '# $title\n\n$md', subject: title);
+        }),
+      ];
+
   @override
   BlockKind get kind => BlockKind.note;
   @override
@@ -250,6 +268,16 @@ class FileType_ extends BlockType {
 
   @override
   List<BlockAction> extraActions(BuildContext context, Block block) => [
+        // 分享出去（Android 系统分享面板）；桌面用“下载”保存后再自行处理
+        if (ShareOut.useSystemSheet)
+          BlockAction('分享', CupertinoIcons.share, () async {
+            try {
+              final f = await _download(context, block);
+              if (context.mounted) await ShareOut.file(context, f, name: block.payload['name'] as String?);
+            } catch (e) {
+              if (context.mounted) _toast(context, '分享失败：$e');
+            }
+          }),
         BlockAction('下载', CupertinoIcons.arrow_down_circle, () async {
           try {
             final f = await _download(context, block);
