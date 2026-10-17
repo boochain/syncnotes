@@ -278,15 +278,16 @@ class _PageScreenState extends State<PageScreen> {
     final current = coverToneKey(page.payload['cover']);
     final v = await showModalBottomSheet<String>(
       context: context,
+      constraints: const BoxConstraints(maxWidth: 520),
       builder: (c) {
         final pal = AppColors.of(c);
         return SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(Gap.xl, 0, Gap.xl, Gap.xl),
-            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               Text('封面', style: Theme.of(c).textTheme.titleMedium),
               const SizedBox(height: Gap.l),
-              Wrap(spacing: Gap.m, runSpacing: Gap.m, children: [
+              Wrap(key: const Key('coverPicker'), spacing: Gap.m, runSpacing: Gap.m, children: [
                 for (final e in coverTones.entries)
                   Semantics(
                     button: true,
@@ -314,12 +315,12 @@ class _PageScreenState extends State<PageScreen> {
               ]),
               const SizedBox(height: Gap.l),
               if (current != null)
-                TextButton.icon(
+                Align(alignment: Alignment.centerLeft, child: TextButton.icon(
                   key: const Key('removeCover'),
                   onPressed: () => Navigator.pop(c, ''),
                   icon: const Icon(CupertinoIcons.xmark, size: Sizes.iconSm),
                   label: const Text('移除封面'),
-                ),
+                )),
             ]),
           ),
         );

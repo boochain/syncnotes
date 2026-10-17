@@ -101,6 +101,19 @@ void main() {
     expect(title.top, greaterThanOrEqualTo(icon.bottom));
   });
 
+  for (final size in const [Size(1600, 1000), Size(390, 800)]) {
+    testWidgets('cover sheet is a full-width (max 520) sheet (${size.width.toInt()}px)', (tester) async {
+      await pumpWithPage(tester, size);
+      await tester.tap(find.byKey(const Key('pageCover')));
+      await tester.pumpAndSettle();
+      final sheet = tester.getRect(find.descendant(of: find.byType(BottomSheet), matching: find.byType(Material)).first);
+      expect(sheet.width, size.width >= 900 ? 520 : size.width);
+      final picker = tester.getRect(find.byKey(const Key('coverPicker')));
+      expect(picker.width, greaterThan(sheet.width - 60));
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('golden: page head (cover + icon + title) layout', (tester) async {
     await pumpWithPage(tester, const Size(1200, 860));
     await expectLater(find.byKey(const Key('pageHead')), matchesGoldenFile('goldens/page_head_wide.png'));
