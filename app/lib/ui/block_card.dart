@@ -162,6 +162,7 @@ Future<void> showBlockMenu(BuildContext context, Block block) async {
   final banned = s.sync.descendantIds(block.id)..add(block.id);
   final folders = s.sync.blocks.where((b) => b.kind == BlockKind.folder && !b.deleted && !banned.contains(b.id) && b.id != block.parentId).toList();
   final tt = Theme.of(context).textTheme;
+  final messenger = ScaffoldMessenger.maybeOf(context);
   await showModalBottomSheet(
     context: context,
     isScrollControlled: true,
@@ -233,9 +234,15 @@ Future<void> showBlockMenu(BuildContext context, Block block) async {
             },
           ),
           const Divider(height: Gap.l),
-          MenuRow(icon: CupertinoIcons.trash, label: '删除', danger: true, onTap: () {
+          MenuRow(key: const Key('menuDelete'), icon: CupertinoIcons.trash, label: '删除', danger: true, onTap: () {
             Navigator.pop(c);
-            s.sync.delete(block.id);
+            final ids = s.sync.delete(block.id);
+            // 删除不再静默发生：提示条里可以撤销
+            messenger?.hideCurrentSnackBar();
+            messenger?.showSnackBar(SnackBar(
+              content: Text('已删除“${block.title.isEmpty ? type.label : block.title}”', maxLines: 1, overflow: TextOverflow.ellipsis),
+              action: SnackBarAction(label: '撤销', onPressed: () => s.sync.restoreAll(ids)),
+            ));
           }),
         ]),
       ),
