@@ -130,15 +130,16 @@ class MenuRow extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(AppRadius.s),
-      child: SizedBox(
-        height: Sizes.bar,
+      // 单行 44、带说明 56（最小高度：字号放大时自动增高，不会溢出）
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minHeight: detail == null ? Sizes.bar : Sizes.listRow),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: Gap.l),
+          padding: const EdgeInsets.symmetric(horizontal: Gap.l, vertical: Gap.xs),
           child: Row(children: [
             SizedBox(width: Sizes.iconMd, child: Icon(icon, size: Sizes.iconSm, color: danger ? c.danger : c.text2)),
             const SizedBox(width: Gap.l),
             Expanded(
-              child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: tt.bodyMedium?.copyWith(color: color)),
                 if (detail != null) Text(detail!, maxLines: 1, overflow: TextOverflow.ellipsis, style: tt.bodySmall),
               ]),

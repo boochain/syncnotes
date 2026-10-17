@@ -71,22 +71,18 @@ class _SettingsPageState extends State<SettingsPage> {
               padding: const EdgeInsets.symmetric(horizontal: Gap.xl, vertical: Gap.s),
               child: ValueListenableBuilder<ThemeMode>(
                 valueListenable: s.themeMode,
-                builder: (c, mode, _) => SizedBox(
-                  width: double.infinity,
-                  child: SegmentedButton<ThemeMode>(
-                    key: const Key('themeSelector'),
-                    showSelectedIcon: false,
-                    segments: const [
-                      ButtonSegment(value: ThemeMode.system, icon: Icon(CupertinoIcons.circle_lefthalf_fill), label: Text('跟随系统')),
-                      ButtonSegment(value: ThemeMode.light, icon: Icon(CupertinoIcons.sun_max), label: Text('浅色')),
-                      ButtonSegment(value: ThemeMode.dark, icon: Icon(CupertinoIcons.moon), label: Text('深色')),
-                    ],
-                    selected: {mode},
-                    onSelectionChanged: (v) {
-                      s.themeMode.value = v.first;
-                      st.themeMode = v.first.name;
-                    },
-                  ),
+                builder: (c, mode, _) => SegmentedControl<ThemeMode>(
+                  key: const Key('themeSelector'),
+                  segments: const [
+                    (ThemeMode.system, CupertinoIcons.circle_lefthalf_fill, '跟随系统'),
+                    (ThemeMode.light, CupertinoIcons.sun_max, '浅色'),
+                    (ThemeMode.dark, CupertinoIcons.moon, '深色'),
+                  ],
+                  selected: mode,
+                  onChanged: (v) {
+                    s.themeMode.value = v;
+                    st.themeMode = v.name;
+                  },
                 ),
               ),
             ),

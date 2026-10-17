@@ -263,3 +263,65 @@ class AppSwitch extends StatelessWidget {
     );
   }
 }
+
+/// HIG 分段控件：高 32，灰底 + 选中段为浮起的白色胶囊（iOS / macOS Segmented Control）。
+/// 标题单行省略，窄宽度时隐藏图标；字号放大时只增高不溢出。
+class SegmentedControl<T> extends StatelessWidget {
+  final List<(T, IconData?, String)> segments;
+  final T selected;
+  final ValueChanged<T> onChanged;
+  const SegmentedControl({super.key, required this.segments, required this.selected, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    final tt = Theme.of(context).textTheme;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return LayoutBuilder(builder: (context, box) {
+      final showIcons = box.maxWidth / segments.length >= 104;
+      return Container(
+        constraints: const BoxConstraints(minHeight: Sizes.control),
+        padding: const EdgeInsets.all(2),
+        decoration: BoxDecoration(color: c.fill, borderRadius: BorderRadius.circular(AppRadius.m)),
+        child: IntrinsicHeight(
+          child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            for (final (i, (value, icon, label)) in segments.indexed)
+              Expanded(
+                child: Semantics(
+                  button: true,
+                  selected: value == selected,
+                  child: GestureDetector(
+                    key: Key('seg-$i'),
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => onChanged(value),
+                    child: AnimatedContainer(
+                      duration: Motion.short4,
+                      constraints: const BoxConstraints(minHeight: Sizes.compact),
+                      padding: const EdgeInsets.symmetric(horizontal: Gap.s),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: value == selected ? (dark ? const Color(0xFF636366) : c.elevated) : Colors.transparent,
+                        borderRadius: BorderRadius.circular(AppRadius.s),
+                        boxShadow: value == selected && !dark
+                            ? [BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 4, offset: const Offset(0, 1))]
+                            : null,
+                      ),
+                      child: Row(mainAxisAlignment: MainAxisAlignment.center, mainAxisSize: MainAxisSize.min, children: [
+                        if (icon != null && showIcons) ...[Icon(icon, size: Sizes.iconSm, color: c.text2), const SizedBox(width: Gap.s)],
+                        Flexible(
+                          child: Text(label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: (value == selected ? tt.labelLarge : tt.bodyMedium)?.copyWith(color: c.text)),
+                        ),
+                      ]),
+                    ),
+                  ),
+                ),
+              ),
+          ]),
+        ),
+      );
+    });
+  }
+}

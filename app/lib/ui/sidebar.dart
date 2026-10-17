@@ -219,7 +219,7 @@ class _SidebarRowState extends State<SidebarRow> {
         child: AnimatedContainer(
           duration: Motion.short2,
           height: Sizes.control,
-          margin: const EdgeInsets.symmetric(horizontal: Gap.m, vertical: 1),
+          margin: const EdgeInsets.symmetric(horizontal: Gap.m),
           padding: EdgeInsets.only(left: Gap.m + widget.indent, right: Gap.s),
           decoration: BoxDecoration(
             color: widget.highlight ?? (widget.selected ? c.selected : (_hover ? c.hover : Colors.transparent)),
