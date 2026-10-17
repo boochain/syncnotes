@@ -89,8 +89,14 @@ abstract final class FontTokens {
     'Noto Sans SC',
     'Source Han Sans SC',
     'WenQuanYi Micro Hei',
+    'Noto Color Emoji',
+    'Segoe UI Emoji',
+    'Apple Color Emoji',
     'sans-serif',
   ];
+
+  /// 彩色 emoji 字体（各平台自带 / 免费）
+  static const emojiFallback = <String>['Noto Color Emoji', 'Segoe UI Emoji', 'Apple Color Emoji'];
 
   static const mono = 'JetBrains Mono';
   static const monoFallback = ['Cascadia Code', 'SF Mono', 'Menlo', 'Consolas', 'Noto Sans Mono CJK SC', 'monospace'];
@@ -172,17 +178,18 @@ abstract final class HigTypeSmall {
 /// 编辑器排版取自 Notion 的实际样式（正文 16px / 1.5，标题 1.875em / 1.5em / 1.25em，页面标题 40px 700），
 /// 中文行高放宽到 1.6。
 abstract final class EditorType {
-  static const pageTitle = TypeStyle(40, 48, FontWeight.w700);
-  static const h1 = TypeStyle(30, 39, FontWeight.w600);
-  static const h2 = TypeStyle(24, 31, FontWeight.w600);
-  static const h3 = TypeStyle(20, 26, FontWeight.w600);
-  static const body = TypeStyle(16, 26, FontWeight.w400);
-  static const code = TypeStyle(14, 21, FontWeight.w400);
+  // v0.4：标题统一 600 字重；正文行高 1.5（AppFlowy lineHeight 1.5）；标题比例照 Notion
+  static const pageTitle = TypeStyle(36, 44, FontWeight.w600);
+  static const h1 = TypeStyle(30, 38, FontWeight.w600);
+  static const h2 = TypeStyle(24, 32, FontWeight.w600);
+  static const h3 = TypeStyle(20, 28, FontWeight.w600);
+  static const body = TypeStyle(16, 24, FontWeight.w400);
+  static const code = TypeStyle(14, 20, FontWeight.w400);
 
-  /// Notion：页面内容最大宽度 708 + 左右 96 留白（宽屏）
+  /// Notion：页面内容最大宽度 708 + 左右留白
   static const maxWidth = 900.0;
-  static const coverHeight = 200.0; // 窄屏 160
-  static const iconSize = 78.0; // Notion 页面图标 78px，压住封面下沿约一半
+  static const coverHeight = 240.0; // 窄屏 160
+  static const iconSize = 60.0; // AppFlowy 文档图标 kIconHeight 60，压住封面下沿约一半
 }
 
 // ---------------------------------------------------------------- spacing / radius
