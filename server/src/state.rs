@@ -24,6 +24,8 @@ pub struct AppState {
     pub next_id: Arc<Mutex<ConnId>>,
     pub allow_register: bool,
     pub files_dir: std::path::PathBuf,
+    /// Recycle-bin retention in days (0 = keep forever).
+    pub trash_days: u32,
 }
 
 impl AppState {
@@ -34,11 +36,17 @@ impl AppState {
             next_id: Arc::new(Mutex::new(1)),
             allow_register,
             files_dir: std::env::temp_dir().join("syncnotes-files"),
+            trash_days: 30,
         }
     }
 
     pub fn with_files_dir(mut self, d: std::path::PathBuf) -> Self {
         self.files_dir = d;
+        self
+    }
+
+    pub fn with_trash_days(mut self, d: u32) -> Self {
+        self.trash_days = d;
         self
     }
 

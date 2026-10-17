@@ -17,10 +17,13 @@ use crate::protocol::*;
 use crate::state::{AppState, Conn};
 use crate::storage::UpsertOutcome;
 
-pub async fn health() -> Json<HealthResponse> {
+pub async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "ok".into(),
         version: env!("CARGO_PKG_VERSION").into(),
+        protocol: PROTOCOL_VERSION,
+        features: vec!["trash".into()],
+        trash_retention_days: state.trash_days,
     })
 }
 
@@ -214,6 +217,7 @@ fn handle_authed(
             viewed_mode,
             client_updated_at,
             deleted,
+            deleted_at,
         } => {
             if !crate::blocks::valid_kind(&kind) {
                 let _ = tx.send(ServerMessage::Error {
@@ -238,9 +242,16 @@ fn handle_authed(
                 viewed_mode,
                 client_updated_at,
                 deleted,
+                deleted_at,
             ) {
                 Ok(UpsertOutcome::Applied(block)) => {
+                    let purged = block.deleted;
+                    let root = block.id.clone();
                     state.broadcast_user(user_id, &ServerMessage::BlockUpdate { block });
+                    if purged {
+                        // Permanent delete: cascade to descendants + remove file blobs.
+                        crate::trash::purge_tree(state, user_id, &root);
+                    }
                 }
                 Ok(UpsertOutcome::Stale(block)) => {
                     // Tell this client the current winner.

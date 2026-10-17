@@ -46,6 +46,17 @@ class AuthApi {
     } catch (_) {}
   }
 
+  /// 服务器健康信息（协议版本、回收站保留天数）。失败返回 null。
+  Future<Map<String, dynamic>?> health(String server) async {
+    try {
+      final r = await client.get(endpoint(server, '/health')).timeout(const Duration(seconds: 5));
+      if (r.statusCode != 200) return null;
+      return Map<String, dynamic>.from(jsonDecode(r.body) as Map);
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<AuthResult> login(String server, String user, String pw, String deviceId,
       {String? deviceName}) async {
     final r = await _post(server, '/api/login', {

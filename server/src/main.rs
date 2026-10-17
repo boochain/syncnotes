@@ -28,6 +28,10 @@ struct Args {
     #[arg(long, env = "SYNCNOTES_FILES", default_value = "syncnotes-files")]
     files_dir: PathBuf,
 
+    /// Recycle-bin retention in days; items older than this are purged permanently (0 = never)
+    #[arg(long, env = "SYNCNOTES_TRASH_DAYS", default_value_t = 30)]
+    trash_retention_days: u32,
+
     /// Advertise via mDNS as _syncnotes._tcp.local.
     #[arg(long, env = "SYNCNOTES_MDNS", default_value_t = true, action = clap::ArgAction::Set)]
     mdns: bool,
@@ -46,7 +50,28 @@ async fn main() {
     let args = Args::parse();
     let storage = Storage::open(&args.db).expect("open db");
     std::fs::create_dir_all(&args.files_dir).expect("create files dir");
-    let state = AppState::new(storage, args.allow_register).with_files_dir(args.files_dir.clone());
+    let state = AppState::new(storage, args.allow_register)
+        .with_files_dir(args.files_dir.clone())
+        .with_trash_days(args.trash_retention_days);
+
+    if args.trash_retention_days > 0 {
+        let st = state.clone();
+        let days = args.trash_retention_days;
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(Duration::from_secs(3600));
+            loop {
+                tick.tick().await;
+                let n = syncnotes_server::trash::purge_expired(
+                    &st,
+                    days,
+                    chrono::Utc::now().timestamp_millis(),
+                );
+                if n > 0 {
+                    tracing::info!("回收站：已彻底删除 {n} 个超过 {days} 天的项目");
+                }
+            }
+        });
+    }
 
     let app = syncnotes_server::build_router(state);
 

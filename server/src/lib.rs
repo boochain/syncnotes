@@ -7,6 +7,7 @@ pub mod protocol;
 pub mod state;
 pub mod storage;
 pub mod sync;
+pub mod trash;
 
 pub use state::AppState;
 pub use storage::Storage;

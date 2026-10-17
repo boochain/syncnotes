@@ -12,6 +12,7 @@ import 'home_page.dart';
 import 'quick_switcher.dart';
 import 'settings_page.dart';
 import 'sidebar.dart';
+import 'trash_page.dart';
 
 /// 宽屏断点：≥ 720 显示常驻侧边栏，否则使用抽屉。
 const wideBreakpoint = 720.0;
@@ -73,6 +74,16 @@ class AppShellState extends State<AppShell> implements PageHost {
     if (mounted) setState(() => _inSettings = false);
   }
 
+  bool _inTrash = false;
+  Future<void> _trash() async {
+    _scaffold.currentState?.closeDrawer();
+    if (_inTrash) return;
+    if (_inSettings) _navKey.currentState?.popUntil((r) => r.isFirst);
+    setState(() => _inTrash = true);
+    await _navKey.currentState?.push(MaterialPageRoute(builder: (_) => const TrashPage()));
+    if (mounted) setState(() => _inTrash = false);
+  }
+
   @override
   Widget build(BuildContext context) {
     final sync = AppScope.of(context).sync;
@@ -88,11 +99,13 @@ class AppShellState extends State<AppShell> implements PageHost {
           _wide = c.maxWidth >= wideBreakpoint;
           // 当前页面被删除（例如在其他设备上）→ 回到收件箱
           final page = _page == null ? null : sync.byId(_page!);
-          final pageId = page == null || page.deleted ? null : _page;
+          final pageId = page == null || sync.isHidden(page) ? null : _page;
           final sidebar = Sidebar(
-            selectedPage: _inSettings ? null : pageId,
-            inboxSelected: pageId == null && !_inSettings,
-            settingsSelected: _inSettings,
+            selectedPage: _inSettings || _inTrash ? null : pageId,
+            inboxSelected: pageId == null && !_inSettings && !_inTrash,
+            settingsSelected: _inSettings && !_inTrash,
+            trashSelected: _inTrash,
+            onTrash: _trash,
             onSelect: _select,
             onSearch: () {
               _scaffold.currentState?.closeDrawer();

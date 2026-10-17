@@ -622,6 +622,7 @@ async fn persists_across_restart() {
             syncnotes_server::blocks::ViewedMode::Global,
             5,
             false,
+            None,
         )
         .unwrap();
     }

@@ -18,6 +18,8 @@ class Sidebar extends StatelessWidget {
   final void Function(String? pageId) onSelect;
   final VoidCallback onSearch;
   final VoidCallback onSettings;
+  final bool trashSelected;
+  final VoidCallback? onTrash;
   const Sidebar({
     super.key,
     required this.selectedPage,
@@ -26,6 +28,8 @@ class Sidebar extends StatelessWidget {
     required this.onSelect,
     required this.onSearch,
     required this.onSettings,
+    this.trashSelected = false,
+    this.onTrash,
   });
 
   @override
@@ -87,6 +91,17 @@ class Sidebar extends StatelessWidget {
                 selected: settingsSelected,
                 onTap: onSettings,
               ),
+              if (onTrash != null)
+                SidebarRow(
+                  key: const Key('sidebarTrash'),
+                  leading: const Icon(CupertinoIcons.trash),
+                  label: '回收站',
+                  selected: trashSelected,
+                  trailing: s.sync.trash.isNotEmpty
+                      ? Text('${s.sync.trash.length}', maxLines: 1, style: tt.bodySmall?.copyWith(color: c.text3))
+                      : null,
+                  onTap: onTrash!,
+                ),
               const SizedBox(height: Gap.l),
               SizedBox(
                 height: Sizes.control,
