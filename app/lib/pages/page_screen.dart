@@ -54,6 +54,17 @@ class _PageScreenState extends State<PageScreen> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    // 标题焦点变化会影响返回键行为（先收起键盘工具栏）
+    _titleFocus.addListener(_onTitleFocus);
+  }
+
+  void _onTitleFocus() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   void didUpdateWidget(covariant PageScreen old) {
     super.didUpdateWidget(old);
     if (old.pageId != widget.pageId) {
@@ -129,7 +140,20 @@ class _PageScreenState extends State<PageScreen> {
         final wide = MediaQuery.sizeOf(context).width >= 720;
         // 文字左边缘（标题、图标、正文对齐线）。正文行 = 行左内边距 + 手柄栏 + 2
         final hPad = wide ? 56.0 : 28.0;
-        return CallbackShortcuts(
+        return ValueListenableBuilder<String?>(
+          valueListenable: doc.focusedId,
+          builder: (context, focused, child) => PopScope(
+            // 返回键：先收起编辑状态（斜杠菜单、块焦点、工具栏），再返回上一页；内容已实时保存
+            canPop: focused == null && !_titleFocus.hasFocus,
+            onPopInvokedWithResult: (didPop, _) {
+              _flushTitle();
+              if (didPop) return;
+              FocusManager.instance.primaryFocus?.unfocus();
+              _titleFocus.unfocus();
+            },
+            child: child!,
+          ),
+          child: CallbackShortcuts(
           bindings: {
             const SingleActivator(LogicalKeyboardKey.keyZ, control: true): doc.undo,
             const SingleActivator(LogicalKeyboardKey.keyZ, control: true, shift: true): doc.redo,
@@ -141,7 +165,13 @@ class _PageScreenState extends State<PageScreen> {
               automaticallyImplyLeading: widget.standalone,
               leading: widget.onMenu != null
                   ? IconButton(icon: const Icon(CupertinoIcons.sidebar_left), tooltip: '菜单', onPressed: widget.onMenu)
-                  : null,
+                  : widget.standalone && Navigator.of(context).canPop()
+                      // 左上角返回按钮直接返回（系统返回键才会先收起编辑焦点）
+                      ? BackButton(onPressed: () {
+                          FocusManager.instance.primaryFocus?.unfocus();
+                          Navigator.of(context).pop();
+                        })
+                      : null,
               titleSpacing: widget.standalone || widget.onMenu != null ? 0 : 16,
               title: _Breadcrumbs(doc: doc, page: page),
               actions: [
@@ -209,6 +239,7 @@ class _PageScreenState extends State<PageScreen> {
               ),
             ]),
           ),
+        ),
         );
       },
     );
@@ -351,7 +382,7 @@ class _PageScreenState extends State<PageScreen> {
         );
     final title = MediaQuery.sizeOf(context).width < 600 ? EditorType.h1 : EditorType.pageTitle;
     return MouseRegion(
-      onEnter: (_) => setState(() => _headerHover = true),
+      onEnter: (e) { if (isMouseHover(e)) setState(() => _headerHover = true); },
       onExit: (_) => setState(() => _headerHover = false),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         if ((icon == null || icon.isEmpty) || !hasCover)

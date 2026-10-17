@@ -169,7 +169,10 @@ void main() {
     await pumpApp(tester);
     await tester.tap(find.byTooltip('设置'));
     await tester.pumpAndSettle();
+    // 设置项变多（回收站、找回密码、关闭到托盘……），往下滚动查找
+    await tester.scrollUntilVisible(find.text('新建块默认使用全局已读'), 200);
     expect(find.text('新建块默认使用全局已读'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('登录系统时自动启动'), 200);
     expect(find.text('登录系统时自动启动'), findsOneWidget);
     await tester.scrollUntilVisible(find.text('退出登录'), 200);
     expect(find.text('退出登录'), findsOneWidget);

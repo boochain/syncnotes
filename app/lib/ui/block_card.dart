@@ -44,17 +44,22 @@ class _BlockCardState extends State<BlockCard> {
       button: true,
       label: '${block.title}，$preview${unread ? '，未读' : ''}',
       child: MouseRegion(
-        onEnter: (_) => setState(() => _hover = true),
+        onEnter: (e) { if (isMouseHover(e)) setState(() => _hover = true); },
         onExit: (_) => setState(() => _hover = false),
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: () => type.execute(context, block),
-          onLongPress: () => showBlockMenu(context, block),
+          onLongPress: () {
+            // Android 长按菜单：触感反馈
+            Feedback.forLongPress(context);
+            showBlockMenu(context, block);
+          },
           onSecondaryTap: () => showBlockMenu(context, block),
           child: AnimatedContainer(
             key: ValueKey('card-${block.id}'),
             duration: Motion.short2,
-            height: Sizes.listRow,
+            // 最小 56：字号放大（最高 200%）时自动增高，不溢出
+            constraints: const BoxConstraints(minHeight: Sizes.listRow),
             margin: const EdgeInsets.symmetric(horizontal: Gap.m),
             padding: const EdgeInsets.only(left: Gap.m, right: Gap.xs),
             decoration: BoxDecoration(
@@ -327,6 +332,8 @@ class BlockList extends StatelessWidget {
           );
         }
         return ListView.builder(
+          // 拖动列表时收起键盘（Android 习惯）
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           padding: const EdgeInsets.only(top: Gap.xs, bottom: Gap.x3),
           itemCount: items.length,
           itemBuilder: (context, i) => TweenAnimationBuilder<double>(

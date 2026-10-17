@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'ds.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,6 +10,12 @@ import '../models/block.dart';
 import '../blocks/block_type.dart';
 import '../pages/page_nav.dart';
 import '../pages/page_screen.dart';
+import '../platform/desktop.dart';
+import '../platform/notifications.dart';
+import '../platform/share_receive.dart';
+import 'back_handler.dart';
+import 'block_card.dart' show showCreateMenu;
+import 'file_drop.dart';
 import 'home_page.dart';
 import 'quick_switcher.dart';
 import 'settings_page.dart';
@@ -51,11 +59,57 @@ class AppShellState extends State<AppShell> implements PageHost {
     setState(() => _page = id);
   }
 
+  @override
+  void initState() {
+    super.initState();
+    Notifier.opened.addListener(_onNotificationOpened);
+    ShareReceiver.incoming.addListener(_onShared);
+    ShareReceiver.init();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _onNotificationOpened();
+      _onShared();
+      if (mounted) askNotificationPermission(context, AppScope.of(context).settings);
+    });
+  }
+
+  @override
+  void dispose() {
+    Notifier.opened.removeListener(_onNotificationOpened);
+    ShareReceiver.incoming.removeListener(_onShared);
+    super.dispose();
+  }
+
+  /// 其它应用分享进来 → 回到收件箱并保存
+  Future<void> _onShared() async {
+    final p = ShareReceiver.incoming.value;
+    if (p == null || !mounted) return;
+    ShareReceiver.incoming.value = null;
+    _select(null);
+    final ctx = _navKey.currentContext ?? context;
+    await saveShared(ctx, p);
+  }
+
+  /// 点击通知 → 打开对应的块（页面 / 笔记 / 文件夹……）
+  Future<void> _onNotificationOpened() async {
+    final id = Notifier.opened.value;
+    if (id == null || !mounted) return;
+    Notifier.opened.value = null;
+    if (isDesktop) unawaited(DesktopShell.instance.showNearTray().catchError((_) {}));
+    if (!mounted) return;
+    final b = AppScope.of(context).sync.byId(id);
+    if (b == null || b.deleted) return;
+    await openBlock(b);
+  }
+
   Future<void> openSwitcher() async {
     final s = AppScope.of(context);
     final ctx = _navKey.currentContext ?? context;
     final b = await showQuickSwitcher(ctx, s.sync);
     if (b == null || !mounted) return;
+    await openBlock(b);
+  }
+
+  Future<void> openBlock(Block b) async {
     if (b.kind == BlockKind.page) {
       _select(b.id);
     } else {
@@ -84,14 +138,63 @@ class AppShellState extends State<AppShell> implements PageHost {
     if (mounted) setState(() => _inTrash = false);
   }
 
+  /// 系统返回（Android 返回键 / 预测性返回手势）：
+  /// 抽屉 → 内容区嵌套 Navigator（底部菜单、弹出菜单、页面、设置、文件夹、页面内状态）
+  /// → 宽屏打开的页面回到收件箱 → 交给根页面“再按一次退出”。
+  Future<bool> handleBack() async {
+    final sc = _scaffold.currentState;
+    if (sc != null && sc.isDrawerOpen) {
+      sc.closeDrawer();
+      return true;
+    }
+    final nav = _navKey.currentState;
+    if (nav != null && await nav.maybePop()) {
+      if (!_wide && mounted && !nav.canPop() && _page != null) setState(() => _page = null);
+      return true;
+    }
+    if (_page != null && mounted) {
+      _select(null);
+      return true;
+    }
+    return false;
+  }
+
+  Future<void> newItem() async {
+    final ctx = _navKey.currentContext;
+    if (ctx != null) await showCreateMenu(ctx);
+  }
+
+  Future<void> closeCurrent() async {
+    final nav = _navKey.currentState;
+    if (nav != null && nav.canPop()) {
+      nav.pop();
+      if (!_wide && !nav.canPop() && _page != null) setState(() => _page = null);
+      return;
+    }
+    if (_page != null) {
+      _select(null);
+      return;
+    }
+    if (isDesktop) DesktopShell.instance.onWindowClose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final sync = AppScope.of(context).sync;
-    return CallbackShortcuts(
+    return RootBackScope(
+      onBack: handleBack,
+      child: CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.keyK, control: true): openSwitcher,
         const SingleActivator(LogicalKeyboardKey.keyK, meta: true): openSwitcher,
         const SingleActivator(LogicalKeyboardKey.keyP, control: true): openSwitcher,
+        // 桌面通用快捷键：Ctrl+F 查找、Ctrl+, 设置
+        const SingleActivator(LogicalKeyboardKey.keyF, control: true): openSwitcher,
+        const SingleActivator(LogicalKeyboardKey.comma, control: true): _settings,
+        const SingleActivator(LogicalKeyboardKey.comma, meta: true): _settings,
+        // Ctrl+N 新建；Ctrl+W 关闭当前页面（没有页面时关闭窗口）
+        const SingleActivator(LogicalKeyboardKey.keyN, control: true): newItem,
+        const SingleActivator(LogicalKeyboardKey.keyW, control: true): closeCurrent,
       },
       child: Focus(
         autofocus: true,
@@ -130,7 +233,7 @@ class AppShellState extends State<AppShell> implements PageHost {
             home = HomePage(onMenu: () => _scaffold.currentState?.openDrawer());
           }
           // 内容区使用嵌套 Navigator，设置/文件夹/旧笔记等页面在内容区打开
-          final content = PageHostScope(
+          final content = FileDropZone(child: PageHostScope(
             host: _wide ? this : _NarrowHost(this),
             child: HeroControllerScope.none(
               child: Navigator(
@@ -139,7 +242,7 @@ class AppShellState extends State<AppShell> implements PageHost {
                 onDidRemovePage: (_) {},
               ),
             ),
-          );
+          ));
           final pal = AppColors.of(context);
           // 布局照 Notion / AppFlowy：侧边栏与内容区平铺，中间一条细分隔线；纯色背景
           return Scaffold(
@@ -159,6 +262,7 @@ class AppShellState extends State<AppShell> implements PageHost {
           );
         }),
       ),
+    ),
     );
   }
 }

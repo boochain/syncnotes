@@ -50,7 +50,7 @@ class _SettingsPageState extends State<SettingsPage> {
         alignment: Alignment.topCenter,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 680),
-          child: ListView(padding: const EdgeInsets.only(bottom: Gap.x3), children: [
+          child: ListView(keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag, padding: const EdgeInsets.only(bottom: Gap.x3), children: [
             const SettingsSection('账号'),
             SettingsRow(icon: CupertinoIcons.person, title: st.username ?? '', subtitle: st.server ?? ''),
             ListenableBuilder(
@@ -143,6 +143,14 @@ class _SettingsPageState extends State<SettingsPage> {
                 icon: CupertinoIcons.eye_slash,
                 title: '启动时最小化到托盘',
                 trailing: sw(st.startMinimized, (v) => setState(() => st.startMinimized = v)),
+              ),
+            if (isDesktop)
+              SettingsRow(
+                key: const Key('closeToTrayRow'),
+                icon: CupertinoIcons.xmark_square,
+                title: '关闭窗口时最小化到托盘',
+                subtitle: st.closeToTray ? '点关闭按钮隐藏到托盘，从托盘菜单“退出”才会结束' : '点关闭按钮直接退出 SyncNotes',
+                trailing: sw(st.closeToTray, (v) => setState(() => st.closeToTray = v), key: const Key('closeToTraySwitch')),
               ),
             if (Platform.isAndroid)
               SettingsRow(
