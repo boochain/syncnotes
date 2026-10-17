@@ -12,6 +12,7 @@ import '../pages/page_nav.dart';
 import '../pages/page_screen.dart';
 import '../platform/desktop.dart';
 import '../platform/notifications.dart';
+import '../platform/share_receive.dart';
 import 'back_handler.dart';
 import 'block_card.dart' show showCreateMenu;
 import 'file_drop.dart';
@@ -61,8 +62,11 @@ class AppShellState extends State<AppShell> implements PageHost {
   void initState() {
     super.initState();
     Notifier.opened.addListener(_onNotificationOpened);
+    ShareReceiver.incoming.addListener(_onShared);
+    ShareReceiver.init();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _onNotificationOpened();
+      _onShared();
       if (mounted) askNotificationPermission(context, AppScope.of(context).settings);
     });
   }
@@ -70,7 +74,18 @@ class AppShellState extends State<AppShell> implements PageHost {
   @override
   void dispose() {
     Notifier.opened.removeListener(_onNotificationOpened);
+    ShareReceiver.incoming.removeListener(_onShared);
     super.dispose();
+  }
+
+  /// 其它应用分享进来 → 回到收件箱并保存
+  Future<void> _onShared() async {
+    final p = ShareReceiver.incoming.value;
+    if (p == null || !mounted) return;
+    ShareReceiver.incoming.value = null;
+    _select(null);
+    final ctx = _navKey.currentContext ?? context;
+    await saveShared(ctx, p);
   }
 
   /// 点击通知 → 打开对应的块（页面 / 笔记 / 文件夹……）
