@@ -1,4 +1,5 @@
 import 'dart:io';
+import '../ui/ds.dart';
 import '../ui/tokens.dart';
 
 import 'package:file_picker/file_picker.dart';
@@ -38,11 +39,7 @@ void registerBuiltinTypes() {
   BlockTypes.register(UnknownType());
 }
 
-void _toast(BuildContext context, String msg) {
-  ScaffoldMessenger.maybeOf(context)
-    ?..hideCurrentSnackBar()
-    ..showSnackBar(SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating));
-}
+void _toast(BuildContext context, String msg) => showToast(context, msg);
 
 // ------------------------------------------------------------------ message
 
@@ -54,11 +51,25 @@ class MessageType extends BlockType {
   @override
   IconData get icon => CupertinoIcons.chat_bubble;
   @override
-  Color color(ColorScheme cs) => cs.primary;
+  Color color(ColorScheme cs) => cs.onSurfaceVariant;
   @override
   String get executeLabel => '复制';
 
   static String textOf(Block b) => (b.payload['text'] ?? '') as String;
+
+  @override
+  String previewText(BuildContext context, Block block) {
+    final t = textOf(block).replaceAll(RegExp(r'\s+'), ' ').trim();
+    // 纯链接：第二行显示“链接 · 域名”
+    final u = Uri.tryParse(t);
+    if (!t.contains(' ') && u != null && u.hasScheme && u.host.isNotEmpty) return '链接 · ${u.host}';
+    // 标题就是正文开头时，第二行显示剩下的部分（去掉开头的标点），避免重复
+    if (block.title.isNotEmpty && t.startsWith(block.title)) {
+      final rest = t.substring(block.title.length).trim();
+      return rest.replaceFirst(RegExp(r'^[…\.\s：:，,。；;、—-]+'), '').trim();
+    }
+    return t;
+  }
 
   @override
   Widget buildPreview(BuildContext context, Block block) => Text(
@@ -87,7 +98,7 @@ class MessageType extends BlockType {
           autofocus: true,
           minLines: 2,
           maxLines: 8,
-          decoration: const InputDecoration(hintText: '输入消息内容', border: OutlineInputBorder()),
+          decoration: const InputDecoration(hintText: '输入消息内容'),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('取消')),
@@ -124,11 +135,19 @@ class NoteType extends BlockType {
   @override
   IconData get icon => CupertinoIcons.square_pencil;
   @override
-  Color color(ColorScheme cs) => cs.tertiary;
+  Color color(ColorScheme cs) => cs.onSurfaceVariant;
   @override
   String get executeLabel => '打开';
 
   static String mdOf(Block b) => (b.payload['markdown'] ?? '') as String;
+
+  @override
+  String previewText(BuildContext context, Block block) => plainInline(mdOf(block)
+          .split('\n')
+          .map((l) => l.replaceFirst(RegExp(r'^\s*(?:#{1,6}\s+|[-*+]\s+|\d+\.\s+|>\s*|- \[[ xX]\]\s+)'), ''))
+          .where((l) => l.trim().isNotEmpty && l.trim() != block.title.trim())
+          .join(' · '))
+      .trim();
 
   @override
   Widget buildPreview(BuildContext context, Block block) {
@@ -171,7 +190,7 @@ class FileType_ extends BlockType {
   @override
   IconData get icon => CupertinoIcons.doc;
   @override
-  Color color(ColorScheme cs) => cs.secondary;
+  Color color(ColorScheme cs) => cs.onSurfaceVariant;
   @override
   String get executeLabel => '打开';
 
@@ -182,11 +201,19 @@ class FileType_ extends BlockType {
   }
 
   @override
+  String previewText(BuildContext context, Block block) {
+    final name = (block.payload['name'] ?? block.title) as String;
+    final dot = name.lastIndexOf('.');
+    final ext = dot > 0 && dot < name.length - 1 ? name.substring(dot + 1).toUpperCase() : '文件';
+    return '$ext · ${_fmtSize((block.payload['size'] ?? 0) as int)}';
+  }
+
+  @override
   Widget buildPreview(BuildContext context, Block block) {
     final name = (block.payload['name'] ?? block.title) as String;
     final size = (block.payload['size'] ?? 0) as int;
     return Row(children: [
-      Icon(Icons.attach_file, size: 16, color: Theme.of(context).colorScheme.outline),
+      Icon(CupertinoIcons.paperclip, size: 16, color: Theme.of(context).colorScheme.outline),
       const SizedBox(width: 4),
       Expanded(child: Text('$name · ${_fmtSize(size)}', overflow: TextOverflow.ellipsis)),
     ]);
@@ -223,7 +250,7 @@ class FileType_ extends BlockType {
 
   @override
   List<BlockAction> extraActions(BuildContext context, Block block) => [
-        BlockAction('下载', Icons.download, () async {
+        BlockAction('下载', CupertinoIcons.arrow_down_circle, () async {
           try {
             final f = await _download(context, block);
             if (context.mounted) _toast(context, '已保存到 ${f.path}');
@@ -288,9 +315,16 @@ class FolderType extends BlockType {
   @override
   IconData get icon => CupertinoIcons.folder;
   @override
-  Color color(ColorScheme cs) => Colors.amber.shade700;
+  Color color(ColorScheme cs) => cs.onSurfaceVariant;
   @override
   String get executeLabel => '进入';
+
+  @override
+  String previewText(BuildContext context, Block block) {
+    final kids = AppScope.of(context).sync.childrenOf(block.id);
+    final unread = kids.where((k) => !k.isViewed && k.kind != BlockKind.folder).length;
+    return '${kids.length} 项${unread > 0 ? ' · $unread 未读' : ''}';
+  }
 
   @override
   Widget buildPreview(BuildContext context, Block block) {
@@ -347,11 +381,14 @@ class UnknownType extends BlockType {
   @override
   String get label => '未知类型';
   @override
-  IconData get icon => Icons.help_outline;
+  IconData get icon => CupertinoIcons.question_circle;
   @override
-  Color color(ColorScheme cs) => cs.outline;
+  Color color(ColorScheme cs) => cs.onSurfaceVariant;
   @override
   String get executeLabel => '查看';
+  @override
+  String previewText(BuildContext context, Block block) => '此版本无法显示该类型';
+
   @override
   Widget buildPreview(BuildContext context, Block block) =>
       const Text('此类型需要更新客户端才能显示');
@@ -388,9 +425,21 @@ class PageType extends BlockType {
   @override
   IconData get icon => CupertinoIcons.doc_text;
   @override
-  Color color(ColorScheme cs) => cs.tertiary;
+  Color color(ColorScheme cs) => cs.onSurfaceVariant;
   @override
   String get executeLabel => '打开';
+
+  @override
+  String previewText(BuildContext context, Block block) {
+    final sync = AppScope.of(context).sync;
+    final kids = sync.blocks.where((b) => b.parentId == block.id && b.kind == BlockKind.text).toList()
+      ..sort((a, b) => orderOf(a).compareTo(orderOf(b)));
+    return kids
+        .map((b) => plainInline(docText(b)).replaceAll('\n', ' ').trim().replaceAll(RegExp(r'[。．.！!？?；;，,]+$'), ''))
+        .where((t) => t.isNotEmpty)
+        .take(3)
+        .join(' · ');
+  }
 
   @override
   Widget buildPreview(BuildContext context, Block block) {

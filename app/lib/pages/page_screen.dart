@@ -1,3 +1,5 @@
+import '../ui/block_card.dart' show EmptyState;
+import '../ui/ds.dart';
 import '../ui/glass.dart';
 import 'dart:async';
 import '../ui/tokens.dart';
@@ -12,20 +14,6 @@ import 'block_row.dart';
 import 'commands.dart';
 import 'doc.dart';
 import 'page_nav.dart';
-
-/// 封面预设（渐变）
-/// 封面预设：低饱和、柔和的渐变（参考 Notion 封面与 Apple 壁纸的雾面色调）。
-/// 键名与旧版保持兼容（已同步的数据仍可显示）。
-const coverPresets = <String, List<Color>>{
-  'sky': [Color(0xFFDCE7F3), Color(0xFFC3D5EA)],
-  'ocean': [Color(0xFFB9CEDF), Color(0xFF9DB7CE)],
-  'mint': [Color(0xFFDDEBE3), Color(0xFFC4DCCF)],
-  'forest': [Color(0xFFB7C9B5), Color(0xFF93AD92)],
-  'peach': [Color(0xFFF6E3D6), Color(0xFFEBCDBA)],
-  'sunset': [Color(0xFFF1D9D3), Color(0xFFE3BFC0)],
-  'lavender': [Color(0xFFE3DDEE), Color(0xFFCFC6E3)],
-  'night': [Color(0xFF3B4250), Color(0xFF262B35)],
-};
 
 /// Notion 式页面：封面、图标、标题、面包屑、块编辑器。
 class PageScreen extends StatefulWidget {
@@ -121,7 +109,7 @@ class _PageScreenState extends State<PageScreen> {
   @override
   Widget build(BuildContext context) {
     final doc = _doc!;
-    final cs = Theme.of(context).colorScheme;
+    final c = AppColors.of(context);
     return ListenableBuilder(
       listenable: doc,
       builder: (context, _) {
@@ -129,7 +117,7 @@ class _PageScreenState extends State<PageScreen> {
         if (page == null || page.deleted) {
           return Scaffold(
             appBar: AppBar(),
-            body: _Empty(icon: CupertinoIcons.trash, title: '页面已被删除', subtitle: '可以从侧边栏打开其他页面'),
+            body: const EmptyState(icon: CupertinoIcons.trash, title: '页面已被删除', subtitle: '可以从侧边栏打开其他页面'),
           );
         }
         // 远程修改标题时同步（本地未在编辑）
@@ -148,15 +136,13 @@ class _PageScreenState extends State<PageScreen> {
             const SingleActivator(LogicalKeyboardKey.keyY, control: true): doc.redo,
           },
           child: Scaffold(
-            backgroundColor: Colors.transparent,
+            backgroundColor: c.bg,
             appBar: AppBar(
               automaticallyImplyLeading: widget.standalone,
               leading: widget.onMenu != null
                   ? IconButton(icon: const Icon(CupertinoIcons.sidebar_left), tooltip: '菜单', onPressed: widget.onMenu)
                   : null,
               titleSpacing: widget.standalone || widget.onMenu != null ? 0 : 16,
-              scrolledUnderElevation: 0,
-              backgroundColor: Colors.transparent,
               title: _Breadcrumbs(doc: doc, page: page),
               actions: [
                 IconButton(
@@ -170,7 +156,7 @@ class _PageScreenState extends State<PageScreen> {
                   onPressed: doc.canRedo ? doc.redo : null,
                 ),
                 _PageMenu(doc: doc, page: page),
-                const SizedBox(width: 4),
+                const SizedBox(width: Gap.s),
               ],
             ),
             body: Column(children: [
@@ -186,9 +172,9 @@ class _PageScreenState extends State<PageScreen> {
                         onReorderItem: (from, to) => doc.moveRow(from, to > from ? to + 1 : to),
                         proxyDecorator: (child, i, a) => Material(
                           elevation: 6,
-                          color: cs.surface,
+                          color: c.elevated,
                           shadowColor: Colors.black26,
-                          borderRadius: BorderRadius.circular(6),
+                          borderRadius: BorderRadius.circular(AppRadius.s),
                           child: child,
                         ),
                         itemBuilder: (context, i) {
@@ -228,30 +214,25 @@ class _PageScreenState extends State<PageScreen> {
     );
   }
 
-  /// 页面头部：封面 + 压在封面下沿的图标（Notion 布局：图标约一半在封面上、在最上层、完整可见），
-  /// 然后是悬停操作和标题。图标与内容列左对齐。
+  /// 页面头部（照 AppFlowy / Notion）：纯色封面 + 压在封面下沿的 60px 图标（约一半在封面上、位于最上层），
+  /// 然后是悬停操作（28 高）和 36/600 标题。图标、标题、正文共用同一条左对齐线。
   Widget _pageHead(BuildContext context, Block page, bool empty, double hPad) {
     final icon = page.payload['icon'] as String?;
     final hasIcon = icon != null && icon.isNotEmpty;
-    final colors = coverPresets[page.payload['cover']];
-    final hasCover = colors != null;
+    final tone = coverToneKey(page.payload['cover']);
+    final hasCover = tone != null;
     return LayoutBuilder(builder: (context, c) {
       final narrow = c.maxWidth < 600;
-      final coverH = narrow ? 150.0 : EditorType.coverHeight;
-      final iconBox = narrow ? 64.0 : EditorType.iconSize;
+      final coverH = narrow ? 160.0 : EditorType.coverHeight;
+      const iconBox = EditorType.iconSize;
       final contentW = c.maxWidth.clamp(0.0, EditorType.maxWidth);
       final left = (c.maxWidth - contentW) / 2 + hPad;
-      // 图标压住封面下沿 ~45%
-      final overlap = iconBox * 0.45;
-      final iconWidget = _iconButton(context, page, icon ?? '', iconBox);
+      const overlap = iconBox * 0.5;
+      final topGap = narrow ? Gap.x3 : Gap.x4 + Gap.l;
       return Stack(key: const Key('pageHead'), clipBehavior: Clip.none, children: [
         Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          if (hasCover)
-            _cover(context, page, colors, coverH)
-          else
-            SizedBox(height: narrow ? 28 : 56),
-          // 为图标留位：有封面时只留下沿以下部分
-          if (hasIcon) SizedBox(height: hasCover ? iconBox - overlap + 14 : iconBox + 14) else SizedBox(height: hasCover ? 12 : 0),
+          if (hasCover) _cover(context, page, tone, coverH) else SizedBox(height: topGap),
+          if (hasIcon) SizedBox(height: hasCover ? iconBox - overlap + Gap.l : iconBox + Gap.l) else SizedBox(height: hasCover ? Gap.l : 0),
           Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: EditorType.maxWidth),
@@ -262,9 +243,9 @@ class _PageScreenState extends State<PageScreen> {
         if (hasIcon)
           Positioned(
             key: const Key('pageIconPos'),
-            left: left - 6,
-            top: hasCover ? coverH - overlap : (narrow ? 28 : 56),
-            child: iconWidget,
+            left: left - Gap.xs,
+            top: hasCover ? coverH - overlap : topGap,
+            child: _iconButton(context, page, icon, iconBox),
           ),
       ]);
     });
@@ -274,99 +255,121 @@ class _PageScreenState extends State<PageScreen> {
         type: MaterialType.transparency,
         child: InkWell(
           key: const Key('pageIcon'),
-          borderRadius: BorderRadius.circular(Radii.small),
+          borderRadius: BorderRadius.circular(AppRadius.m),
           onTap: () async {
             final e = await pickEmoji(context, allowRemove: true);
             if (e != null) _doc!.sync.update(page.id, payload: {...page.payload, 'icon': e.isEmpty ? null : e});
           },
-          child: SizedBox(
-            width: box + 12,
-            height: box,
-            child: Center(child: Text(icon, style: TextStyle(fontSize: box * 0.82, height: 1.0))),
-          ),
+          child: Padding(padding: const EdgeInsets.all(Gap.xs), child: Emoji(icon, size: box - Gap.m)),
         ),
       );
 
-  Widget _cover(BuildContext context, Block page, List<Color> colors, double height) {
+  Widget _cover(BuildContext context, Block page, String tone, double height) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final (light, darkC) = coverTones[tone]!;
     return GestureDetector(
       onTap: () => _pickCover(page),
-      child: Container(
-        key: const Key('pageCover'),
-        height: height,
-        width: double.infinity,
-        // 深色模式下压暗封面，避免大面积亮色刺眼
-        foregroundDecoration: Theme.of(context).brightness == Brightness.dark
-            ? BoxDecoration(color: Colors.black.withValues(alpha: 0.28))
-            : null,
-        decoration: BoxDecoration(gradient: LinearGradient(colors: colors, begin: Alignment.topLeft, end: Alignment.bottomRight)),
-      ),
+      child: Container(key: const Key('pageCover'), height: height, width: double.infinity, color: dark ? darkC : light),
     );
   }
 
   Future<void> _pickCover(Block page) async {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final current = coverToneKey(page.payload['cover']);
     final v = await showModalBottomSheet<String>(
       context: context,
-      showDragHandle: true,
-      builder: (c) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('选择封面', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 12),
-            Wrap(spacing: 10, runSpacing: 10, children: [
-              for (final e in coverPresets.entries)
-                InkWell(
-                  onTap: () => Navigator.pop(c, e.key),
-                  borderRadius: BorderRadius.circular(8),
-                  child: Container(
-                    width: 96,
-                    height: 54,
-                    decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), gradient: LinearGradient(colors: e.value)),
+      constraints: const BoxConstraints(maxWidth: 520),
+      builder: (c) {
+        final pal = AppColors.of(c);
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(Gap.xl, 0, Gap.xl, Gap.xl),
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Text('封面', style: Theme.of(c).textTheme.titleMedium),
+              const SizedBox(height: Gap.l),
+              Wrap(key: const Key('coverPicker'), spacing: Gap.m, runSpacing: Gap.m, children: [
+                for (final e in coverTones.entries)
+                  Semantics(
+                    button: true,
+                    label: coverLabels[e.key],
+                    selected: e.key == current,
+                    child: InkWell(
+                      key: Key('cover-${e.key}'),
+                      onTap: () => Navigator.pop(c, e.key),
+                      borderRadius: BorderRadius.circular(AppRadius.m),
+                      child: Column(children: [
+                        Container(
+                          width: 88,
+                          height: 52,
+                          decoration: BoxDecoration(
+                            color: dark ? e.value.$2 : e.value.$1,
+                            borderRadius: BorderRadius.circular(AppRadius.m),
+                            border: Border.all(color: e.key == current ? pal.accent : pal.separator, width: e.key == current ? 2 : 1),
+                          ),
+                        ),
+                        const SizedBox(height: Gap.xs),
+                        Text(coverLabels[e.key]!, style: Theme.of(c).textTheme.bodySmall),
+                      ]),
+                    ),
                   ),
-                ),
+              ]),
+              const SizedBox(height: Gap.l),
+              if (current != null)
+                Align(alignment: Alignment.centerLeft, child: TextButton.icon(
+                  key: const Key('removeCover'),
+                  onPressed: () => Navigator.pop(c, ''),
+                  icon: const Icon(CupertinoIcons.xmark, size: Sizes.iconSm),
+                  label: const Text('移除封面'),
+                )),
             ]),
-            const SizedBox(height: 8),
-            TextButton.icon(onPressed: () => Navigator.pop(c, ''), icon: const Icon(CupertinoIcons.xmark), label: const Text('移除封面')),
-          ]),
-        ),
-      ),
+          ),
+        );
+      },
     );
     if (v == null) return;
     _doc!.sync.update(page.id, payload: {...page.payload, 'cover': v.isEmpty ? null : v});
   }
 
   Widget _header(BuildContext context, Block page, bool empty) {
-    final cs = Theme.of(context).colorScheme;
+    final c = AppColors.of(context);
     final icon = page.payload['icon'] as String?;
-    final hasCover = coverPresets.containsKey(page.payload['cover']);
+    final hasCover = coverToneKey(page.payload['cover']) != null;
+    final touch = Theme.of(context).platform == TargetPlatform.android || Theme.of(context).platform == TargetPlatform.iOS;
+    Widget action(Key key, IconData i, String label, VoidCallback onTap) => TextButton.icon(
+          key: key,
+          style: TextButton.styleFrom(
+            foregroundColor: c.text2,
+            fixedSize: const Size.fromHeight(Sizes.compact),
+            minimumSize: const Size(0, Sizes.compact),
+            padding: const EdgeInsets.symmetric(horizontal: Gap.m),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.s)),
+            textStyle: Theme.of(context).textTheme.bodyMedium,
+          ),
+          onPressed: onTap,
+          icon: Icon(i, size: Sizes.iconSm),
+          label: Text(label),
+        );
+    final title = MediaQuery.sizeOf(context).width < 600 ? EditorType.h1 : EditorType.pageTitle;
     return MouseRegion(
       onEnter: (_) => setState(() => _headerHover = true),
       onExit: (_) => setState(() => _headerHover = false),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        AnimatedOpacity(
-          duration: Motion.short3,
-          opacity: _headerHover || empty || Theme.of(context).platform == TargetPlatform.android ? 1 : 0,
-          child: Wrap(spacing: 4, children: [
-            if (icon == null || icon.isEmpty)
-              TextButton.icon(
-                style: TextButton.styleFrom(foregroundColor: cs.outline),
-                onPressed: () async {
-                  final e = await pickEmoji(context);
-                  if (e != null) _doc!.sync.update(page.id, payload: {...page.payload, 'icon': e});
-                },
-                icon: const Icon(CupertinoIcons.smiley, size: 18),
-                label: const Text('添加图标'),
-              ),
-            if (!hasCover)
-              TextButton.icon(
-                key: const Key('addCover'),
-                style: TextButton.styleFrom(foregroundColor: cs.outline),
-                onPressed: () => _pickCover(page),
-                icon: const Icon(CupertinoIcons.photo, size: 18),
-                label: const Text('添加封面'),
-              ),
-          ]),
-        ),
+        if ((icon == null || icon.isEmpty) || !hasCover)
+          AnimatedOpacity(
+            duration: Motion.short3,
+            opacity: _headerHover || empty || touch ? 1 : 0,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: Gap.xs),
+              child: Wrap(spacing: Gap.xs, children: [
+                if (icon == null || icon.isEmpty)
+                  action(const Key('addIcon'), CupertinoIcons.smiley, '添加图标', () async {
+                    final e = await pickEmoji(context);
+                    if (e != null) _doc!.sync.update(page.id, payload: {...page.payload, 'icon': e});
+                  }),
+                if (!hasCover) action(const Key('addCover'), CupertinoIcons.photo, '添加封面', () => _pickCover(page)),
+              ]),
+            ),
+          ),
         TextField(
           key: const Key('pageTitle'),
           controller: _title,
@@ -375,21 +378,19 @@ class _PageScreenState extends State<PageScreen> {
           onSubmitted: (_) => _titleEnter(),
           maxLines: null,
           textInputAction: TextInputAction.next,
-          style: Theme.of(context).textTheme.headlineLarge?.merge(EditorType.pageTitle.style).copyWith(
-              // Notion 移动端：窄屏标题缩到 32，避免两字一行
-              fontSize: MediaQuery.sizeOf(context).width < 600 ? 32 : null),
+          style: Theme.of(context).textTheme.headlineLarge?.merge(title.style).copyWith(color: c.text),
           decoration: InputDecoration.collapsed(
             hintText: '无标题',
-            hintStyle: EditorType.pageTitle.style.copyWith(color: cs.outline.withValues(alpha: 0.5)),
+            hintStyle: title.style.copyWith(color: c.text3.withValues(alpha: 0.6)),
           ).copyWith(enabledBorder: InputBorder.none, focusedBorder: InputBorder.none, filled: false),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: Gap.l),
       ]),
     );
   }
 
   Widget _footer(BuildContext context, List<DocRow> rows) {
-    final cs = Theme.of(context).colorScheme;
+    final c = AppColors.of(context);
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: EditorType.maxWidth),
@@ -408,9 +409,9 @@ class _PageScreenState extends State<PageScreen> {
           child: Container(
             height: 160,
             alignment: Alignment.topLeft,
-            padding: const EdgeInsets.fromLTRB(48, 8, 48, 0),
+            padding: EdgeInsets.fromLTRB(MediaQuery.sizeOf(context).width >= 720 ? 56 : 28, Gap.m, Gap.xl, 0),
             child: rows.isEmpty
-                ? Text('点击这里开始输入，或输入 "/" 选择块类型', style: TextStyle(color: cs.outline))
+                ? Text('点击这里开始输入，或输入 "/" 选择块类型', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: c.text3))
                 : const SizedBox.shrink(),
           ),
         ),
@@ -461,19 +462,25 @@ class _Breadcrumbs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final c = AppColors.of(context);
+    final tt = Theme.of(context).textTheme;
     final crumbs = [...doc.breadcrumbs(), page];
     Widget crumb(Block b, bool last) {
       final icon = b.kind == BlockKind.folder ? '📁' : (b.payload['icon'] ?? '') as String;
-      final label = '${icon.isEmpty ? '' : '$icon '}${b.title.isEmpty ? '无标题' : b.title}';
       return InkWell(
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: BorderRadius.circular(AppRadius.xs),
         onTap: last || b.kind != BlockKind.page ? null : () => openPage(context, b.id),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-          child: Text(label,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 14, color: last ? cs.onSurface : cs.onSurfaceVariant)),
+        child: Container(
+          height: Sizes.compact,
+          constraints: const BoxConstraints(maxWidth: 240),
+          padding: const EdgeInsets.symmetric(horizontal: Gap.xs),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            if (icon.isNotEmpty) ...[Emoji(icon, size: Sizes.iconSm), const SizedBox(width: Gap.xs)],
+            Flexible(
+              child: Text(b.title.isEmpty ? '无标题' : b.title,
+                  maxLines: 1, overflow: TextOverflow.ellipsis, style: tt.bodyMedium?.copyWith(color: last ? c.text : c.text2)),
+            ),
+          ]),
         ),
       );
     }
@@ -484,7 +491,7 @@ class _Breadcrumbs extends StatelessWidget {
       reverse: true,
       child: Row(children: [
         for (var i = 0; i < crumbs.length; i++) ...[
-          if (i > 0) Text('/', style: TextStyle(color: cs.outlineVariant)),
+          if (i > 0) Text('/', style: tt.bodyMedium?.copyWith(color: c.text3)),
           crumb(crumbs[i], i == crumbs.length - 1),
         ],
       ]),
@@ -511,33 +518,18 @@ class _PageMenu extends StatelessWidget {
             doc.sync.update(page.id,
                 viewedMode: page.viewedMode == ViewedMode.global ? ViewedMode.perDevice : ViewedMode.global);
           case 'delete':
-            final ok = await showDialog<bool>(
-              context: context,
-              builder: (c) => AlertDialog(
-                title: const Text('删除页面？'),
-                content: const Text('页面中的所有内容和子页面都会被删除。'),
-                actions: [
-                  TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('取消')),
-                  FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('删除')),
-                ],
-              ),
-            );
-            if (ok == true) {
+            final ok = await confirmDanger(context, title: '删除页面？', message: '页面中的所有内容和子页面都会被删除。');
+            if (ok) {
               doc.sync.delete(page.id);
               if (context.mounted && Navigator.of(context).canPop()) Navigator.of(context).maybePop();
             }
         }
       },
       itemBuilder: (_) => [
-        const PopupMenuItem(value: 'sub', child: ListTile(leading: Icon(Icons.note_add_outlined), title: Text('新建子页面'), dense: true)),
-        PopupMenuItem(
-            value: 'global',
-            child: ListTile(
-                leading: const Icon(CupertinoIcons.globe),
-                title: Text(page.viewedMode == ViewedMode.global ? '改为按设备已读' : '改为全局已读'),
-                dense: true)),
-        const PopupMenuDivider(),
-        const PopupMenuItem(value: 'delete', child: ListTile(leading: Icon(CupertinoIcons.trash), title: Text('删除页面'), dense: true)),
+        menuItem(context, 'sub', CupertinoIcons.doc_on_doc, '新建子页面'),
+        menuItem(context, 'global', CupertinoIcons.globe, page.viewedMode == ViewedMode.global ? '改为按设备已读' : '改为全局已读'),
+        const PopupMenuDivider(height: Gap.m + 1),
+        menuItem(context, 'delete', CupertinoIcons.trash, '删除页面', danger: true),
       ],
     );
   }
@@ -551,13 +543,17 @@ class _Toolbar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = AppColors.of(context);
     Widget b(String tip, IconData icon, VoidCallback? f, {Key? key}) => IconButton(
           key: key,
           tooltip: tip,
-          visualDensity: VisualDensity.compact,
-          icon: Icon(icon, size: 20),
+          icon: Icon(icon, size: Sizes.iconSm + 2),
           onPressed: f,
         );
+    final divider = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: Gap.xs, vertical: Gap.l),
+      child: SizedBox(width: 1, child: ColoredBox(color: c.separator)),
+    );
     return TextFieldTapRegion(
       // 浮动胶囊工具栏（Notion 选区工具栏 + HIG 材质）：不再是贴底的灰条
       child: Material(
@@ -565,26 +561,25 @@ class _Toolbar extends StatelessWidget {
         child: SafeArea(
           top: false,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
+            padding: const EdgeInsets.fromLTRB(Gap.l, Gap.s, Gap.l, Gap.l),
             child: Center(
               child: Glass(
                 key: const Key('formatToolbar'),
-                radius: Radii.card,
-                strong: true,
+                radius: AppRadius.l,
                 child: SizedBox(
-            height: 44,
-            child: ListView(shrinkWrap: true, scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 6), children: [
+            height: Sizes.bar,
+            child: ListView(shrinkWrap: true, scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: Gap.s, vertical: Gap.s), children: [
               PopupMenuButton<DocType>(
                 tooltip: '转换块类型',
-                icon: const Icon(CupertinoIcons.textformat, size: 20),
+                icon: const Icon(CupertinoIcons.textformat, size: Sizes.iconSm + 2),
                 onSelected: (t) {
                   final id = doc.focusedId.value;
                   if (id == null) return;
                   doc.setType(id, t, text: docText(doc.sync.byId(id)!));
                 },
                 itemBuilder: (_) => [
-                  for (final c in slashCommands.where((c) => c.type != null && isTextual(c.type!)))
-                    PopupMenuItem(value: c.type, child: Row(children: [Icon(c.icon, size: 18), const SizedBox(width: 10), Text(c.label)])),
+                  for (final sc in slashCommands.where((sc) => sc.type != null && isTextual(sc.type!)))
+                    menuItem<DocType>(context, sc.type!, sc.icon, sc.label),
                 ],
               ),
               b('粗体 (Ctrl+B)', CupertinoIcons.bold, () => row()?.wrap('**'), key: const Key('tbBold')),
@@ -596,7 +591,7 @@ class _Toolbar extends StatelessWidget {
                 final url = row()?.linkAtCaret;
                 if (url != null) launchLink(url);
               }),
-              const VerticalDivider(indent: 10, endIndent: 10),
+              divider,
               b('增加缩进 (Tab)', CupertinoIcons.increase_indent, () {
                 final id = doc.focusedId.value;
                 if (id != null) doc.indent(id);
@@ -609,7 +604,7 @@ class _Toolbar extends StatelessWidget {
                 final id = doc.focusedId.value;
                 if (id != null) doc.remove(id);
               }),
-              const VerticalDivider(indent: 10, endIndent: 10),
+              divider,
               b('撤销', CupertinoIcons.arrow_uturn_left, doc.canUndo ? doc.undo : null),
               b('重做', CupertinoIcons.arrow_uturn_right, doc.canRedo ? doc.redo : null),
               b('完成', CupertinoIcons.keyboard_chevron_compact_down, () => FocusManager.instance.primaryFocus?.unfocus()),
@@ -620,26 +615,6 @@ class _Toolbar extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _Empty extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  const _Empty({required this.icon, required this.title, required this.subtitle});
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Center(
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, size: 48, color: cs.outlineVariant),
-        const SizedBox(height: 12),
-        Text(title, style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 4),
-        Text(subtitle, style: TextStyle(color: cs.outline)),
-      ]),
     );
   }
 }

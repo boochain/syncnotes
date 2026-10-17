@@ -11,6 +11,9 @@ abstract class BlockType {
   IconData get icon;
   Color color(ColorScheme cs);
 
+  /// 列表行第二行的单行纯文本摘要（v0.4 列表行固定高度，不再嵌入富预览）。空字符串 = 用类型名。
+  String previewText(BuildContext context, Block block) => '';
+
   /// 列表中的预览内容。
   Widget buildPreview(BuildContext context, Block block);
 

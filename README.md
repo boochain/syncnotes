@@ -17,6 +17,18 @@
 
 ---
 
+## v0.4：统一尺寸、字体和颜色
+
+- 参考 AppFlowy 的尺寸刻度（只参考数值，未复制代码）、Notion 的布局和 Apple HIG 的颜色与控件
+- 统一高度刻度 28 / 32 / 36 / 44 / 56，同一行元素等高居中；一套字体、5 级字号、3 种字重；中性灰阶加唯一强调色
+- 320 到 1600+ 宽、托盘小窗、横屏、1.3 倍字号下都不溢出；删除可以撤销
+- 检查清单见 [`docs/qa/v0.4-checklist.md`](docs/qa/v0.4-checklist.md)，截图见 `docs/screenshots/v0.4-*.png`
+
+| 浅色 | 深色 |
+|---|---|
+| ![页面（浅色）](docs/screenshots/v0.4-wide-page-light.png) | ![页面（深色）](docs/screenshots/v0.4-wide-page-dark.png) |
+| ![窄屏收件箱（浅色）](docs/screenshots/v0.4-390-inbox-light.png) | ![窄屏收件箱（深色）](docs/screenshots/v0.4-390-inbox-dark.png) |
+
 ## v0.3：重做界面
 
 - **统一的 Apple HIG 外观**：所有平台使用同一套系统色、字号层级、Liquid Glass 材质、SF Symbols 风格图标和弹簧动效

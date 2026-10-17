@@ -7,6 +7,7 @@ import '../models/block.dart';
 import '../pages/doc.dart';
 import '../pages/inline_md.dart';
 import '../sync/sync_client.dart';
+import 'ds.dart';
 import 'glass.dart';
 
 class SwitcherResult {
@@ -69,7 +70,7 @@ Future<Block?> showQuickSwitcher(BuildContext context, SyncClient sync) => showG
       context: context,
       barrierDismissible: true,
       barrierLabel: '关闭',
-      barrierColor: Colors.black38,
+      barrierColor: Colors.black26,
       transitionDuration: Motion.medium4,
       pageBuilder: (c, _, _) => _QuickSwitcher(sync: sync),
       transitionBuilder: (c, a, _, child) {
@@ -92,97 +93,143 @@ class _QuickSwitcherState extends State<_QuickSwitcher> {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final c = AppColors.of(context);
+    final tt = Theme.of(context).textTheme;
     final results = searchAll(widget.sync, _q);
     final sel = results.isEmpty ? 0 : _sel.clamp(0, results.length - 1);
+    final h = MediaQuery.sizeOf(context).height;
+    // 快速查找（照 Notion / Spotlight）：搜索行 44，结果行 44（emoji 20 + 标题 / 摘要），底部提示 32
     return Align(
-      alignment: const Alignment(0, -0.6),
+      alignment: h < 500 ? Alignment.topCenter : const Alignment(0, -0.6),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(Gap.l),
         child: Glass(
           key: const Key('quickSwitcher'),
-          radius: 22,
-          strong: true,
+          radius: AppRadius.l,
           child: Material(
-          type: MaterialType.transparency,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 560, maxHeight: 460),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Focus(
-                onKeyEvent: (n, e) {
-                  if (e is! KeyDownEvent && e is! KeyRepeatEvent) return KeyEventResult.ignored;
-                  if (e.logicalKey == LogicalKeyboardKey.arrowDown) {
-                    setState(() => _sel = results.isEmpty ? 0 : (sel + 1) % results.length);
-                    return KeyEventResult.handled;
-                  }
-                  if (e.logicalKey == LogicalKeyboardKey.arrowUp) {
-                    setState(() => _sel = results.isEmpty ? 0 : (sel - 1 + results.length) % results.length);
-                    return KeyEventResult.handled;
-                  }
-                  return KeyEventResult.ignored;
-                },
-                child: TextField(
-                  key: const Key('switcherField'),
-                  autofocus: true,
-                  onChanged: (v) => setState(() {
-                    _q = v;
-                    _sel = 0;
-                  }),
-                  onSubmitted: (_) {
-                    if (results.isNotEmpty) Navigator.pop(context, results[sel].target);
+            type: MaterialType.transparency,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: 560, maxHeight: (h - 2 * Gap.l).clamp(120.0, 460.0)),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Focus(
+                  onKeyEvent: (n, e) {
+                    if (e is! KeyDownEvent && e is! KeyRepeatEvent) return KeyEventResult.ignored;
+                    if (e.logicalKey == LogicalKeyboardKey.arrowDown) {
+                      setState(() => _sel = results.isEmpty ? 0 : (sel + 1) % results.length);
+                      return KeyEventResult.handled;
+                    }
+                    if (e.logicalKey == LogicalKeyboardKey.arrowUp) {
+                      setState(() => _sel = results.isEmpty ? 0 : (sel - 1 + results.length) % results.length);
+                      return KeyEventResult.handled;
+                    }
+                    return KeyEventResult.ignored;
                   },
-                  decoration: InputDecoration(
-                    prefixIcon: const Icon(CupertinoIcons.search),
-                    hintText: '搜索页面和内容…',
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 18),
-                    suffixIcon: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Text('Esc', style: TextStyle(color: cs.outline, fontSize: 12)),
-                    ),
+                  child: SizedBox(
+                    height: Sizes.bar,
+                    child: Row(children: [
+                      const SizedBox(width: Gap.l),
+                      Icon(CupertinoIcons.search, size: Sizes.iconMd, color: c.text3),
+                      const SizedBox(width: Gap.m),
+                      Expanded(
+                        child: TextField(
+                          key: const Key('switcherField'),
+                          autofocus: true,
+                          style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w400),
+                          onChanged: (v) => setState(() {
+                            _q = v;
+                            _sel = 0;
+                          }),
+                          onSubmitted: (_) {
+                            if (results.isNotEmpty) Navigator.pop(context, results[sel].target);
+                          },
+                          decoration: const InputDecoration(
+                            hintText: '搜索页面和内容…',
+                            filled: false,
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ),
+                      ),
+                      _Kbd('Esc'),
+                      const SizedBox(width: Gap.l),
+                    ]),
                   ),
                 ),
-              ),
-              Divider(height: 1, color: cs.outlineVariant),
-              Flexible(
-                child: results.isEmpty
-                    ? Padding(
-                        padding: const EdgeInsets.all(28),
-                        child: Text(_q.isEmpty ? '还没有页面' : '没有找到 "$_q"', style: TextStyle(color: cs.outline)),
-                      )
-                    : ListView.builder(
-                        shrinkWrap: true,
-                        padding: const EdgeInsets.symmetric(vertical: 6),
-                        itemCount: results.length,
-                        itemBuilder: (c, i) {
-                          final r = results[i];
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 6),
-                            child: ListTile(
-                              dense: true,
-                              selected: i == sel,
-                              selectedTileColor: cs.primary.withValues(alpha: 0.1),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                              leading: Text(r.icon, style: const TextStyle(fontSize: 20)),
-                              title: Text(r.title, overflow: TextOverflow.ellipsis),
-                              subtitle: Text(r.subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
+                Divider(height: 1, color: c.separator),
+                Flexible(
+                  child: results.isEmpty
+                      ? Padding(
+                          padding: const EdgeInsets.all(Gap.x3),
+                          child: Text(_q.isEmpty ? '还没有页面' : '没有找到 "$_q"',
+                              key: const Key('switcherEmpty'), textAlign: TextAlign.center, style: tt.bodyMedium?.copyWith(color: c.text3)),
+                        )
+                      : ListView.builder(
+                          shrinkWrap: true,
+                          padding: const EdgeInsets.all(Gap.xs),
+                          itemCount: results.length,
+                          itemBuilder: (ctx, i) {
+                            final r = results[i];
+                            return InkWell(
+                              key: ValueKey('switch-$i'),
+                              borderRadius: BorderRadius.circular(AppRadius.s),
                               onTap: () => Navigator.pop(context, r.target),
-                            ),
-                          );
-                        },
-                      ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                child: Row(children: [
-                  Text('↑↓ 选择   ↵ 打开', style: TextStyle(fontSize: 12, color: cs.outline)),
-                ]),
-              ),
-            ]),
-          ),
+                              child: Container(
+                                height: Sizes.bar,
+                                padding: const EdgeInsets.symmetric(horizontal: Gap.m),
+                                decoration: BoxDecoration(
+                                  color: i == sel ? c.selected : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(AppRadius.s),
+                                ),
+                                child: Row(children: [
+                                  Emoji(r.icon, size: Sizes.iconMd),
+                                  const SizedBox(width: Gap.m),
+                                  Expanded(
+                                    child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                      Text(r.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: tt.bodyMedium?.copyWith(color: c.text, height: 1.25)),
+                                      Text(r.subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: tt.bodySmall?.copyWith(color: c.text3, height: 1.25)),
+                                    ]),
+                                  ),
+                                  if (i == sel) Icon(CupertinoIcons.arrow_turn_down_left, size: Sizes.iconSm, color: c.text3),
+                                ]),
+                              ),
+                            );
+                          },
+                        ),
+                ),
+                Divider(height: 1, color: c.separator),
+                SizedBox(
+                  height: Sizes.control,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: Gap.l),
+                    child: Row(children: [
+                      Flexible(child: Text('↑↓ 选择   ↵ 打开', maxLines: 1, overflow: TextOverflow.ellipsis, style: tt.bodySmall?.copyWith(color: c.text3))),
+                    ]),
+                  ),
+                ),
+              ]),
+            ),
           ),
         ),
       ),
+    );
+  }
+}
+
+/// 键帽提示
+class _Kbd extends StatelessWidget {
+  final String label;
+  const _Kbd(this.label);
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    return Container(
+      height: 20,
+      padding: const EdgeInsets.symmetric(horizontal: Gap.s),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(border: Border.all(color: c.separator), borderRadius: BorderRadius.circular(AppRadius.xs)),
+      child: Text(label, textScaler: TextScaler.noScaling, style: TextStyle(fontSize: 12, height: 1.0, color: c.text3)),
     );
   }
 }

@@ -411,16 +411,31 @@ class SyncClient extends ChangeNotifier {
     return b;
   }
 
-  void delete(String id) {
+  /// 删除块（文件夹 / 页面递归删除子块）。返回这次被删除的全部 id，可交给 [restore] 撤销。
+  List<String> delete(String id) {
     final old = _blocks[id];
-    if (old == null) return;
+    if (old == null || old.deleted) return const [];
+    final ids = <String>[];
     // 文件夹：递归删除子块
-    for (final c in _blocks.values.where((x) => x.parentId == id).toList()) {
-      delete(c.id);
+    for (final c in _blocks.values.where((x) => x.parentId == id && !x.deleted).toList()) {
+      ids.addAll(delete(c.id));
     }
     final b = old.copyWith(deleted: true, updatedAt: max(_now(), old.updatedAt + 1), pending: true);
     _blocks[id] = b;
     _enqueue(b.toUpsertMessage());
+    _notify();
+    return [...ids, id];
+  }
+
+  /// 撤销删除
+  void restoreAll(List<String> ids) {
+    for (final id in ids) {
+      final old = _blocks[id];
+      if (old == null || !old.deleted) continue;
+      final b = old.copyWith(deleted: false, updatedAt: max(_now(), old.updatedAt + 1), pending: true);
+      _blocks[id] = b;
+      _enqueue(b.toUpsertMessage());
+    }
     _notify();
   }
 

@@ -1,3 +1,5 @@
+import '../ui/ds.dart';
+import '../ui/tokens.dart';
 import 'package:flutter/material.dart';
 
 /// 行内 Markdown 实时渲染的输入控制器（类似 Typora）：
@@ -63,14 +65,14 @@ class InlineMarkdownController extends TextEditingController {
           TextSpan(text: '*', style: faded),
         ]);
       } else if (m.group(3) != null) {
-        // Notion 风格行内代码：暖红色文字 + 浅灰底
-        final dark = Theme.of(context).brightness == Brightness.dark;
+        // 行内代码（AppFlowy / GitHub 样式）：等宽字体 + 中性灰底，文字保持正文颜色
+        final pal = AppColors.of(context);
         final code = TextStyle(
-          fontFamily: 'JetBrains Mono',
-          fontFamilyFallback: const ['Cascadia Code', 'SF Mono', 'Menlo', 'Consolas', 'Noto Sans Mono CJK SC', 'monospace'],
+          fontFamily: FontTokens.mono,
+          fontFamilyFallback: FontTokens.monoFallback,
           fontSize: (base.fontSize ?? 16) * 0.88,
-          color: dark ? const Color(0xFFFF7B72) : const Color(0xFFEB5757),
-          backgroundColor: (dark ? Colors.white : const Color(0xFF878378)).withValues(alpha: dark ? 0.10 : 0.15),
+          color: base.color ?? pal.text,
+          backgroundColor: pal.fill,
         );
         spans.addAll([
           TextSpan(text: '`', style: faded),

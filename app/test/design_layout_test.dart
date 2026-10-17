@@ -6,6 +6,7 @@ import 'package:syncnotes/blocks/builtin_types.dart';
 import 'package:syncnotes/main.dart';
 import 'package:syncnotes/pages/inline_md.dart';
 import 'package:syncnotes/services/settings.dart';
+import 'package:syncnotes/ui/ds.dart';
 import 'package:syncnotes/sync/local_store.dart';
 
 import 'fake_channel.dart';
@@ -100,15 +101,32 @@ void main() {
     expect(title.top, greaterThanOrEqualTo(icon.bottom));
   });
 
+  for (final size in const [Size(1600, 1000), Size(390, 800)]) {
+    testWidgets('cover sheet is a full-width (max 520) sheet (${size.width.toInt()}px)', (tester) async {
+      await pumpWithPage(tester, size);
+      await tester.tap(find.byKey(const Key('pageCover')));
+      await tester.pumpAndSettle();
+      final sheet = tester.getRect(find.descendant(of: find.byType(BottomSheet), matching: find.byType(Material)).first);
+      expect(sheet.width, size.width >= 900 ? 520 : size.width);
+      final picker = tester.getRect(find.byKey(const Key('coverPicker')));
+      expect(picker.width, greaterThan(sheet.width - 60));
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('golden: page head (cover + icon + title) layout', (tester) async {
     await pumpWithPage(tester, const Size(1200, 860));
     await expectLater(find.byKey(const Key('pageHead')), matchesGoldenFile('goldens/page_head_wide.png'));
   });
 
-  testWidgets('dark mode dims the cover', (tester) async {
+  testWidgets('covers are calm solid tones; dark mode uses the dark tone; legacy keys map', (tester) async {
     await pumpWithPage(tester, const Size(1200, 860), dark: true);
     final c = tester.widget<Container>(find.byKey(const Key('pageCover')));
-    expect(c.foregroundDecoration, isA<BoxDecoration>());
+    expect(c.color, coverTones['blue']!.$2); // 旧键 sky → blue
+    expect(c.decoration, isNull); // 不再是渐变
+    for (final k in legacyCoverMap.keys) {
+      expect(coverToneKey(k), isNotNull);
+    }
   });
 
   group('inline markdown rendering', () {
