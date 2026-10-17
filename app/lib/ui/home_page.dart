@@ -106,7 +106,22 @@ class _HomePageState extends State<HomePage> {
           ),
       ]),
     );
-    return Scaffold(
+    // 返回键先关闭搜索、恢复“全部”筛选，再交给外壳（退出 / 回到收件箱）
+    final transient = _searching || _kind != 'all';
+    return PopScope(
+      canPop: !transient,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        setState(() {
+          if (_searching) {
+            _searching = false;
+            _filter = '';
+          } else {
+            _kind = 'all';
+          }
+        });
+      },
+      child: Scaffold(
       backgroundColor: c.bg,
       body: SafeArea(
         bottom: false,
@@ -142,6 +157,7 @@ class _HomePageState extends State<HomePage> {
         ]),
       ),
       bottomNavigationBar: const QuickSendBar(),
+    ),
     );
   }
 }

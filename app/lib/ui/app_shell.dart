@@ -8,6 +8,7 @@ import '../models/block.dart';
 import '../blocks/block_type.dart';
 import '../pages/page_nav.dart';
 import '../pages/page_screen.dart';
+import 'back_handler.dart';
 import 'home_page.dart';
 import 'quick_switcher.dart';
 import 'settings_page.dart';
@@ -73,10 +74,33 @@ class AppShellState extends State<AppShell> implements PageHost {
     if (mounted) setState(() => _inSettings = false);
   }
 
+  /// 系统返回（Android 返回键 / 预测性返回手势）：
+  /// 抽屉 → 内容区嵌套 Navigator（底部菜单、弹出菜单、页面、设置、文件夹、页面内状态）
+  /// → 宽屏打开的页面回到收件箱 → 交给根页面“再按一次退出”。
+  Future<bool> handleBack() async {
+    final sc = _scaffold.currentState;
+    if (sc != null && sc.isDrawerOpen) {
+      sc.closeDrawer();
+      return true;
+    }
+    final nav = _navKey.currentState;
+    if (nav != null && await nav.maybePop()) {
+      if (!_wide && mounted && !nav.canPop() && _page != null) setState(() => _page = null);
+      return true;
+    }
+    if (_page != null && mounted) {
+      _select(null);
+      return true;
+    }
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
     final sync = AppScope.of(context).sync;
-    return CallbackShortcuts(
+    return RootBackScope(
+      onBack: handleBack,
+      child: CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.keyK, control: true): openSwitcher,
         const SingleActivator(LogicalKeyboardKey.keyK, meta: true): openSwitcher,
@@ -146,6 +170,7 @@ class AppShellState extends State<AppShell> implements PageHost {
           );
         }),
       ),
+    ),
     );
   }
 }

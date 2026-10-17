@@ -20,6 +20,7 @@ import 'sync/sync_client.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import 'ui/app_shell.dart';
+import 'ui/back_handler.dart';
 import 'ui/glass.dart';
 import 'ui/theme.dart';
 import 'ui/login_page.dart';
@@ -178,7 +179,7 @@ class _SyncNotesAppState extends State<SyncNotesApp> with WidgetsBindingObserver
           switchInCurve: Curves.easeOutCubic,
           child: _loggedIn
               ? const AppShell(key: ValueKey('home'))
-              : GlassBackdrop(child: LoginPage(
+              : RootBackScope(key: const ValueKey('login'), child: GlassBackdrop(child: LoginPage(
                   key: const ValueKey('login'),
                   settings: widget.settings,
                   api: _api,
@@ -186,7 +187,7 @@ class _SyncNotesAppState extends State<SyncNotesApp> with WidgetsBindingObserver
                     setState(() => _loggedIn = true);
                     _start();
                   },
-                )),
+                ))),
         ),
       ),
       ),

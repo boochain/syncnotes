@@ -327,14 +327,15 @@ class SegmentedControl<T> extends StatelessWidget {
 }
 
 /// 统一提示条：浮动、圆角 8；底部留出发送栏（36 + 上下 8 + 分隔线）的高度，不挡住输入框。
-void showToast(BuildContext context, String message, {String? actionLabel, VoidCallback? onAction, ScaffoldMessengerState? messenger}) {
+void showToast(BuildContext context, String message,
+    {String? actionLabel, VoidCallback? onAction, ScaffoldMessengerState? messenger, Duration duration = const Duration(seconds: 4)}) {
   final m = messenger ?? ScaffoldMessenger.maybeOf(context);
   if (m == null) return;
   m.hideCurrentSnackBar();
   m.showSnackBar(SnackBar(
     content: Text(message, maxLines: 2, overflow: TextOverflow.ellipsis),
     margin: const EdgeInsets.fromLTRB(Gap.l, 0, Gap.l, Gap.l + Sizes.input + 2 * Gap.m + 1),
-    duration: const Duration(seconds: 4),
+    duration: duration,
     // 带“撤销”按钮的提示条也会自动消失（Flutter 默认带操作的提示条常驻）
     persist: false,
     action: actionLabel == null ? null : SnackBarAction(label: actionLabel, onPressed: onAction ?? () {}),
