@@ -17,7 +17,12 @@ struct Args {
     bind: String,
 
     /// SQLite database path
-    #[arg(long, env = "SYNCNOTES_DB", default_value = "syncnotes.db", global = true)]
+    #[arg(
+        long,
+        env = "SYNCNOTES_DB",
+        default_value = "syncnotes.db",
+        global = true
+    )]
     db: PathBuf,
 
     /// Allow /api/register (set false in production after creating accounts)
@@ -25,7 +30,12 @@ struct Args {
     allow_register: bool,
 
     /// Directory for uploaded files (file blocks)
-    #[arg(long, env = "SYNCNOTES_FILES", default_value = "syncnotes-files", global = true)]
+    #[arg(
+        long,
+        env = "SYNCNOTES_FILES",
+        default_value = "syncnotes-files",
+        global = true
+    )]
     files_dir: PathBuf,
 
     /// Recycle-bin retention in days; items older than this are purged permanently (0 = never)
@@ -95,13 +105,18 @@ fn run_admin(args: &Args, cmd: &AdminCmd) -> Result<(), String> {
         } => {
             let pw = if *password_stdin {
                 let mut l = String::new();
-                std::io::stdin().read_line(&mut l).map_err(|e| e.to_string())?;
+                std::io::stdin()
+                    .read_line(&mut l)
+                    .map_err(|e| e.to_string())?;
                 Some(l.trim_end_matches(['\r', '\n']).to_string())
             } else {
                 password.clone()
             };
             let r = admin::reset_password(&st, username, pw, !no_force_change)?;
-            println!("已重置用户 {username} 的密码，{} 个登录会话已失效。", r.revoked_tokens);
+            println!(
+                "已重置用户 {username} 的密码，{} 个登录会话已失效。",
+                r.revoked_tokens
+            );
             if r.generated {
                 println!("临时密码: {}", r.password);
             }

@@ -33,7 +33,10 @@ pub fn generate_recovery_code() -> String {
     use argon2::password_hash::rand_core::RngCore;
     let mut bytes = [0u8; 20];
     OsRng.fill_bytes(&mut bytes);
-    let chars: Vec<char> = bytes.iter().map(|b| B32[(b & 31) as usize] as char).collect();
+    let chars: Vec<char> = bytes
+        .iter()
+        .map(|b| B32[(b & 31) as usize] as char)
+        .collect();
     chars
         .chunks(5)
         .map(|c| c.iter().collect::<String>())
@@ -77,7 +80,10 @@ pub fn generate_temp_password() -> String {
     const A: &[u8] = b"abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789";
     let mut bytes = [0u8; 14];
     OsRng.fill_bytes(&mut bytes);
-    bytes.iter().map(|b| A[(*b as usize) % A.len()] as char).collect()
+    bytes
+        .iter()
+        .map(|b| A[(*b as usize) % A.len()] as char)
+        .collect()
 }
 
 pub fn validate_password(pw: &str) -> Result<(), &'static str> {
@@ -124,7 +130,10 @@ mod tests {
         assert_eq!(c.len(), 23);
         assert_eq!(c.split('-').count(), 4);
         let h = hash_recovery_code(&c);
-        assert!(verify_recovery_code(&c.to_lowercase().replace('-', " "), &h));
+        assert!(verify_recovery_code(
+            &c.to_lowercase().replace('-', " "),
+            &h
+        ));
         assert!(!verify_recovery_code("AAAAA-AAAAA-AAAAA-AAAAA", &h));
         assert_ne!(generate_recovery_code(), c);
     }

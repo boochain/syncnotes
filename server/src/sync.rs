@@ -142,6 +142,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     let mut conn_id: Option<u64> = None;
     let mut authed: Option<(String, String, String)> = None; // user_id, username, device_id
     let mut auth_token: Option<String> = None;
+    let kill = std::sync::Arc::new(tokio::sync::Notify::new());
     // Tokens can also be revoked by `syncnotes-server admin reset-password` from another process.
     let mut recheck = tokio::time::interval(std::time::Duration::from_secs(15));
     recheck.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -152,6 +153,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                 Some(Ok(m)) => m,
                 _ => break,
             },
+            _ = kill.notified() => break,
             _ = recheck.tick() => {
                 if let Some(t) = &auth_token {
                     if !matches!(state.storage.validate_token(t), Ok(Some(_))) {
@@ -213,6 +215,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                             user_id: uid.clone(),
                             device_id: device_id.clone(),
                             tx: tx.clone(),
+                            kill: kill.clone(),
                         });
                         conn_id = Some(id);
                         authed = Some((uid.clone(), uname.clone(), device_id));

@@ -1,9 +1,9 @@
 //! SyncNotes server library — auth, storage, sync protocol.
 
+pub mod admin;
 pub mod auth;
 pub mod blocks;
 pub mod files;
-pub mod admin;
 pub mod protocol;
 pub mod recovery;
 pub mod state;

@@ -22,7 +22,11 @@ fn err(e: impl std::fmt::Display) -> String {
 
 fn fmt_ts(ms: i64) -> String {
     chrono::DateTime::from_timestamp_millis(ms)
-        .map(|d| d.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string())
+        .map(|d| {
+            d.with_timezone(&chrono::Local)
+                .format("%Y-%m-%d %H:%M")
+                .to_string()
+        })
         .unwrap_or_else(|| "-".into())
 }
 
@@ -138,7 +142,10 @@ fn file_entry(b: &Block) -> Option<(String, String)> {
         .get("name")
         .and_then(Value::as_str)
         .unwrap_or(&b.title);
-    Some((fid.to_string(), format!("files/{}-{}", &fid[..fid.len().min(8)], safe_name(name))))
+    Some((
+        fid.to_string(),
+        format!("files/{}-{}", &fid[..fid.len().min(8)], safe_name(name)),
+    ))
 }
 
 fn render_md(
@@ -163,11 +170,22 @@ fn render_md(
         let icon = str_of(p, "icon");
         out.push_str(&format!(
             "# {}{}\n\n",
-            if icon.is_empty() { String::new() } else { format!("{icon} ") },
-            if b.title.is_empty() { "无标题" } else { &b.title }
+            if icon.is_empty() {
+                String::new()
+            } else {
+                format!("{icon} ")
+            },
+            if b.title.is_empty() {
+                "无标题"
+            } else {
+                &b.title
+            }
         ));
         if b.deleted_at.is_some() {
-            out.push_str(&format!("> 回收站项目（删除于 {}）\n\n", fmt_ts(b.deleted_at.unwrap_or(0))));
+            out.push_str(&format!(
+                "> 回收站项目（删除于 {}）\n\n",
+                fmt_ts(b.deleted_at.unwrap_or(0))
+            ));
         }
         if !text.is_empty() {
             out.push_str(&text);
@@ -185,18 +203,33 @@ fn render_md(
             "numbered" => format!("{ind}1. {text}"),
             "todo" => format!(
                 "{ind}- [{}] {text}",
-                if p.get("checked") == Some(&json!(true)) { "x" } else { " " }
+                if p.get("checked") == Some(&json!(true)) {
+                    "x"
+                } else {
+                    " "
+                }
             ),
             "toggle" => format!("{ind}▸ {text}"),
             "quote" => format!("> {text}"),
             "callout" => format!("> {} {text}", {
                 let i = str_of(p, "icon");
-                if i.is_empty() { "💡" } else { i }
+                if i.is_empty() {
+                    "💡"
+                } else {
+                    i
+                }
             }),
             "code" => format!("```{}\n{text}\n```", str_of(p, "lang")),
             "divider" => "---".into(),
             _ if b.kind == "folder" || b.kind == "page" => {
-                format!("{ind}- 📄 {}", if b.title.is_empty() { "无标题" } else { &b.title })
+                format!(
+                    "{ind}- 📄 {}",
+                    if b.title.is_empty() {
+                        "无标题"
+                    } else {
+                        &b.title
+                    }
+                )
             }
             _ if text.is_empty() => format!("{ind}{}", b.title),
             _ => format!("{ind}{text}"),
@@ -271,25 +304,41 @@ pub fn export_user(
         "missing_files": missing,
     });
     zip.start_file("manifest.json", opts).map_err(err)?;
-    zip.write_all(serde_json::to_string_pretty(&manifest).map_err(err)?.as_bytes())
-        .map_err(err)?;
+    zip.write_all(
+        serde_json::to_string_pretty(&manifest)
+            .map_err(err)?
+            .as_bytes(),
+    )
+    .map_err(err)?;
     zip.start_file("blocks.json", opts).map_err(err)?;
-    zip.write_all(serde_json::to_string_pretty(&blocks).map_err(err)?.as_bytes())
-        .map_err(err)?;
+    zip.write_all(
+        serde_json::to_string_pretty(&blocks)
+            .map_err(err)?
+            .as_bytes(),
+    )
+    .map_err(err)?;
     let views_json: Vec<Value> = views
         .iter()
         .map(|(b, d, v)| json!({"block_id": b, "device_id": d, "viewed": v}))
         .collect();
     zip.start_file("device_views.json", opts).map_err(err)?;
-    zip.write_all(serde_json::to_string_pretty(&views_json).map_err(err)?.as_bytes())
-        .map_err(err)?;
+    zip.write_all(
+        serde_json::to_string_pretty(&views_json)
+            .map_err(err)?
+            .as_bytes(),
+    )
+    .map_err(err)?;
 
     // Markdown: one file per root (block without a live parent); trash roots in 回收站/.
     let ids: std::collections::HashSet<&str> = live.iter().map(|b| b.id.as_str()).collect();
     let mut kids: HashMap<String, Vec<&Block>> = HashMap::new();
     let mut roots: Vec<&Block> = Vec::new();
     for b in &live {
-        match b.parent_id.as_deref().filter(|p| ids.contains(p) && *p != b.id) {
+        match b
+            .parent_id
+            .as_deref()
+            .filter(|p| ids.contains(p) && *p != b.id)
+        {
             Some(p) => kids.entry(p.to_string()).or_default().push(b),
             None => roots.push(b),
         }
@@ -302,13 +351,28 @@ pub fn export_user(
     for r in roots {
         let mut md = String::new();
         render_md(r, &kids, &file_paths, 0, &mut md);
-        let dir = if r.deleted_at.is_some() { "markdown/回收站" } else { "markdown" };
-        let base = format!("{dir}/{}", safe_name(if r.title.is_empty() { &r.id } else { &r.title }));
+        let dir = if r.deleted_at.is_some() {
+            "markdown/回收站"
+        } else {
+            "markdown"
+        };
+        let base = format!(
+            "{dir}/{}",
+            safe_name(if r.title.is_empty() { &r.id } else { &r.title })
+        );
         let n = used.entry(base.clone()).or_insert(0);
         *n += 1;
-        let path = if *n == 1 { format!("{base}.md") } else { format!("{base} ({n}).md") };
+        let path = if *n == 1 {
+            format!("{base}.md")
+        } else {
+            format!("{base} ({n}).md")
+        };
         // Markdown in subfolders links files relative to the archive root.
-        let md = if dir.ends_with("回收站") { md.replace("](../files/", "](../../files/") } else { md };
+        let md = if dir.ends_with("回收站") {
+            md.replace("](../files/", "](../../files/")
+        } else {
+            md
+        };
         zip.start_file(path.as_str(), opts).map_err(err)?;
         zip.write_all(md.as_bytes()).map_err(err)?;
     }

@@ -15,6 +15,8 @@ pub struct Conn {
     pub user_id: String,
     pub device_id: String,
     pub tx: UnboundedSender<ServerMessage>,
+    /// Notified when the session is revoked (password reset) so the socket closes immediately.
+    pub kill: Arc<tokio::sync::Notify>,
 }
 
 #[derive(Clone)]
@@ -117,6 +119,7 @@ impl AppState {
                 let _ = c.tx.send(ServerMessage::AuthError {
                     message: "密码已重置，请重新登录".into(),
                 });
+                c.kill.notify_one();
                 false
             } else {
                 true

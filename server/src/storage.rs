@@ -280,7 +280,12 @@ impl Storage {
         let n = tx.execute(
             "UPDATE users SET password_hash = ?1, recovery_hash = ?2, must_change_password = 0
              WHERE id = ?3 AND recovery_hash = ?4",
-            params![new_password_hash, new_recovery_hash, user_id, expected_recovery_hash],
+            params![
+                new_password_hash,
+                new_recovery_hash,
+                user_id,
+                expected_recovery_hash
+            ],
         )?;
         if n == 1 {
             tx.execute("DELETE FROM tokens WHERE user_id = ?1", params![user_id])?;
