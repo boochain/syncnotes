@@ -203,3 +203,44 @@ class Emoji extends StatelessWidget {
         ),
       );
 }
+
+/// 弹出菜单项：统一高 32、图标 16、文字 14（AppFlowy 菜单行 / macOS 菜单）
+PopupMenuItem<T> menuItem<T>(BuildContext context, T value, IconData icon, String label, {bool danger = false, Key? key}) {
+  final c = AppColors.of(context);
+  final color = danger ? c.danger : c.text;
+  return PopupMenuItem<T>(
+    key: key,
+    value: value,
+    height: Sizes.control,
+    padding: const EdgeInsets.symmetric(horizontal: Gap.m),
+    child: Row(children: [
+      Icon(icon, size: Sizes.iconSm, color: danger ? c.danger : c.text2),
+      const SizedBox(width: Gap.m),
+      Flexible(
+        child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: color)),
+      ),
+    ]),
+  );
+}
+
+/// 危险操作确认对话框（删除等）：取消 = 文字按钮，确认 = 红色实心按钮，同为 36 高
+Future<bool> confirmDanger(BuildContext context, {required String title, required String message, String confirm = '删除'}) async {
+  final c = AppColors.of(context);
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (d) => AlertDialog(
+      title: Text(title),
+      content: Text(message),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('取消')),
+        FilledButton(
+          key: const Key('confirmDanger'),
+          style: FilledButton.styleFrom(backgroundColor: c.danger),
+          onPressed: () => Navigator.pop(d, true),
+          child: Text(confirm),
+        ),
+      ],
+    ),
+  );
+  return ok == true;
+}

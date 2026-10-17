@@ -1,5 +1,4 @@
 // 响应式：在所有目标尺寸 × 浅/深色 × 1.0/1.3 字号下打开关键界面，断言没有任何 RenderFlex 溢出。
-import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
