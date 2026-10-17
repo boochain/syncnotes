@@ -176,7 +176,8 @@ class _QuickSwitcherState extends State<_QuickSwitcher> {
                               borderRadius: BorderRadius.circular(AppRadius.s),
                               onTap: () => Navigator.pop(context, r.target),
                               child: Container(
-                                height: Sizes.bar,
+                                // 最小 44：大字号时自动增高
+                                constraints: const BoxConstraints(minHeight: Sizes.bar),
                                 padding: const EdgeInsets.symmetric(horizontal: Gap.m),
                                 decoration: BoxDecoration(
                                   color: i == sel ? c.selected : Colors.transparent,
@@ -199,10 +200,10 @@ class _QuickSwitcherState extends State<_QuickSwitcher> {
                         ),
                 ),
                 Divider(height: 1, color: c.separator),
-                SizedBox(
-                  height: Sizes.control,
+                ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: Sizes.control),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: Gap.l),
+                    padding: const EdgeInsets.symmetric(horizontal: Gap.l, vertical: Gap.xs),
                     child: Row(children: [
                       Flexible(child: Text('↑↓ 选择   ↵ 打开', maxLines: 1, overflow: TextOverflow.ellipsis, style: tt.bodySmall?.copyWith(color: c.text3))),
                     ]),

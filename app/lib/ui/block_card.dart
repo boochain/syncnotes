@@ -58,7 +58,8 @@ class _BlockCardState extends State<BlockCard> {
           child: AnimatedContainer(
             key: ValueKey('card-${block.id}'),
             duration: Motion.short2,
-            height: Sizes.listRow,
+            // 最小 56：字号放大（最高 200%）时自动增高，不溢出
+            constraints: const BoxConstraints(minHeight: Sizes.listRow),
             margin: const EdgeInsets.symmetric(horizontal: Gap.m),
             padding: const EdgeInsets.only(left: Gap.m, right: Gap.xs),
             decoration: BoxDecoration(
