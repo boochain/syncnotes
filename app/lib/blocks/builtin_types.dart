@@ -285,23 +285,31 @@ class FileType_ extends BlockType {
     final pf = res.first;
     final List<int> bytes = await pf.xFile.readAsBytes();
     if (!context.mounted) return false;
-    _toast(context, '正在上传 ${pf.name}…');
-    try {
-      final id = await s.api.uploadFile(s.settings.server!, s.settings.token!, pf.name, bytes);
-      if (!context.mounted) return false;
-      s.sync.create(
-        kind: BlockKind.file,
-        title: pf.name,
-        payload: {'name': pf.name, 'size': bytes.length, 'file_id': id},
-        parentId: parentId,
-        viewedMode: defaultViewedMode(context),
-      );
-      _toast(context, '上传完成');
-      return true;
-    } catch (e) {
-      if (context.mounted) _toast(context, '上传失败（需在线）：$e');
-      return false;
-    }
+    return uploadFileBlock(context, pf.name, bytes, parentId: parentId);
+  }
+}
+
+/// 上传一个文件并创建文件块（选择文件 / 拖放 / 分享进来共用）。
+Future<bool> uploadFileBlock(BuildContext context, String name, List<int> bytes, {String? parentId}) async {
+  final s = AppScope.of(context);
+  final server = s.settings.server, token = s.settings.token;
+  if (server == null || token == null) return false;
+  _toast(context, '正在上传 $name…');
+  try {
+    final id = await s.api.uploadFile(server, token, name, bytes);
+    if (!context.mounted) return false;
+    s.sync.create(
+      kind: BlockKind.file,
+      title: name,
+      payload: {'name': name, 'size': bytes.length, 'file_id': id},
+      parentId: parentId,
+      viewedMode: defaultViewedMode(context),
+    );
+    _toast(context, '上传完成');
+    return true;
+  } catch (e) {
+    if (context.mounted) _toast(context, '上传失败（需在线）：$e');
+    return false;
   }
 }
 

@@ -14,6 +14,7 @@ import '../platform/desktop.dart';
 import '../platform/notifications.dart';
 import 'back_handler.dart';
 import 'block_card.dart' show showCreateMenu;
+import 'file_drop.dart';
 import 'home_page.dart';
 import 'quick_switcher.dart';
 import 'settings_page.dart';
@@ -204,7 +205,7 @@ class AppShellState extends State<AppShell> implements PageHost {
             home = HomePage(onMenu: () => _scaffold.currentState?.openDrawer());
           }
           // 内容区使用嵌套 Navigator，设置/文件夹/旧笔记等页面在内容区打开
-          final content = PageHostScope(
+          final content = FileDropZone(child: PageHostScope(
             host: _wide ? this : _NarrowHost(this),
             child: HeroControllerScope.none(
               child: Navigator(
@@ -213,7 +214,7 @@ class AppShellState extends State<AppShell> implements PageHost {
                 onDidRemovePage: (_) {},
               ),
             ),
-          );
+          ));
           final pal = AppColors.of(context);
           // 布局照 Notion / AppFlowy：侧边栏与内容区平铺，中间一条细分隔线；纯色背景
           return Scaffold(
