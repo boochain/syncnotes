@@ -6,6 +6,7 @@ import 'package:syncnotes/blocks/builtin_types.dart';
 import 'package:syncnotes/main.dart';
 import 'package:syncnotes/services/settings.dart';
 import 'package:syncnotes/sync/local_store.dart';
+import 'package:syncnotes/platform/notifications.dart';
 import 'package:syncnotes/ui/back_handler.dart';
 
 import 'fake_channel.dart';
@@ -231,5 +232,39 @@ void main() {
     expect(exits(), 0);
     await back(tester);
     expect(exits(), 1);
+  });
+
+  testWidgets('desktop: Esc closes the search field', (tester) async {
+    await pumpApp(tester);
+    await tester.tap(find.byKey(const Key('homeSearch')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('search')), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('search')), findsNothing);
+  });
+
+  testWidgets('desktop: Ctrl+, opens settings', (tester) async {
+    await pumpApp(tester, size: const Size(1200, 800));
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.comma);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(find.text('退出登录', skipOffstage: false), findsOneWidget);
+    await back(tester);
+    expect(find.text('退出登录', skipOffstage: false), findsNothing);
+  });
+
+  testWidgets('tapping a notification opens that block; back returns home', (tester) async {
+    final ch = await pumpApp(tester);
+    ch.serverSend({'type': 'block_update', 'block': block('d', 'folder', '通知文件夹', 1)});
+    ch.serverSend({'type': 'block_update', 'block': block('m', 'message', '里面', 2, parent: 'd', payload: {'text': '通知里的消息'})});
+    await tester.pumpAndSettle();
+    Notifier.opened.value = 'd';
+    await tester.pumpAndSettle();
+    expect(find.text('通知里的消息'), findsOneWidget);
+    await back(tester);
+    expect(find.text('通知里的消息'), findsNothing);
+    expect(find.byKey(const Key('homeTitle')), findsOneWidget);
   });
 }

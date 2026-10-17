@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
@@ -8,6 +9,8 @@ import 'tokens.dart';
 /// [language] 仅为兼容旧测试保留；所有平台使用同一套设计。
 ThemeData buildAppTheme(Brightness b, {DesignLanguage? language}) {
   final dark = b == Brightness.dark;
+  // 触屏平台（Android / iOS）：按下水波纹反馈（Material 3）；桌面用悬停高亮，不要水波纹
+  final touch = defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS;
   final c = dark ? AppColors.dark : AppColors.light;
 
   final cs = ColorScheme(
@@ -87,7 +90,7 @@ ThemeData buildAppTheme(Brightness b, {DesignLanguage? language}) {
     canvasColor: c.bg,
     cardColor: c.bg,
     dividerColor: c.separator,
-    splashFactory: NoSplash.splashFactory,
+    splashFactory: touch ? InkRipple.splashFactory : NoSplash.splashFactory,
     hoverColor: c.hover,
     highlightColor: c.selected,
     focusColor: c.accent.withValues(alpha: 0.12),

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'ds.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,6 +10,8 @@ import '../models/block.dart';
 import '../blocks/block_type.dart';
 import '../pages/page_nav.dart';
 import '../pages/page_screen.dart';
+import '../platform/desktop.dart';
+import '../platform/notifications.dart';
 import 'back_handler.dart';
 import 'home_page.dart';
 import 'quick_switcher.dart';
@@ -51,11 +55,40 @@ class AppShellState extends State<AppShell> implements PageHost {
     setState(() => _page = id);
   }
 
+  @override
+  void initState() {
+    super.initState();
+    Notifier.opened.addListener(_onNotificationOpened);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _onNotificationOpened());
+  }
+
+  @override
+  void dispose() {
+    Notifier.opened.removeListener(_onNotificationOpened);
+    super.dispose();
+  }
+
+  /// 点击通知 → 打开对应的块（页面 / 笔记 / 文件夹……）
+  Future<void> _onNotificationOpened() async {
+    final id = Notifier.opened.value;
+    if (id == null || !mounted) return;
+    Notifier.opened.value = null;
+    if (isDesktop) unawaited(DesktopShell.instance.showNearTray().catchError((_) {}));
+    if (!mounted) return;
+    final b = AppScope.of(context).sync.byId(id);
+    if (b == null || b.deleted) return;
+    await openBlock(b);
+  }
+
   Future<void> openSwitcher() async {
     final s = AppScope.of(context);
     final ctx = _navKey.currentContext ?? context;
     final b = await showQuickSwitcher(ctx, s.sync);
     if (b == null || !mounted) return;
+    await openBlock(b);
+  }
+
+  Future<void> openBlock(Block b) async {
     if (b.kind == BlockKind.page) {
       _select(b.id);
     } else {
@@ -105,6 +138,10 @@ class AppShellState extends State<AppShell> implements PageHost {
         const SingleActivator(LogicalKeyboardKey.keyK, control: true): openSwitcher,
         const SingleActivator(LogicalKeyboardKey.keyK, meta: true): openSwitcher,
         const SingleActivator(LogicalKeyboardKey.keyP, control: true): openSwitcher,
+        // 桌面通用快捷键：Ctrl+F 查找、Ctrl+, 设置
+        const SingleActivator(LogicalKeyboardKey.keyF, control: true): openSwitcher,
+        const SingleActivator(LogicalKeyboardKey.comma, control: true): _settings,
+        const SingleActivator(LogicalKeyboardKey.comma, meta: true): _settings,
       },
       child: Focus(
         autofocus: true,

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'ui/tokens.dart';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -43,6 +44,8 @@ Future<void> _main(List<String> args) async {
   }
   if (Platform.isAndroid) {
     AndroidSyncService.init(autoRunOnBoot: settings.autoStart);
+    // 全面屏（edge-to-edge）：状态栏 / 导航栏透明，内容用 SafeArea 避让
+    unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
   }
   unawaited(Notifier.init());
   // SYNCNOTES_GLASS=0 → 退回 BackdropFilter 毛玻璃（旧显卡/远程桌面）
@@ -60,6 +63,20 @@ Future<void> _main(List<String> args) async {
 }
 
 ThemeData buildTheme(Brightness b) => buildAppTheme(b);
+
+/// 透明状态栏 / 导航栏；浅色主题用深色图标，深色主题用浅色图标。
+SystemUiOverlayStyle systemBarsStyle(Brightness b) {
+  final dark = b == Brightness.dark;
+  return SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    systemNavigationBarColor: Colors.transparent,
+    systemNavigationBarDividerColor: Colors.transparent,
+    systemNavigationBarContrastEnforced: false,
+    statusBarIconBrightness: dark ? Brightness.light : Brightness.dark,
+    statusBarBrightness: b,
+    systemNavigationBarIconBrightness: dark ? Brightness.light : Brightness.dark,
+  );
+}
 
 class SyncNotesApp extends StatefulWidget {
   final Settings settings;
@@ -174,6 +191,11 @@ class _SyncNotesAppState extends State<SyncNotesApp> with WidgetsBindingObserver
         locale: const Locale('zh', 'CN'),
         supportedLocales: const [Locale('zh', 'CN'), Locale('en')],
         localizationsDelegates: GlobalMaterialLocalizations.delegates,
+        // 系统栏图标随主题明暗切换（没有 AppBar 的页面也正确）
+        builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
+          value: systemBarsStyle(Theme.of(context).brightness),
+          child: child!,
+        ),
         home: AnimatedSwitcher(
           duration: Motion.medium3,
           switchInCurve: Curves.easeOutCubic,

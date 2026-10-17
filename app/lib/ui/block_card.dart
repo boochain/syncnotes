@@ -49,7 +49,11 @@ class _BlockCardState extends State<BlockCard> {
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: () => type.execute(context, block),
-          onLongPress: () => showBlockMenu(context, block),
+          onLongPress: () {
+            // Android 长按菜单：触感反馈
+            Feedback.forLongPress(context);
+            showBlockMenu(context, block);
+          },
           onSecondaryTap: () => showBlockMenu(context, block),
           child: AnimatedContainer(
             key: ValueKey('card-${block.id}'),
@@ -327,6 +331,8 @@ class BlockList extends StatelessWidget {
           );
         }
         return ListView.builder(
+          // 拖动列表时收起键盘（Android 习惯）
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           padding: const EdgeInsets.only(top: Gap.xs, bottom: Gap.x3),
           itemCount: items.length,
           itemBuilder: (context, i) => TweenAnimationBuilder<double>(

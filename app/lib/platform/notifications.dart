@@ -12,6 +12,16 @@ class Notifier {
   static bool _ready = false;
   static int _id = 1000;
 
+  /// 用户点击通知时要打开的块 id（外壳监听后打开对应内容）。
+  static final opened = ValueNotifier<String?>(null);
+
+  static void _onResponse(NotificationResponse r) {
+    final id = r.payload;
+    if (id == null || id.isEmpty) return;
+    opened.value = null; // 同一条通知点两次也要触发
+    opened.value = id;
+  }
+
   /// Linux 通知依赖 D-Bus 会话总线；没有时（如无桌面会话）直接跳过。
   static bool get _linuxBusAvailable {
     if (!Platform.isLinux) return true;
@@ -35,7 +45,16 @@ class Notifier {
             guid: '5b0f3a4e-7c2d-4b8e-9a51-2f6e1d9c8a70',
           ),
         ),
+        onDidReceiveNotificationResponse: _onResponse,
       );
+      // 冷启动：应用是被点击通知拉起的
+      if (requestPermission) {
+        try {
+          final launch = await _plugin.getNotificationAppLaunchDetails();
+          final r = launch?.notificationResponse;
+          if ((launch?.didNotificationLaunchApp ?? false) && r != null) _onResponse(r);
+        } catch (_) {}
+      }
       if (Platform.isAndroid && requestPermission) {
         await _plugin
             .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()

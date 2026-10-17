@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'ds.dart';
 import 'tokens.dart';
 
@@ -54,6 +55,14 @@ class _HomePageState extends State<HomePage> {
           child: _searching
               ? SizedBox(
                   height: Sizes.control,
+                  // Esc 关闭搜索（桌面）
+                  child: CallbackShortcuts(
+                  bindings: {
+                    const SingleActivator(LogicalKeyboardKey.escape): () => setState(() {
+                          _searching = false;
+                          _filter = '';
+                        }),
+                  },
                   child: TextField(
                     key: const ValueKey('search'),
                     autofocus: true,
@@ -65,6 +74,7 @@ class _HomePageState extends State<HomePage> {
                       prefixIconConstraints: BoxConstraints(minWidth: Sizes.control, minHeight: Sizes.control),
                       contentPadding: EdgeInsets.symmetric(horizontal: Gap.m, vertical: (Sizes.control - 20) / 2),
                     ),
+                  ),
                   ),
                 )
               : Row(key: const ValueKey('title'), children: [
