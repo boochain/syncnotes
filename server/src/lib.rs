@@ -1,9 +1,11 @@
 //! SyncNotes server library — auth, storage, sync protocol.
 
+pub mod admin;
 pub mod auth;
 pub mod blocks;
 pub mod files;
 pub mod protocol;
+pub mod recovery;
 pub mod state;
 pub mod storage;
 pub mod sync;
@@ -20,6 +22,9 @@ pub fn build_router(state: AppState) -> axum::Router {
         .route("/api/register", post(sync::register))
         .route("/api/login", post(sync::login))
         .route("/api/logout", post(sync::logout))
+        .route("/api/recover", post(recovery::recover))
+        .route("/api/recovery-code", post(recovery::regenerate))
+        .route("/api/change-password", post(recovery::change_password))
         .route("/ws", get(sync::ws_handler))
         .route("/api/files", axum::routing::put(files::upload))
         .route("/api/files/:id", get(files::download))

@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import '../services/auth_api.dart';
 import '../services/discovery.dart';
 import '../services/settings.dart';
+import 'recovery_ui.dart';
 
 /// 登录 / 注册页面。支持手动输入服务器地址或局域网发现。
 class LoginPage extends StatefulWidget {
@@ -43,22 +44,58 @@ class _LoginPageState extends State<LoginPage> {
       _error = null;
     });
     try {
+      String? newCode;
       if (_registerMode) {
-        await widget.api.register(server, _user.text.trim(), _pw.text);
+        newCode = await widget.api.register(server, _user.text.trim(), _pw.text);
       }
       final r = await widget.api.login(
           server, _user.text.trim(), _pw.text, widget.settings.deviceId,
           deviceName: _deviceName());
-      widget.settings
-        ..server = server
-        ..username = r.username
-        ..token = r.token;
-      widget.onLoggedIn();
+      if (!mounted) return;
+      setState(() => _busy = false); // 对话框期间不显示转圈
+      if (r.mustChangePassword) {
+        // 管理员重置的临时密码：先改密码才能同步（取消则留在登录页）
+        final changed = await showChangePasswordDialog(context,
+            api: widget.api, server: server, token: r.token, oldPassword: _pw.text, forced: true);
+        if (changed == null || !mounted) return;
+      }
+      if (newCode != null) {
+        await showRecoveryCodeDialog(context, code: newCode, username: r.username, server: server);
+      } else if (!r.hasRecoveryCode && !legacyPromptShown(widget.settings, r.username)) {
+        markLegacyPromptShown(widget.settings, r.username);
+        if (mounted && await askGenerateLegacyCode(context) && mounted) {
+          await generateRecoveryCodeFlow(context,
+              api: widget.api, server: server, token: r.token, username: r.username, password: _pw.text);
+        }
+      }
+      if (!mounted) return;
+      _finishLogin(server, r);
     } catch (e) {
       setState(() => _error = '$e');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  void _finishLogin(String server, AuthResult r) {
+    widget.settings
+      ..server = server
+      ..username = r.username
+      ..token = r.token;
+    widget.onLoggedIn();
+  }
+
+  Future<void> _forgot() async {
+    final res = await Navigator.of(context).push<(AuthResult, String)>(MaterialPageRoute(
+      builder: (_) => ForgotPasswordPage(
+        api: widget.api,
+        server: _server.text.trim(),
+        username: _user.text.trim(),
+        deviceId: widget.settings.deviceId,
+        deviceName: _deviceName(),
+      ),
+    ));
+    if (res != null && mounted) _finishLogin(res.$2, res.$1);
   }
 
   String _deviceName() {
@@ -209,10 +246,14 @@ class _LoginPageState extends State<LoginPage> {
                     : Text(_registerMode ? '注册并登录' : '登录'),
               ),
               const SizedBox(height: Gap.s),
-              TextButton(
-                onPressed: () => setState(() => _registerMode = !_registerMode),
-                child: Text(_registerMode ? '已有账号？去登录' : '没有账号？注册'),
-              ),
+              Wrap(alignment: WrapAlignment.center, spacing: Gap.s, children: [
+                TextButton(
+                  onPressed: () => setState(() => _registerMode = !_registerMode),
+                  child: Text(_registerMode ? '已有账号？去登录' : '没有账号？注册'),
+                ),
+                if (!_registerMode)
+                  TextButton(key: const Key('forgotPasswordButton'), onPressed: _forgot, child: const Text('忘记密码？')),
+              ]),
             ]),
           ),
         ),
