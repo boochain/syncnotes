@@ -879,7 +879,25 @@ fn script_env(
 }
 
 fn run_script(t: &tempfile::TempDir, path: &str, script: &str, args: &[&str]) -> (bool, String) {
+    run_script_env(t, path, script, args, &[])
+}
+
+fn run_script_env(
+    t: &tempfile::TempDir,
+    path: &str,
+    script: &str,
+    args: &[&str],
+    envs: &[(&str, &str)],
+) -> (bool, String) {
     let o = std::process::Command::new("bash")
+        .envs(envs.iter().copied())
+        .env_remove(
+            if envs.iter().any(|(k, _)| *k == "SYNCNOTES_RESCUE_PASSWORD") {
+                "__none__"
+            } else {
+                "SYNCNOTES_RESCUE_PASSWORD"
+            },
+        )
         .arg(repo_scripts().join(script))
         .args(args)
         .current_dir(t.path())
@@ -1008,12 +1026,11 @@ async fn e2e_rescue_script_reset_keeps_all_data() {
     .unwrap();
     assert!(ok, "{out}");
     assert!(out.contains("已备份数据库"), "{out}");
-    let temp = out
-        .lines()
-        .find_map(|l| l.strip_prefix("临时密码: "))
-        .unwrap_or_else(|| panic!("{out}"))
-        .trim()
-        .to_string();
+    assert!(
+        out.contains("syncnotes123456"),
+        "default password printed: {out}"
+    );
+    let temp = "syncnotes123456".to_string();
 
     // The old session (other process revoked it) is closed by the periodic re-check.
     let closed = tokio::time::timeout(Duration::from_secs(20), async {

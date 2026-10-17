@@ -106,6 +106,16 @@ sudo ./syncnotes-server.sh update ./syncnotes-server-v0.5.0-linux-x86_64.tar.gz 
 
 详细说明见 [`docs/server-script.md`](docs/server-script.md)。
 
+**忘记密码 / 数据救援**（用户恢复码也丢了时，由管理员在服务器上执行，笔记数据不受影响）：
+
+```bash
+sudo ./syncnotes-rescue.sh reset bill                    # 密码重置为默认 syncnotes123456，用户登录后必须立即修改
+sudo ./syncnotes-rescue.sh reset bill --password 新密码   # 或 SYNCNOTES_RESCUE_PASSWORD=新密码 sudo -E ./syncnotes-rescue.sh reset bill
+sudo ./syncnotes-rescue.sh export bill bill.zip          # 导出全部数据（含回收站和附件）
+```
+
+用户自助找回（恢复码）和全部救援命令见 [`docs/password-recovery.md`](docs/password-recovery.md)。
+
 ### 方式 1：直接运行预编译文件（推荐）
 
 到 [Releases](../../releases) 下载对应平台的服务器：

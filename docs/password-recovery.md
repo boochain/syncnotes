@@ -18,10 +18,12 @@ SyncNotes 自托管、没有邮箱，所以提供两条找回路径，**都不�
 ```bash
 sudo ./syncnotes-rescue.sh                       # 交互菜单（= syncnotes-server.sh 菜单 9）
 sudo ./syncnotes-rescue.sh list-users            # 列出用户（块数、回收站、会话数、是否有恢复码）
-sudo ./syncnotes-rescue.sh reset bill            # 重置密码：先自动备份数据库，再生成临时密码
+sudo ./syncnotes-rescue.sh reset bill            # 重置密码为默认 syncnotes123456（先自动备份数据库）
+sudo ./syncnotes-rescue.sh reset bill --password 新密码       # 指定密码
+SYNCNOTES_RESCUE_PASSWORD=新密码 sudo -E ./syncnotes-rescue.sh reset bill   # 或用环境变量
 sudo ./syncnotes-rescue.sh export bill bill.zip  # 导出全部数据（含回收站和附件）
 sudo ./syncnotes-rescue.sh backup                # 在线备份数据库
-# 也可以：sudo ./syncnotes-server.sh reset-password bill / export bill [out.zip] / list-users / backup
+# 也可以：sudo ./syncnotes-server.sh reset-password bill [--password X] / export bill [out.zip] / list-users / backup
 ```
 
 路径从 `/etc/syncnotes/syncnotes.env` 读取，命令以服务用户运行。也可以直接调用程序：
@@ -36,7 +38,12 @@ syncnotes-server admin backup /root/syncnotes-backup.db
 - `--db` / `--files-dir` 与 `SYNCNOTES_DB` / `SYNCNOTES_FILES` 环境变量同样生效。
 - **服务运行中也可以执行**：数据库为 WAL 模式并设置了 busy timeout；运行中的服务器会在 15 秒内
   发现令牌已被吊销并断开旧连接。备份用 `VACUUM INTO`，是一致的快照。
-- 默认生成临时密码，用户用它登录后**必须立即设置新密码**（在此之前不能同步）。
+- 脚本默认把密码重置为 **`syncnotes123456`**（醒目打印出来）；交互模式会提示
+  「新密码（直接回车使用默认 syncnotes123456）」。可用 `--password X` 或环境变量
+  `SYNCNOTES_RESCUE_PASSWORD` 指定。密码通过标准输入传给程序，不会出现在进程列表里。
+- 无论用哪个密码，用户登录后都**必须立即设置新密码**（在此之前不能同步）；所有已登录设备立即失效。
+  因为默认密码是公开的，重置后请尽快通知用户登录修改。
+- 直接调用程序 `syncnotes-server admin reset-password` 且不给密码时，仍会生成随机临时密码。
 - 用户重新登录后，设备上尚未同步的离线修改会照常上传，不会丢失。
 
 导出 zip 结构：`manifest.json`、`blocks.json`（全部块，含回收站与已彻底删除的墓碑）、

@@ -15,7 +15,8 @@
 #   uninstall        卸载
 #   rescue           忘记密码 / 数据救援菜单
 #   list-users       列出用户
-#   reset-password <用户名>     重置密码（自动生成临时密码，登录后强制修改；数据不变）
+#   reset-password <用户名> [--password X]  重置密码为默认 syncnotes123456（或 X / $SYNCNOTES_RESCUE_PASSWORD），
+#                    登录后强制修改；先自动备份数据库，所有设备退出，数据不变
 #   export <用户名> [输出.zip]  导出用户全部数据（含回收站和附件）
 #   backup           在线备份数据库（服务运行中也安全）
 # 选项：
@@ -40,6 +41,7 @@ SCRIPT_PATH="$SCRIPT_DIR/$(basename "${BASH_SOURCE[0]}")"
 ASSUME_YES=0
 OPEN_FW=0
 TMP_DIRS=()
+DEFAULT_RESCUE_PASSWORD="syncnotes123456"
 
 # 默认值（会被 ENV_FILE 覆盖）
 CFG_DIR="/opt/syncnotes"
@@ -752,8 +754,16 @@ cmd_backup() {
   rescue_admin backup "$dst" || die "备份失败"
   info "已备份数据库：$dst（服务运行中也是一致的快照）"
 }
-cmd_reset_password() {
-  local user=${1-}
+cmd_reset_password() { # reset-password <用户名> [--password X]；也可用环境变量 SYNCNOTES_RESCUE_PASSWORD
+  local user="" pw=${SYNCNOTES_RESCUE_PASSWORD-} a
+  while [ $# -gt 0 ]; do
+    a=$1; shift
+    case "$a" in
+      --password) [ $# -gt 0 ] || die "--password 需要一个值"; pw=$1; shift ;;
+      --password=*) pw=${a#--password=} ;;
+      *) if [ -z "$user" ]; then user=$a; else die "多余的参数：$a"; fi ;;
+    esac
+  done
   rescue_bin
   if [ -z "$user" ]; then
     rescue_admin list-users
@@ -764,19 +774,23 @@ cmd_reset_password() {
   echo "  · 只修改密码，所有笔记、文件、回收站、已读状态都不变"
   echo "  · 该用户所有已登录的设备会退出，需要用新密码重新登录（未同步的本地修改会在登录后继续上传）"
   confirm_danger "确认重置 $user 的密码？" || { info "已取消"; return 1; }
-  cmd_backup
-  local p1="" p2=""
-  if [ "$ASSUME_YES" != 1 ] && [ -t 0 ] && ! ask_yn "自动生成临时密码？（选 n 则手动输入）" y; then
+  if [ -z "$pw" ] && [ "$ASSUME_YES" != 1 ] && [ -t 0 ]; then
+    local p2=""
     while true; do
-      read -r -s -p "新密码（至少 4 位）: " p1 || true; echo
-      read -r -s -p "再输入一次: " p2 || true; echo
-      [ "${#p1}" -ge 4 ] && [ "$p1" = "$p2" ] && break
+      read -r -s -p "新密码（直接回车使用默认 $DEFAULT_RESCUE_PASSWORD）: " pw || pw=""; echo
+      [ -z "$pw" ] && break
+      read -r -s -p "再输入一次: " p2 || p2=""; echo
+      [ "${#pw}" -ge 4 ] && [ "$pw" = "$p2" ] && break
       err "两次输入不一致或少于 4 位"
     done
-    printf '%s\n' "$p1" | rescue_admin reset-password "$user" --password-stdin || die "重置失败"
-  else
-    rescue_admin reset-password "$user" || die "重置失败"
   fi
+  [ -n "$pw" ] || pw=$DEFAULT_RESCUE_PASSWORD
+  [ "${#pw}" -ge 4 ] || die "密码至少 4 位"
+  cmd_backup
+  printf '%s\n' "$pw" | rescue_admin reset-password "$user" --password-stdin || die "重置失败"
+  title "新密码"
+  printf '  用户名：%s\n  密码：  %s\n' "$user" "${C_B}$pw${C_0}"
+  [ "$pw" = "$DEFAULT_RESCUE_PASSWORD" ] && echo "  （这是默认密码，请尽快让用户登录修改）"
   info "请把密码告诉 $user，登录后会被要求立即设置新密码，并建议在「设置 → 账号」重新生成恢复码"
 }
 cmd_export() {
@@ -868,7 +882,7 @@ main_rescue() { local c=$1; shift; case "$c" in
 main() {
   need_root "$@"
   local args=() a
-  for a in "$@"; do case "$a" in -y|--yes) ASSUME_YES=1 ;; --open-firewall) OPEN_FW=1 ;; -h|--help) sed -n '2,26p' "$SCRIPT_PATH" | sed 's/^# \{0,1\}//'; exit 0 ;; *) args+=("$a") ;; esac; done
+  for a in "$@"; do case "$a" in -y|--yes) ASSUME_YES=1 ;; --open-firewall) OPEN_FW=1 ;; -h|--help) sed -n '2,27p' "$SCRIPT_PATH" | sed 's/^# \{0,1\}//'; exit 0 ;; *) args+=("$a") ;; esac; done
   set -- "${args[@]+"${args[@]}"}"
   local cmd=${1-menu}; shift || true
   case "$cmd" in
@@ -888,7 +902,7 @@ main() {
     reset-password|reset) cmd_reset_password "$@" ;;
     export) cmd_export "$@" ;;
     backup) cmd_backup ;;
-    *) err "未知命令：$cmd"; sed -n '2,26p' "$SCRIPT_PATH" | sed 's/^# \{0,1\}//'; exit 1 ;;
+    *) err "未知命令：$cmd"; sed -n '2,27p' "$SCRIPT_PATH" | sed 's/^# \{0,1\}//'; exit 1 ;;
   esac
 }
 [ "${SYNCNOTES_SOURCE_ONLY:-0}" = 1 ] || main "$@"
