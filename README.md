@@ -17,6 +17,16 @@
 
 ---
 
+## 回收站（开发中）
+
+- 删除的消息 / 笔记 / 文件 / 文件夹 / 页面先进入**回收站**，删除后的"撤销"提示条仍然可用（撤销 = 恢复）
+- 侧边栏（桌面）和抽屉 / 设置页（Android）都能打开回收站：显示类型图标、标题、删除时间、删除设备；支持搜索、多选批量恢复 / 彻底删除、清空回收站
+- 删除文件夹时，子项随文件夹一起进回收站，恢复后保持原来的结构；原位置已不存在时恢复到收件箱根目录并提示
+- 服务器默认 30 天后自动彻底删除（`--trash-retention-days` / `SYNCNOTES_TRASH_DAYS`，0 = 永不），彻底删除时一并删除服务器上的文件内容
+- 回收站中的内容不出现在收件箱、文件夹、搜索、通知和未读数里；删除、恢复、彻底删除在各设备间实时同步
+
+![回收站](docs/screenshots/trash-wide-light.png)
+
 ## v0.4：统一尺寸、字体和颜色
 
 - 参考 AppFlowy 的尺寸刻度（只参考数值，未复制代码）、Notion 的布局和 Apple HIG 的颜色与控件
@@ -65,7 +75,7 @@
 | 消息块 | 底部输入栏快速发送；点击复制内容 |
 | 笔记块 | Markdown 编辑 / 预览，自动保存，多设备实时同步 |
 | 文件块 | 上传到自己的服务器，其他设备点击下载并用系统程序打开 |
-| 文件夹 | 可包含其他任意块，支持移动块到文件夹，删除时连同子块一起删除 |
+| 文件夹 | 可包含其他任意块，支持移动块到文件夹，删除时连同子块一起移入回收站 |
 | 已读状态 | **每个块可单独设置**：<br>· 按设备（默认）：每台设备独立记录已读/未读<br>· 全局：在一台设备上看过，所有设备都标为已读 |
 | 实时同步 | WebSocket 推送；编辑冲突按"最后写入者获胜"处理 |
 | 离线队列 | 离线编辑持久化到本地，重连后按顺序重放；同一块多次离线编辑合并为一次 |
@@ -79,6 +89,32 @@
 ## 一、部署服务器
 
 服务器只有一个可执行文件，数据保存在一个 SQLite 文件和一个文件目录中。
+
+### 一键管理脚本（Linux，推荐）
+
+从下一个版本起，Linux 服务器压缩包里附带 `syncnotes-server.sh`（也可以从仓库的 `scripts/` 目录下载，和 `syncnotes-server` 程序放在同一目录）。解压后运行：
+
+```bash
+sudo ./syncnotes-server.sh            # 打开中文菜单：临时运行 / 持久运行 / 安装为服务并开机自启 / 停止 / 状态 / 更新 / 卸载
+sudo ./syncnotes-server.sh install    # 直接安装为系统服务并开机自启（会逐项询问端口、目录等，回车用默认值）
+sudo ./syncnotes-server.sh update ./syncnotes-server-v0.5.0-linux-x86_64.tar.gz   # 升级，失败自动回滚
+```
+
+脚本会自动找出旧的安装（旧的 systemd 服务、用 nohup 或手动启动的进程及其数据库），先备份数据库再迁移到 `/opt/syncnotes`。配置保存在 `/etc/syncnotes/syncnotes.env`。
+
+**防火墙**：脚本从不自动修改防火墙。本机防火墙未启用时什么也不做，只提醒在云服务器安全组中放行端口；ufw / firewalld 已启用时才会询问，默认"不修改"；非交互模式只有加 `--open-firewall` 才会放行；卸载时只删除脚本自己添加的规则，并且先询问。
+
+详细说明见 [`docs/server-script.md`](docs/server-script.md)。
+
+**忘记密码 / 数据救援**（用户恢复码也丢了时，由管理员在服务器上执行，笔记数据不受影响）：
+
+```bash
+sudo ./syncnotes-rescue.sh reset bill                    # 密码重置为默认 syncnotes123456，用户登录后必须立即修改
+sudo ./syncnotes-rescue.sh reset bill --password 新密码   # 或 SYNCNOTES_RESCUE_PASSWORD=新密码 sudo -E ./syncnotes-rescue.sh reset bill
+sudo ./syncnotes-rescue.sh export bill bill.zip          # 导出全部数据（含回收站和附件）
+```
+
+用户自助找回（恢复码）和全部救援命令见 [`docs/password-recovery.md`](docs/password-recovery.md)。
 
 ### 方式 1：直接运行预编译文件（推荐）
 
@@ -111,6 +147,7 @@ Windows：解压 zip 后运行 `syncnotes-server.exe`。
 | `--db` | `SYNCNOTES_DB` | `syncnotes.db` | SQLite 数据库路径 |
 | `--files-dir` | `SYNCNOTES_FILES` | `syncnotes-files` | 文件块的存储目录 |
 | `--allow-register` | `SYNCNOTES_ALLOW_REGISTER` | `true` | 是否允许注册新用户。**建好自己的账号后建议设为 `false`** |
+| `--trash-retention-days` | `SYNCNOTES_TRASH_DAYS` | `30` | 回收站保留天数，超过后自动彻底删除（含文件）；`0` = 永不自动清理 |
 | `--mdns` | `SYNCNOTES_MDNS` | `true` | 是否在局域网广播 `_syncnotes._tcp` 服务 |
 | `--mdns-name` | `SYNCNOTES_MDNS_NAME` | `SyncNotes` | 局域网广播名称 |
 
@@ -257,7 +294,9 @@ cd ../app && SYNCNOTES_SERVER_BIN=../server/target/release/syncnotes-server flut
 
 服务器 → 客户端：`auth_ok` / `auth_error` / `block_update {block}` / `viewed_update {block_id, viewed, device_id?, seq}` / `sync_complete {latest_seq}` / `error` / `pong`
 
-每个用户有一个单调递增的序号 `seq`；每次变更都会分配新序号，客户端记录收到的最大序号，重连时只拉取之后的变更。删除使用墓碑（`deleted=true`），保证离线设备也能收到删除。
+每个用户有一个单调递增的序号 `seq`；每次变更都会分配新序号，客户端记录收到的最大序号，重连时只拉取之后的变更。删除分两步：移入回收站时设置 `deleted_at`（毫秒时间戳）和 `deleted_by`（设备 id，服务器填写），与其他字段一样按最后写入者胜出（LWW）同步、可离线排队；彻底删除使用墓碑（`deleted=true`），服务器会级联到所有子块并删除文件内容，保证离线设备也能收到删除。
+
+协议兼容：`/health` 返回 `protocol: 2`、`features: ["trash"]` 和 `trash_retention_days`。`upsert_block` 中的 `deleted_at` 字段是可选的——旧客户端不发送该字段时服务器保留当前回收站状态（旧客户端编辑不会意外恢复或删除）；`null` 表示恢复，数字表示移入回收站。旧客户端会忽略 `block_update` 中的新字段（不会崩溃），但不认识回收站，会把回收站中的项目当作普通项目显示，建议同时升级客户端。旧数据库启动时自动加列迁移。
 
 ### 发布新版本
 

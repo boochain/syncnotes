@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../services/settings.dart';
 import 'autostart.dart';
 
 bool get isDesktop => !Platform.isAndroid && !Platform.isIOS && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
@@ -21,18 +22,49 @@ class DesktopShell with TrayListener, WindowListener {
   /// 托盘是否可用；不可用时点关闭直接退出，否则窗口隐藏后就再也找不回来了。
   bool trayAvailable = false;
 
-  Future<void> init({required bool startHidden}) async {
+  Settings? _settings;
+  static const Size minimumSize = Size(340, 420);
+  String get _mode => expanded.value ? 'expanded' : 'compact';
+
+  /// 保存的位置是否可信（显示器拔掉后不要把窗口放到屏幕外太远）
+  static bool plausibleBounds(Rect r) =>
+      r.width >= minimumSize.width && r.height >= minimumSize.height && r.left > -200 && r.top > -50 && r.left < 16000 && r.top < 9000;
+
+  Future<bool> _restoreBounds() async {
+    final r = _settings?.windowBounds(_mode);
+    if (r == null || !plausibleBounds(r)) return false;
+    await windowManager.setBounds(r);
+    return true;
+  }
+
+  Future<void> _saveBounds() async {
+    final s = _settings;
+    if (s == null) return;
+    try {
+      final r = await windowManager.getBounds();
+      if (plausibleBounds(r)) s.setWindowBounds(_mode, r);
+    } catch (_) {}
+  }
+
+  @override
+  void onWindowResized() => _saveBounds();
+  @override
+  void onWindowMoved() => _saveBounds();
+
+  Future<void> init({required bool startHidden, Settings? settings}) async {
+    _settings = settings;
     var hidden = startHidden;
     await windowManager.ensureInitialized();
     final opts = WindowOptions(
       size: windowSize,
-      minimumSize: const Size(340, 420),
+      minimumSize: minimumSize,
       title: 'SyncNotes',
       skipTaskbar: false,
       titleBarStyle: TitleBarStyle.normal,
     );
     await windowManager.waitUntilReadyToShow(opts, () async {
-      await windowManager.setAlignment(Alignment.bottomRight);
+      // 记住上次的位置和大小；没有记录时放在右下角（托盘旁）
+      if (!await _restoreBounds()) await windowManager.setAlignment(Alignment.bottomRight);
       if (!hidden) {
         await windowManager.show();
         await windowManager.focus();
@@ -85,7 +117,7 @@ class DesktopShell with TrayListener, WindowListener {
   }
 
   Future<void> showNearTray() async {
-    await windowManager.setAlignment(Alignment.bottomRight);
+    if (!await _restoreBounds()) await windowManager.setAlignment(Alignment.bottomRight);
     await windowManager.show();
     await windowManager.focus();
   }
@@ -95,6 +127,7 @@ class DesktopShell with TrayListener, WindowListener {
   static const Size expandedSize = Size(1120, 740);
   Future<void> toggleExpanded() async {
     expanded.value = !expanded.value;
+    if (await _restoreBounds()) return;
     if (expanded.value) {
       await windowManager.setSize(expandedSize);
       await windowManager.center();
@@ -134,10 +167,13 @@ class DesktopShell with TrayListener, WindowListener {
     exit(0);
   }
 
-  /// 点关闭 → 隐藏到托盘
+  /// 点关闭 → 隐藏到托盘（可在设置里改为直接退出）
+  bool get closeHides => trayAvailable && (_settings?.closeToTray ?? true);
+
   @override
   void onWindowClose() async {
-    if (trayAvailable) {
+    await _saveBounds();
+    if (closeHides) {
       await windowManager.hide();
     } else {
       await quit();

@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/cupertino.dart';
 // SyncNotes v0.4 设计系统：一套调色板、一套字阶、一套高度、一套圆角、一套间距、一套图标。
 //
@@ -327,16 +329,42 @@ class SegmentedControl<T> extends StatelessWidget {
 }
 
 /// 统一提示条：浮动、圆角 8；底部留出发送栏（36 + 上下 8 + 分隔线）的高度，不挡住输入框。
-void showToast(BuildContext context, String message, {String? actionLabel, VoidCallback? onAction, ScaffoldMessengerState? messenger}) {
+void showToast(BuildContext context, String message,
+    {String? actionLabel, VoidCallback? onAction, ScaffoldMessengerState? messenger, Duration duration = const Duration(seconds: 4)}) {
   final m = messenger ?? ScaffoldMessenger.maybeOf(context);
   if (m == null) return;
   m.hideCurrentSnackBar();
   m.showSnackBar(SnackBar(
     content: Text(message, maxLines: 2, overflow: TextOverflow.ellipsis),
     margin: const EdgeInsets.fromLTRB(Gap.l, 0, Gap.l, Gap.l + Sizes.input + 2 * Gap.m + 1),
-    duration: const Duration(seconds: 4),
+    duration: duration,
     // 带“撤销”按钮的提示条也会自动消失（Flutter 默认带操作的提示条常驻）
     persist: false,
     action: actionLabel == null ? null : SnackBarAction(label: actionLabel, onPressed: onAction ?? () {}),
   ));
+}
+
+/// 只有真正的鼠标才显示悬停态：触屏（含模拟器触摸、手写笔）上悬停高亮会"粘住"不消失。
+bool isMouseHover(PointerEvent e) => e.kind == PointerDeviceKind.mouse;
+
+bool get isTouchPlatform => defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS;
+
+/// 行尾的小按钮（视觉 [size]，如 28）：触屏上点击区扩大到 48×48，视觉位置不变。
+/// [child] 应是带 `fixedSize: size` 样式的按钮：主题在触屏上用 MaterialTapTargetSize.padded，
+/// 按钮在 48 的格子里会把整个 48×48 的点击都转发给自己。布局多出的宽度用平移移到行尾外侧。
+class TouchTarget extends StatelessWidget {
+  final double size;
+  final Widget child;
+  const TouchTarget({super.key, required this.size, required this.child});
+  static const minTouch = 48.0;
+  @override
+  Widget build(BuildContext context) {
+    if (!isTouchPlatform || size >= minTouch) return SizedBox.square(dimension: size, child: child);
+    final rtl = Directionality.of(context) == TextDirection.rtl;
+    final dx = (minTouch - size) / 2;
+    return Transform.translate(
+      offset: Offset(rtl ? -dx : dx, 0),
+      child: SizedBox.square(dimension: minTouch, child: Center(child: child)),
+    );
+  }
 }

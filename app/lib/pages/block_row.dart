@@ -627,7 +627,7 @@ class BlockRowState extends State<BlockRow> {
     final touch = Theme.of(context).platform == TargetPlatform.android || Theme.of(context).platform == TargetPlatform.iOS;
     final showGutter = _hover || _focus.hasFocus || touch;
     return MouseRegion(
-      onEnter: (_) => setState(() => _hover = true),
+      onEnter: (e) { if (isMouseHover(e)) setState(() => _hover = true); },
       onExit: (_) => setState(() => _hover = false),
       // 渲染到根 Overlay：不被玻璃面板裁剪；空间不足时向上弹出
       child: OverlayPortal(
@@ -890,7 +890,7 @@ class _PageLinkRowState extends State<_PageLinkRow> {
     final c = AppColors.of(context);
     final icon = (widget.page.payload['icon'] ?? '📄') as String;
     return MouseRegion(
-      onEnter: (_) => setState(() => _hover = true),
+      onEnter: (e) { if (isMouseHover(e)) setState(() => _hover = true); },
       onExit: (_) => setState(() => _hover = false),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 2),

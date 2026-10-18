@@ -44,17 +44,22 @@ class _BlockCardState extends State<BlockCard> {
       button: true,
       label: '${block.title}，$preview${unread ? '，未读' : ''}',
       child: MouseRegion(
-        onEnter: (_) => setState(() => _hover = true),
+        onEnter: (e) { if (isMouseHover(e)) setState(() => _hover = true); },
         onExit: (_) => setState(() => _hover = false),
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: () => type.execute(context, block),
-          onLongPress: () => showBlockMenu(context, block),
+          onLongPress: () {
+            // Android 长按菜单：触感反馈
+            Feedback.forLongPress(context);
+            showBlockMenu(context, block);
+          },
           onSecondaryTap: () => showBlockMenu(context, block),
           child: AnimatedContainer(
             key: ValueKey('card-${block.id}'),
             duration: Motion.short2,
-            height: Sizes.listRow,
+            // 最小 56：字号放大（最高 200%）时自动增高，不溢出
+            constraints: const BoxConstraints(minHeight: Sizes.listRow),
             margin: const EdgeInsets.symmetric(horizontal: Gap.m),
             padding: const EdgeInsets.only(left: Gap.m, right: Gap.xs),
             decoration: BoxDecoration(
@@ -96,8 +101,9 @@ class _BlockCardState extends State<BlockCard> {
                   Text(preview, key: const Key('cardPreview'), maxLines: 1, overflow: TextOverflow.ellipsis, style: tt.bodySmall?.copyWith(color: c.text2)),
                 ]),
               ),
-              SizedBox.square(
-                dimension: Sizes.compact,
+              // 视觉 28；触屏点击区 48×48（TouchTarget），图形位置不变
+              TouchTarget(
+                size: Sizes.compact,
                 child: IconButton(
                   key: const Key('cardMore'),
                   style: IconButton.styleFrom(fixedSize: const Size.square(Sizes.compact), minimumSize: const Size.square(Sizes.compact)),
@@ -237,8 +243,8 @@ Future<void> showBlockMenu(BuildContext context, Block block) async {
           MenuRow(key: const Key('menuDelete'), icon: CupertinoIcons.trash, label: '删除', danger: true, onTap: () {
             Navigator.pop(c);
             final ids = s.sync.delete(block.id);
-            // 删除不再静默发生：提示条里可以撤销
-            showToast(context, '已删除“${block.title.isEmpty ? type.label : block.title}”',
+            // 删除 = 移入回收站；提示条里可以撤销（撤销 = 恢复）
+            showToast(context, '已移到回收站：“${block.title.isEmpty ? type.label : block.title}”',
                 messenger: messenger, actionLabel: '撤销', onAction: () => s.sync.restoreAll(ids));
           }),
         ]),
@@ -327,6 +333,8 @@ class BlockList extends StatelessWidget {
           );
         }
         return ListView.builder(
+          // 拖动列表时收起键盘（Android 习惯）
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           padding: const EdgeInsets.only(top: Gap.xs, bottom: Gap.x3),
           itemCount: items.length,
           itemBuilder: (context, i) => TweenAnimationBuilder<double>(

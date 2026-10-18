@@ -25,7 +25,7 @@ class FolderPage extends StatelessWidget {
               Expanded(child: Text(f?.title ?? '文件夹', maxLines: 1, overflow: TextOverflow.ellipsis)),
             ]),
           ),
-          body: (f == null || f.deleted)
+          body: (f == null || f.deleted || f.inTrash)
               ? const EmptyState(icon: CupertinoIcons.trash, title: '文件夹已被删除', subtitle: '返回收件箱查看其他内容')
               : BlockList(parentId: folderId),
           bottomNavigationBar: QuickSendBar(parentId: folderId),

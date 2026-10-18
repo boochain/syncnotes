@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'ds.dart';
 import 'tokens.dart';
 
@@ -54,6 +55,14 @@ class _HomePageState extends State<HomePage> {
           child: _searching
               ? SizedBox(
                   height: Sizes.control,
+                  // Esc 关闭搜索（桌面）
+                  child: CallbackShortcuts(
+                  bindings: {
+                    const SingleActivator(LogicalKeyboardKey.escape): () => setState(() {
+                          _searching = false;
+                          _filter = '';
+                        }),
+                  },
                   child: TextField(
                     key: const ValueKey('search'),
                     autofocus: true,
@@ -66,6 +75,7 @@ class _HomePageState extends State<HomePage> {
                       contentPadding: EdgeInsets.symmetric(horizontal: Gap.m, vertical: (Sizes.control - 20) / 2),
                     ),
                   ),
+                  ),
                 )
               : Row(key: const ValueKey('title'), children: [
                   Flexible(
@@ -74,7 +84,8 @@ class _HomePageState extends State<HomePage> {
                   ),
                   if (!widget.embedded) ...[
                     const SizedBox(width: Gap.m),
-                    ListenableBuilder(listenable: s.sync, builder: (c, _) => ConnectionBadge(sync: s.sync, dotOnly: true)),
+                    // 窄屏 + 触屏 48dp 按钮时，状态文字可以被压缩（省略号），不溢出
+                    Flexible(child: ListenableBuilder(listenable: s.sync, builder: (c, _) => ConnectionBadge(sync: s.sync, dotOnly: true))),
                   ],
                 ]),
         ),
@@ -106,7 +117,22 @@ class _HomePageState extends State<HomePage> {
           ),
       ]),
     );
-    return Scaffold(
+    // 返回键先关闭搜索、恢复“全部”筛选，再交给外壳（退出 / 回到收件箱）
+    final transient = _searching || _kind != 'all';
+    return PopScope(
+      canPop: !transient,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        setState(() {
+          if (_searching) {
+            _searching = false;
+            _filter = '';
+          } else {
+            _kind = 'all';
+          }
+        });
+      },
+      child: Scaffold(
       backgroundColor: c.bg,
       body: SafeArea(
         bottom: false,
@@ -142,6 +168,7 @@ class _HomePageState extends State<HomePage> {
         ]),
       ),
       bottomNavigationBar: const QuickSendBar(),
+    ),
     );
   }
 }
@@ -167,7 +194,7 @@ class _FilterTabState extends State<FilterTab> {
       selected: widget.selected,
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
-        onEnter: (_) => setState(() => _hover = true),
+        onEnter: (e) { if (isMouseHover(e)) setState(() => _hover = true); },
         onExit: (_) => setState(() => _hover = false),
         child: GestureDetector(
           onTap: widget.onTap,
@@ -224,14 +251,14 @@ class ConnectionBadge extends StatelessWidget {
                 SizedBox.square(dimension: 16, child: Center(child: dot)),
                 // 在线且没有待同步时只显示圆点；其余状态把文字也露出来（离线 / 待同步一眼可见）
                 if (sync.state != ConnState.online || pending > 0)
-                  ConstrainedBox(
+                  Flexible(child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 120),
                     child: Text(text,
                         key: const Key('connLabel'),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(color: c.text3)),
-                  ),
+                  )),
               ])
             : Row(mainAxisSize: MainAxisSize.min, children: [
                 dot,

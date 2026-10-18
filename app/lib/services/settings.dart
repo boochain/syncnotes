@@ -1,3 +1,5 @@
+import 'dart:ui' show Rect;
+
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
@@ -32,6 +34,10 @@ class Settings {
   bool get notifications => prefs.getBool('notifications') ?? true;
   set notifications(bool v) => prefs.setBool('notifications', v);
 
+  /// 是否已经向用户说明过通知权限（只主动问一次）
+  bool get notificationRationaleShown => prefs.getBool('notif_rationale_shown') ?? false;
+  set notificationRationaleShown(bool v) => prefs.setBool('notif_rationale_shown', v);
+
   bool get startMinimized => prefs.getBool('start_minimized') ?? true;
   set startMinimized(bool v) => prefs.setBool('start_minimized', v);
 
@@ -45,6 +51,22 @@ class Settings {
   /// system / light / dark
   String get themeMode => prefs.getString('theme_mode') ?? 'system';
   set themeMode(String v) => prefs.setString('theme_mode', v);
+
+  /// 桌面：点关闭按钮时隐藏到托盘（true）还是直接退出（false）
+  bool get closeToTray => prefs.getBool('close_to_tray') ?? true;
+  set closeToTray(bool v) => prefs.setBool('close_to_tray', v);
+
+  /// 桌面：记住窗口位置和大小（[mode] = compact / expanded）
+  Rect? windowBounds(String mode) {
+    final v = prefs.getStringList('window_$mode');
+    if (v == null || v.length != 4) return null;
+    final n = v.map(double.tryParse).toList();
+    if (n.any((e) => e == null)) return null;
+    return Rect.fromLTWH(n[0]!, n[1]!, n[2]!, n[3]!);
+  }
+
+  void setWindowBounds(String mode, Rect r) =>
+      prefs.setStringList('window_$mode', [r.left, r.top, r.width, r.height].map((e) => e.toStringAsFixed(0)).toList());
 
   bool get isLoggedIn => token != null && server != null;
 

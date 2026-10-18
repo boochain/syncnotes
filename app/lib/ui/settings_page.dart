@@ -2,12 +2,15 @@ import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'trash_page.dart';
 
 import '../app_scope.dart';
 import '../platform/android_service.dart';
 import '../platform/desktop.dart';
 import '../sync/sync_client.dart';
 import 'ds.dart';
+import 'recovery_ui.dart';
+import '../services/local_export.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -47,7 +50,7 @@ class _SettingsPageState extends State<SettingsPage> {
         alignment: Alignment.topCenter,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 680),
-          child: ListView(padding: const EdgeInsets.only(bottom: Gap.x3), children: [
+          child: ListView(keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag, padding: const EdgeInsets.only(bottom: Gap.x3), children: [
             const SettingsSection('账号'),
             SettingsRow(icon: CupertinoIcons.person, title: st.username ?? '', subtitle: st.server ?? ''),
             ListenableBuilder(
@@ -65,6 +68,30 @@ class _SettingsPageState extends State<SettingsPage> {
                     '同步序号 ${s.sync.lastSeq} · 待发送 ${s.sync.pendingCount} · 设备 ${st.deviceId.length > 8 ? st.deviceId.substring(0, 8) : st.deviceId}',
                 trailing: TextButton(onPressed: s.sync.reconnectNow, child: const Text('重连')),
               ),
+            ),
+            SettingsRow(
+              key: const Key('settingsRecoveryCode'),
+              icon: CupertinoIcons.lock_shield,
+              title: '生成 / 重置恢复码',
+              subtitle: '忘记密码时用于自助重置，生成后旧恢复码失效',
+              onTap: () => generateRecoveryCodeFlow(context,
+                  api: s.api, server: st.server!, token: st.token!, username: st.username ?? ''),
+            ),
+            SettingsRow(
+              key: const Key('settingsChangePassword'),
+              icon: CupertinoIcons.lock_rotation,
+              title: '修改密码',
+              onTap: () async {
+                final ok = await showChangePasswordDialog(context, api: s.api, server: st.server!, token: st.token!);
+                if (ok != null && context.mounted) showToast(context, '密码已修改，其他设备需要重新登录');
+              },
+            ),
+            SettingsRow(
+              key: const Key('settingsExportData'),
+              icon: CupertinoIcons.arrow_down_doc,
+              title: '导出我的数据',
+              subtitle: '把本机缓存的全部笔记、回收站和附件导出为 zip（不需要服务器）',
+              onTap: () => exportMyData(context, s),
             ),
             const SettingsSection('外观'),
             Padding(
@@ -117,6 +144,14 @@ class _SettingsPageState extends State<SettingsPage> {
                 title: '启动时最小化到托盘',
                 trailing: sw(st.startMinimized, (v) => setState(() => st.startMinimized = v)),
               ),
+            if (isDesktop)
+              SettingsRow(
+                key: const Key('closeToTrayRow'),
+                icon: CupertinoIcons.xmark_square,
+                title: '关闭窗口时最小化到托盘',
+                subtitle: st.closeToTray ? '点关闭按钮隐藏到托盘，从托盘菜单“退出”才会结束' : '点关闭按钮直接退出 SyncNotes',
+                trailing: sw(st.closeToTray, (v) => setState(() => st.closeToTray = v), key: const Key('closeToTraySwitch')),
+              ),
             if (Platform.isAndroid)
               SettingsRow(
                 icon: CupertinoIcons.bell_circle,
@@ -140,6 +175,13 @@ class _SettingsPageState extends State<SettingsPage> {
               trailing: sw(st.defaultGlobalViewed, (v) => setState(() => st.defaultGlobalViewed = v), key: const Key('globalSwitch')),
             ),
             const SettingsSection('其他'),
+            SettingsRow(
+              key: const Key('settingsTrash'),
+              icon: CupertinoIcons.trash,
+              title: '回收站',
+              subtitle: '已删除的内容，可恢复或彻底删除',
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const TrashPage())),
+            ),
             SettingsRow(
               icon: CupertinoIcons.arrow_clockwise,
               title: '清除本地缓存并重新同步',
@@ -182,7 +224,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 }
 
-const appVersion = '0.4.0';
+const appVersion = '0.5.0';
 
 /// 设置分组标题：12/500 次级色，上 24 下 4（Notion 设置分组）
 class SettingsSection extends StatelessWidget {

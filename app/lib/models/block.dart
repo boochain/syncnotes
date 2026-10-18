@@ -34,6 +34,12 @@ class Block {
   final int updatedAt;
   final String createdBy;
   final bool deleted;
+
+  /// 移入回收站的时间（毫秒）；null = 未在回收站。
+  final int? deletedAt;
+
+  /// 执行删除的设备 id。
+  final String? deletedBy;
   final int seq;
 
   /// 本设备的已读状态（仅 perDevice 模式使用，本地维护）。
@@ -54,10 +60,15 @@ class Block {
     required this.updatedAt,
     this.createdBy = '',
     this.deleted = false,
+    this.deletedAt,
+    this.deletedBy,
     this.seq = 0,
     this.viewedLocal = false,
     this.pending = false,
   });
+
+  /// 在回收站中（尚未彻底删除）。
+  bool get inTrash => deletedAt != null && !deleted;
 
   bool get isViewed =>
       viewedMode == ViewedMode.global ? viewedGlobal : viewedLocal;
@@ -71,6 +82,9 @@ class Block {
     bool? viewedGlobal,
     int? updatedAt,
     bool? deleted,
+    int? deletedAt,
+    bool clearDeletedAt = false,
+    String? deletedBy,
     int? seq,
     bool? viewedLocal,
     bool? pending,
@@ -87,6 +101,8 @@ class Block {
         updatedAt: updatedAt ?? this.updatedAt,
         createdBy: createdBy,
         deleted: deleted ?? this.deleted,
+        deletedAt: clearDeletedAt ? null : (deletedAt ?? this.deletedAt),
+        deletedBy: clearDeletedAt ? null : (deletedBy ?? this.deletedBy),
         seq: seq ?? this.seq,
         viewedLocal: viewedLocal ?? this.viewedLocal,
         pending: pending ?? this.pending,
@@ -107,6 +123,8 @@ class Block {
         updatedAt: (j['updated_at'] ?? 0) as int,
         createdBy: (j['created_by'] ?? '') as String,
         deleted: j['deleted'] == true,
+        deletedAt: j['deleted_at'] as int?,
+        deletedBy: j['deleted_by'] as String?,
         seq: (j['seq'] ?? 0) as int,
         viewedLocal: viewedLocal,
       );
@@ -123,6 +141,8 @@ class Block {
         'updated_at': updatedAt,
         'created_by': createdBy,
         'deleted': deleted,
+        'deleted_at': deletedAt,
+        'deleted_by': deletedBy,
         'seq': seq,
         'viewed_local': viewedLocal,
         'pending': pending,
@@ -143,5 +163,6 @@ class Block {
         'viewed_mode': viewedModeWire(viewedMode),
         'client_updated_at': updatedAt,
         'deleted': deleted,
+        'deleted_at': deletedAt,
       };
 }

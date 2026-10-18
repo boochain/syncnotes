@@ -1,6 +1,6 @@
 [package]
 name = "syncnotes-server"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
 description = "SyncNotes real-time sync server"
 license = "MIT"
@@ -29,6 +29,7 @@ clap = { version = "4", features = ["derive", "env"] }
 mdns-sd = "0.11"
 tower-http = { version = "0.5", features = ["cors"] }
 chrono = "0.4"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 tokio-tungstenite = "0.21"

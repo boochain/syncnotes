@@ -59,9 +59,9 @@ class SyncClient extends ChangeNotifier {
   int get pendingCount => _outbox.length;
   List<Map<String, dynamic>> get outbox => List.unmodifiable(_outbox);
 
-  /// 所有未删除块，按更新时间倒序。
+  /// 所有可见块（未删除、不在回收站、祖先也不在回收站），按更新时间倒序。
   List<Block> get blocks {
-    final l = _blocks.values.where((b) => !b.deleted).toList()
+    final l = _blocks.values.where((b) => !b.deleted && !isHidden(b)).toList()
       ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
     return l;
   }
@@ -81,14 +81,96 @@ class SyncClient extends ChangeNotifier {
 
   Block? byId(String id) => _blocks[id];
 
+  /// 块本身或任一祖先在回收站 / 已彻底删除 → 对普通视图隐藏。
+  bool isHidden(Block b) {
+    var cur = b;
+    final seen = <String>{};
+    while (true) {
+      if (cur.deleted || cur.deletedAt != null) return true;
+      final pid = cur.parentId;
+      if (pid == null || !seen.add(pid)) return false;
+      final p = _blocks[pid];
+      // 父块不存在（尚未同步）→ 以孤儿身份显示在根目录
+      if (p == null) return false;
+      // 父块被彻底删除但本块没有：服务器会级联；这里也视为隐藏
+      cur = p;
+    }
+  }
+
+  /// 回收站条目：自身被移入回收站的块（文件夹的子块随文件夹一起，不单独列出）。按删除时间倒序。
+  List<Block> get trash {
+    final l = _blocks.values.where((b) => b.inTrash && b.kind != BlockKind.text).toList()
+      ..sort((a, b) => (b.deletedAt ?? 0).compareTo(a.deletedAt ?? 0));
+    return l;
+  }
+
+  /// 回收站中某项的后代数量（文件夹内的项目数）。
+  int trashChildCount(String id) =>
+      descendantIds(id, includeTrashed: true).where((d) => _blocks[d]?.kind != BlockKind.text).length;
+
+  /// 服务器回收站保留天数（来自 /health；0 = 永久保留）。
+  int trashRetentionDays = 30;
+
+  /// 删除 = 移入回收站（软删除）。文件夹/页面的子块保持原有结构，随父块一起隐藏和恢复。
+  /// 返回被移入回收站的 id 列表，可交给 [restoreAll] 撤销。
+  List<String> delete(String id) {
+    final old = _blocks[id];
+    if (old == null || old.deleted || old.deletedAt != null) return const [];
+    final now = _now();
+    final b = old.copyWith(deletedAt: now, deletedBy: deviceId, updatedAt: max(now, old.updatedAt + 1), pending: true);
+    _blocks[id] = b;
+    _enqueue(b.toUpsertMessage());
+    _notify();
+    return [id];
+  }
+
+  /// 从回收站恢复（撤销删除同样走这里）。
+  /// 若原父块已不存在 / 在回收站 / 已删除，则恢复到根目录；返回被移到根目录的 id。
+  List<String> restoreAll(List<String> ids) {
+    final toRoot = <String>[];
+    for (final id in ids) {
+      final old = _blocks[id];
+      if (old == null || old.deleted || old.deletedAt == null) continue;
+      final pid = old.parentId;
+      final parent = pid == null ? null : _blocks[pid];
+      final orphan = pid != null && (parent == null || isHidden(parent)) && !ids.contains(pid);
+      if (orphan) toRoot.add(id);
+      final b = old.copyWith(
+          clearDeletedAt: true, clearParent: orphan, updatedAt: max(_now(), old.updatedAt + 1), pending: true);
+      _blocks[id] = b;
+      _enqueue(b.toUpsertMessage());
+    }
+    _notify();
+    return toRoot;
+  }
+
+  /// 彻底删除（连同子块）。服务器会级联删除并移除文件内容。
+  void purge(List<String> ids) {
+    for (final id in ids) {
+      for (final d in [...descendantIds(id, includeTrashed: true), id]) {
+        final old = _blocks[d];
+        if (old == null || old.deleted) continue;
+        final b = old.copyWith(deleted: true, updatedAt: max(_now(), old.updatedAt + 1), pending: true);
+        _blocks[d] = b;
+        _enqueue(b.toUpsertMessage());
+      }
+    }
+    _notify();
+  }
+
+  /// 清空回收站。
+  void emptyTrash() => purge(trash.map((b) => b.id).toList());
+
   /// 某个块的所有后代 id（用于防止把文件夹移入自身子孙形成环）。
-  Set<String> descendantIds(String id) {
+  Set<String> descendantIds(String id, {bool includeTrashed = false}) {
     final out = <String>{};
     final stack = [id];
     while (stack.isNotEmpty) {
       final cur = stack.removeLast();
       for (final b in _blocks.values) {
-        if (b.parentId == cur && !b.deleted && out.add(b.id)) stack.add(b.id);
+        if (b.parentId == cur && !b.deleted && (includeTrashed || b.deletedAt == null) && out.add(b.id)) {
+          stack.add(b.id);
+        }
       }
     }
     return out;
@@ -295,6 +377,7 @@ class SyncClient extends ChangeNotifier {
         !_catchingUp &&
         incoming.createdBy != deviceId &&
         !incoming.deleted &&
+        incoming.deletedAt == null &&
         incoming.kind != BlockKind.text) {
       onRemoteNew?.call(result);
     }
@@ -409,34 +492,6 @@ class SyncClient extends ChangeNotifier {
     _enqueue(b.toUpsertMessage());
     _notify();
     return b;
-  }
-
-  /// 删除块（文件夹 / 页面递归删除子块）。返回这次被删除的全部 id，可交给 [restore] 撤销。
-  List<String> delete(String id) {
-    final old = _blocks[id];
-    if (old == null || old.deleted) return const [];
-    final ids = <String>[];
-    // 文件夹：递归删除子块
-    for (final c in _blocks.values.where((x) => x.parentId == id && !x.deleted).toList()) {
-      ids.addAll(delete(c.id));
-    }
-    final b = old.copyWith(deleted: true, updatedAt: max(_now(), old.updatedAt + 1), pending: true);
-    _blocks[id] = b;
-    _enqueue(b.toUpsertMessage());
-    _notify();
-    return [...ids, id];
-  }
-
-  /// 撤销删除
-  void restoreAll(List<String> ids) {
-    for (final id in ids) {
-      final old = _blocks[id];
-      if (old == null || !old.deleted) continue;
-      final b = old.copyWith(deleted: false, updatedAt: max(_now(), old.updatedAt + 1), pending: true);
-      _blocks[id] = b;
-      _enqueue(b.toUpsertMessage());
-    }
-    _notify();
   }
 
   void setViewed(String id, bool viewed) {

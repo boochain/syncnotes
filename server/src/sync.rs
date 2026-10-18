@@ -17,10 +17,13 @@ use crate::protocol::*;
 use crate::state::{AppState, Conn};
 use crate::storage::UpsertOutcome;
 
-pub async fn health() -> Json<HealthResponse> {
+pub async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "ok".into(),
         version: env!("CARGO_PKG_VERSION").into(),
+        protocol: PROTOCOL_VERSION,
+        features: vec!["trash".into()],
+        trash_retention_days: state.trash_days,
     })
 }
 
@@ -32,9 +35,8 @@ pub async fn register(
         return Err((StatusCode::FORBIDDEN, "注册已关闭".into()));
     }
     validate_username(&req.username).map_err(|e| (StatusCode::BAD_REQUEST, e.into()))?;
-    if req.password.len() < 4 {
-        return Err((StatusCode::BAD_REQUEST, "密码至少 4 位".into()));
-    }
+    crate::auth::validate_password(&req.password)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.into()))?;
     if state
         .storage
         .find_user(&req.username)
@@ -48,6 +50,12 @@ pub async fn register(
         .storage
         .create_user(&req.username, &hash)
         .map_err(internal)?;
+    // One-time recovery code (shown once by the client; only its argon2 hash is stored).
+    let code = crate::auth::generate_recovery_code();
+    state
+        .storage
+        .set_recovery_hash(&user.id, Some(&crate::auth::hash_recovery_code(&code)))
+        .map_err(internal)?;
     // Token for register is issued with a placeholder device; client should login properly.
     let token = state
         .storage
@@ -57,6 +65,9 @@ pub async fn register(
         token,
         user_id: user.id,
         username: user.username,
+        recovery_code: Some(code),
+        has_recovery_code: true,
+        must_change_password: false,
     }))
 }
 
@@ -83,6 +94,9 @@ pub async fn login(
         token,
         user_id: user.id,
         username: user.username,
+        recovery_code: None,
+        has_recovery_code: user.recovery_hash.is_some(),
+        must_change_password: user.must_change_password,
     }))
 }
 
@@ -100,7 +114,7 @@ pub async fn logout(
     Ok(StatusCode::NO_CONTENT)
 }
 
-fn internal(e: impl std::fmt::Display) -> (StatusCode, String) {
+pub(crate) fn internal(e: impl std::fmt::Display) -> (StatusCode, String) {
     tracing::error!("storage error: {e}");
     (StatusCode::INTERNAL_SERVER_ERROR, "服务器内部错误".into())
 }
@@ -127,8 +141,37 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
 
     let mut conn_id: Option<u64> = None;
     let mut authed: Option<(String, String, String)> = None; // user_id, username, device_id
+    let mut auth_token: Option<String> = None;
+    let kill = std::sync::Arc::new(tokio::sync::Notify::new());
+    // Tokens can also be revoked by `syncnotes-server admin reset-password` from another process.
+    let mut recheck = tokio::time::interval(std::time::Duration::from_secs(15));
+    recheck.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
-    while let Some(Ok(msg)) = stream.next().await {
+    loop {
+        let msg = tokio::select! {
+            m = stream.next() => match m {
+                Some(Ok(m)) => m,
+                _ => break,
+            },
+            _ = kill.notified() => break,
+            _ = recheck.tick() => {
+                if let Some(t) = &auth_token {
+                    if !matches!(state.storage.validate_token(t), Ok(Some(_))) {
+                        let _ = tx.send(ServerMessage::AuthError {
+                            message: "登录已失效，请重新登录".into(),
+                        });
+                        break;
+                    }
+                }
+                continue;
+            }
+        };
+        // Kicked by password reset/recovery in this process.
+        if let Some(cid) = conn_id {
+            if !state.has_conn(cid) {
+                break;
+            }
+        }
         let text = match msg {
             Message::Text(t) => t,
             Message::Close(_) => break,
@@ -146,8 +189,25 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
 
         match client {
             ClientMessage::Auth { token, device_id } => {
+                let must_change = match state.storage.validate_token(&token) {
+                    Ok(Some((ref uid, _))) => state
+                        .storage
+                        .find_user_by_id(uid)
+                        .ok()
+                        .flatten()
+                        .map(|u| u.must_change_password)
+                        .unwrap_or(false),
+                    _ => false,
+                };
+                if must_change {
+                    let _ = tx.send(ServerMessage::AuthError {
+                        message: "请先修改临时密码".into(),
+                    });
+                    continue;
+                }
                 match state.storage.validate_token(&token) {
                     Ok(Some((uid, uname))) => {
+                        auth_token = Some(token.clone());
                         if let Some(cid) = conn_id {
                             state.remove_conn(cid);
                         }
@@ -155,6 +215,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                             user_id: uid.clone(),
                             device_id: device_id.clone(),
                             tx: tx.clone(),
+                            kill: kill.clone(),
                         });
                         conn_id = Some(id);
                         authed = Some((uid.clone(), uname.clone(), device_id));
@@ -214,6 +275,7 @@ fn handle_authed(
             viewed_mode,
             client_updated_at,
             deleted,
+            deleted_at,
         } => {
             if !crate::blocks::valid_kind(&kind) {
                 let _ = tx.send(ServerMessage::Error {
@@ -238,9 +300,16 @@ fn handle_authed(
                 viewed_mode,
                 client_updated_at,
                 deleted,
+                deleted_at,
             ) {
                 Ok(UpsertOutcome::Applied(block)) => {
+                    let purged = block.deleted;
+                    let root = block.id.clone();
                     state.broadcast_user(user_id, &ServerMessage::BlockUpdate { block });
+                    if purged {
+                        // Permanent delete: cascade to descendants + remove file blobs.
+                        crate::trash::purge_tree(state, user_id, &root);
+                    }
                 }
                 Ok(UpsertOutcome::Stale(block)) => {
                     // Tell this client the current winner.

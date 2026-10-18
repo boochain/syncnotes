@@ -1,4 +1,5 @@
-// 响应式：在所有目标尺寸 × 浅/深色 × 1.0/1.3 字号下打开关键界面，断言没有任何 RenderFlex 溢出。
+// 响应式：在所有目标尺寸 × 浅/深色 × 1.0/1.3 字号（代表尺寸另测 2.0）下打开关键界面，断言没有任何 RenderFlex 溢出。
+import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -64,9 +65,11 @@ void expectClean(WidgetTester tester, String where) {
 void main() {
   setUpAll(registerBuiltinTypes);
 
+  // 200% 字号（Android 系统最大字号）：手机、托盘小窗、横屏、桌面各取代表尺寸
+  const bigSizes = [Size(320, 640), Size(360, 740), Size(400, 640), Size(844, 390), Size(1280, 800)];
   for (final size in sizes) {
     for (final dark in [false, true]) {
-      for (final scale in [1.0, 1.3]) {
+      for (final scale in [1.0, 1.3, if (!dark && bigSizes.contains(size)) 2.0]) {
         final name = '${size.width.toInt()}x${size.height.toInt()} ${dark ? 'dark' : 'light'} x$scale';
         testWidgets('no overflow: $name', (tester) async {
           tester.view.physicalSize = size;
@@ -119,5 +122,33 @@ void main() {
         });
       }
     }
+  }
+
+  for (final size in const [Size(320, 640), Size(400, 640)]) {
+    testWidgets('no overflow at 200%: settings + login ${size.width.toInt()}', (tester) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      tester.platformDispatcher.textScaleFactorTestValue = 2.0;
+      addTearDown(tester.view.reset);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      SharedPreferences.setMockInitialValues({'server': 'h:1', 'token': 'tok', 'username': 'bill', 'device_id': 'dev-r'});
+      final settings = await Settings.load();
+      await tester.pumpWidget(SyncNotesApp(settings: settings, store: MemoryStore(), channelFactory: (_) => FakeChannel()));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('homeSettings')));
+      await tester.pumpAndSettle();
+      expectClean(tester, 'settings');
+      for (var i = 0; i < 6; i++) {
+        await tester.drag(find.byType(Scrollable).last, const Offset(0, -400));
+        await tester.pumpAndSettle();
+        expectClean(tester, 'settings scrolled');
+      }
+      await tester.pumpWidget(const SizedBox());
+      SharedPreferences.setMockInitialValues({'device_id': 'dev-r'});
+      final s2 = await Settings.load();
+      await tester.pumpWidget(SyncNotesApp(settings: s2, store: MemoryStore(), channelFactory: (_) => FakeChannel()));
+      await tester.pumpAndSettle();
+      expectClean(tester, 'login');
+    });
   }
 }

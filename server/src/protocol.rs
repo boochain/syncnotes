@@ -24,6 +24,41 @@ pub struct AuthResponse {
     pub token: String,
     pub user_id: String,
     pub username: String,
+    /// Plain one-time recovery code; only present right after it was generated (show once).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recovery_code: Option<String>,
+    /// False for legacy accounts that never generated a code (client prompts once).
+    #[serde(default)]
+    pub has_recovery_code: bool,
+    /// Admin reset with a temporary password: client must force a password change.
+    #[serde(default)]
+    pub must_change_password: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecoverRequest {
+    pub username: String,
+    pub recovery_code: String,
+    pub new_password: String,
+    pub device_id: String,
+    pub device_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecoveryCodeRequest {
+    /// Current password (re-authentication; a stolen token alone can't rotate the code).
+    pub password: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecoveryCodeResponse {
+    pub recovery_code: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChangePasswordRequest {
+    pub old_password: String,
+    pub new_password: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,6 +80,10 @@ pub enum ClientMessage {
         /// Client-side updated_at for LWW conflict resolution.
         client_updated_at: i64,
         deleted: bool,
+        /// Recycle-bin timestamp. Absent (old clients) = keep server value;
+        /// `null` = restore from bin; number = move to bin.
+        #[serde(default, deserialize_with = "double_option")]
+        deleted_at: Option<Option<i64>>,
     },
     /// Mark a block viewed (honours the block's viewed_mode).
     SetViewed {
@@ -93,4 +132,22 @@ pub enum ServerMessage {
 pub struct HealthResponse {
     pub status: String,
     pub version: String,
+    /// Wire protocol revision. 2 = recycle bin (deleted_at / deleted_by).
+    #[serde(default)]
+    pub protocol: u32,
+    #[serde(default)]
+    pub features: Vec<String>,
+    /// Recycle-bin retention in days (0 = never purge).
+    #[serde(default)]
+    pub trash_retention_days: u32,
+}
+
+pub const PROTOCOL_VERSION: u32 = 2;
+
+/// Distinguish a missing field (None) from an explicit null (Some(None)).
+fn double_option<'de, D>(d: D) -> Result<Option<Option<i64>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<i64>::deserialize(d).map(Some)
 }
