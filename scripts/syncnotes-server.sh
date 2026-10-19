@@ -19,6 +19,7 @@
 #                    登录后强制修改；先自动备份数据库，所有设备退出，数据不变
 #   export <用户名> [输出.zip]  导出用户全部数据（含回收站和附件）
 #   backup           在线备份数据库（服务运行中也安全）
+#   https --domain <域名>  给已经在跑的 Nginx 加上 HTTPS（不安装 Caddy）
 # 选项：
 #   -y, --yes        全部使用默认值 / 上次保存的配置，不再提问（适合脚本调用）
 #   --open-firewall  防火墙已启用时放行端口（默认从不修改防火墙；防火墙未启用时什么也不做）
@@ -856,9 +857,10 @@ menu() {
   7) 更新 / 替换为新版
   8) 卸载
   9) 忘记密码 / 数据救援
+  h) 给已有 Nginx 配置 HTTPS
   0) 退出
 MENU
-    local c=""; read -r -p "请选择 [0-9]: " c || exit 0
+    local c=""; read -r -p "请选择 [0-9/h]: " c || exit 0
     case "$c" in
       1) cmd_run ;;
       2) cmd_start ;;
@@ -869,10 +871,28 @@ MENU
       7) local p=""; read -r -p "新版程序或 .tar.gz 的路径（回车使用脚本旁边的 $BIN_NAME）: " p || true; cmd_update "$p" ;;
       8) cmd_uninstall ;;
       9) rescue_menu ;;
+      h|H) cmd_https ;;
       0|q) exit 0 ;;
       *) echo "无效选项" ;;
     esac
   done
+}
+
+cmd_https() {
+  load_config
+  local b=""
+  if [ -x "$BIN" ]; then b=$BIN
+  elif [ -x "$SCRIPT_DIR/$BIN_NAME" ]; then b="$SCRIPT_DIR/$BIN_NAME"
+  elif command -v "$BIN_NAME" >/dev/null 2>&1; then b=$(command -v "$BIN_NAME")
+  else die "没有找到 $BIN_NAME。请先安装服务器，或把程序和本脚本放在同一目录"; fi
+  "$b" https --help >/dev/null 2>&1 || die "$b 版本过旧，不支持 HTTPS 配置。请先「更新 / 替换为新版」"
+  if [ $# -eq 0 ]; then
+    local d=""
+    read -r -p "域名（例如 notes.example.com，不要带 https://）: " d || true
+    [ -n "$d" ] || die "已取消"
+    exec "$b" https --domain "$d"
+  fi
+  exec "$b" https "$@"
 }
 
 main_rescue() { local c=$1; shift; case "$c" in
@@ -882,7 +902,7 @@ main_rescue() { local c=$1; shift; case "$c" in
 main() {
   need_root "$@"
   local args=() a
-  for a in "$@"; do case "$a" in -y|--yes) ASSUME_YES=1 ;; --open-firewall) OPEN_FW=1 ;; -h|--help) sed -n '2,27p' "$SCRIPT_PATH" | sed 's/^# \{0,1\}//'; exit 0 ;; *) args+=("$a") ;; esac; done
+  for a in "$@"; do case "$a" in -y|--yes) ASSUME_YES=1 ;; --open-firewall) OPEN_FW=1 ;; -h|--help) sed -n '2,28p' "$SCRIPT_PATH" | sed 's/^# \{0,1\}//'; exit 0 ;; *) args+=("$a") ;; esac; done
   set -- "${args[@]+"${args[@]}"}"
   local cmd=${1-menu}; shift || true
   case "$cmd" in
@@ -902,7 +922,8 @@ main() {
     reset-password|reset) cmd_reset_password "$@" ;;
     export) cmd_export "$@" ;;
     backup) cmd_backup ;;
-    *) err "未知命令：$cmd"; sed -n '2,27p' "$SCRIPT_PATH" | sed 's/^# \{0,1\}//'; exit 1 ;;
+    https) cmd_https "$@" ;;
+    *) err "未知命令：$cmd"; sed -n '2,28p' "$SCRIPT_PATH" | sed 's/^# \{0,1\}//'; exit 1 ;;
   esac
 }
 [ "${SYNCNOTES_SOURCE_ONLY:-0}" = 1 ] || main "$@"

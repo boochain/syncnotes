@@ -168,19 +168,28 @@ cd deploy
 docker compose up -d --build
 ```
 
-### 公网部署建议：加 HTTPS
+### 公网部署：HTTPS（已有 Nginx 时用这个）
 
-在服务器前面放一个反向代理（以 Caddy 为例，自动申请免费证书），参考 `deploy/Caddyfile.example`：
+服务器程序自己不监听 443，避免和现有网站抢端口。一条命令给当前的 Nginx 加一个站点，并向 Let's Encrypt 申请证书。Windows 和 Linux 是同一个程序：
 
+```bash
+# Linux（管理员）
+sudo ./syncnotes-server https --domain notes.example.com
+
+# 已经装过管理脚本时
+sudo ./syncnotes-server.sh https --domain notes.example.com
+
+# Windows（管理员命令行）
+syncnotes-server.exe https --domain notes.example.com
 ```
-notes.example.com {
-    reverse_proxy 127.0.0.1:7700
-}
-```
 
-客户端服务器地址填写 `https://notes.example.com` 即可（会自动使用 `wss://`）。
+它只会**新增**一个配置文件。`nginx -t` 失败就删掉该文件，不 reload，原来的网站不动。证书到期前会自动续期。客户端地址填 `https://notes.example.com`（自动走 `wss://`）。
 
-> ⚠️ 不加 HTTPS 时密码和令牌以明文传输，仅建议在局域网或可信网络中使用。
+已经有证书时跳过申请：`--cert fullchain.pem --key privkey.pem`。宝塔 / 1Panel 默认不写文件，命令会告诉你在面板里怎么填；确定要直接写再加 `--allow-panel`。
+
+还没有 Nginx、机器是空的时，仍可以用 Caddy，见 `deploy/Caddyfile.example`。细节见 [`docs/https.md`](docs/https.md)。
+
+> 不加 HTTPS 时密码和令牌以明文传输，只建议在局域网或可信网络里使用。
 
 ### 局域网模式
 

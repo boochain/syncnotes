@@ -4,7 +4,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use clap::{Parser, Subcommand};
+use clap::{Args as ClapArgs, Parser, Subcommand};
 use tracing_subscriber::EnvFilter;
 
 use syncnotes_server::{AppState, Storage};
@@ -59,6 +59,8 @@ enum Cmd {
     /// 管理员救援工具（忘记密码 / 导出数据 / 备份），可在服务器运行时使用
     #[command(subcommand)]
     Admin(AdminCmd),
+    /// 给已经在跑的 Nginx 加一个 HTTPS 站点（不安装 Caddy，不占用新的 Web 服务器）
+    Https(HttpsArgs),
 }
 
 #[derive(Subcommand, Debug)]
@@ -149,6 +151,85 @@ fn run_admin(args: &Args, cmd: &AdminCmd) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(ClapArgs, Debug)]
+struct HttpsArgs {
+    /// 续期已经配置过的证书
+    #[command(subcommand)]
+    action: Option<HttpsAction>,
+
+    /// 域名，例如 notes.example.com（不要带 https:// 和端口）
+    #[arg(long, global = true)]
+    domain: Option<String>,
+
+    /// Let's Encrypt 联系邮箱（可选，只用于证书到期提醒）
+    #[arg(long, global = true)]
+    email: Option<String>,
+
+    /// Nginx 反代到的 SyncNotes 地址
+    #[arg(long, global = true, default_value = "127.0.0.1:7700")]
+    upstream: String,
+
+    /// 证书、账号和状态目录
+    #[arg(long, global = true)]
+    state_dir: Option<PathBuf>,
+
+    /// nginx 可执行文件。默认从 PATH 里找
+    #[arg(long, global = true)]
+    nginx: Option<PathBuf>,
+
+    /// 使用已有证书（PEM，含完整证书链），必须和 --key 一起用
+    #[arg(long, global = true)]
+    cert: Option<PathBuf>,
+
+    /// 已有证书的私钥（PEM）
+    #[arg(long, global = true)]
+    key: Option<PathBuf>,
+
+    /// 向 Let's Encrypt 的测试环境申请（浏览器不会信任，用来试流程）
+    #[arg(long, global = true, default_value_t = false)]
+    staging: bool,
+
+    /// 即使检测到宝塔 / 1Panel 也直接写配置
+    #[arg(long, global = true, default_value_t = false)]
+    allow_panel: bool,
+
+    /// 不安装自动续期任务
+    #[arg(long, global = true, default_value_t = false)]
+    no_schedule: bool,
+
+    /// 跳过「本机 80 端口能否读到验证文件」的预检
+    #[arg(long, global = true, default_value_t = false)]
+    no_preflight: bool,
+
+    /// 续期时忽略「还没到期」
+    #[arg(long, global = true, default_value_t = false)]
+    force: bool,
+}
+
+#[derive(Subcommand, Debug)]
+enum HttpsAction {
+    /// 检查并续期已配置的证书
+    Renew,
+}
+
+fn https_request(h: &HttpsArgs) -> syncnotes_server::https::HttpsRequest {
+    syncnotes_server::https::HttpsRequest {
+        domain: h.domain.clone(),
+        email: h.email.clone(),
+        upstream: h.upstream.clone(),
+        state_dir: h.state_dir.clone(),
+        nginx_bin: h.nginx.clone(),
+        cert: h.cert.clone(),
+        key: h.key.clone(),
+        staging: h.staging,
+        allow_panel: h.allow_panel,
+        no_schedule: h.no_schedule,
+        renew: matches!(h.action, Some(HttpsAction::Renew)),
+        force: h.force,
+        no_preflight: h.no_preflight,
+    }
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
@@ -158,6 +239,13 @@ async fn main() {
     let args = Args::parse();
     if let Some(Cmd::Admin(cmd)) = &args.cmd {
         if let Err(e) = run_admin(&args, cmd) {
+            eprintln!("错误: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
+    if let Some(Cmd::Https(h)) = &args.cmd {
+        if let Err(e) = syncnotes_server::https::execute(https_request(h)).await {
             eprintln!("错误: {e}");
             std::process::exit(1);
         }
@@ -240,4 +328,43 @@ fn spawn_mdns(name: &str, port: u16) {
             Err(e) => tracing::warn!("mDNS daemon unavailable (LAN discovery disabled): {e}"),
         }
     });
+}
+
+#[cfg(test)]
+mod cli_tests {
+    use super::*;
+
+    #[test]
+    fn https_setup_and_renew_parse() {
+        let setup = Args::try_parse_from([
+            "syncnotes-server",
+            "https",
+            "--domain",
+            "notes.example.com",
+            "--staging",
+        ])
+        .unwrap();
+        let Cmd::Https(h) = setup.cmd.unwrap() else {
+            panic!("expected https");
+        };
+        assert_eq!(h.domain.as_deref(), Some("notes.example.com"));
+        assert!(h.staging);
+        assert!(h.action.is_none());
+
+        let renew = Args::try_parse_from([
+            "syncnotes-server",
+            "https",
+            "renew",
+            "--state-dir",
+            "/tmp/syncnotes-https",
+            "--force",
+        ])
+        .unwrap();
+        let Cmd::Https(h) = renew.cmd.unwrap() else {
+            panic!("expected https");
+        };
+        assert!(matches!(h.action, Some(HttpsAction::Renew)));
+        assert_eq!(h.state_dir.unwrap(), PathBuf::from("/tmp/syncnotes-https"));
+        assert!(h.force);
+    }
 }

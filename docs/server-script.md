@@ -24,6 +24,7 @@ sudo ./syncnotes-server.sh
 | 6 状态 / 日志 | `status`、`logs [-f]` | 显示配置、服务状态、进程、端口；查看最近日志（`-f` 持续跟踪） |
 | 7 更新 / 替换为新版 | `update [程序或 .tar.gz]` | 备份数据库，原子替换程序，重启并检查；新版本启动失败时自动回滚 |
 | 8 卸载 | `uninstall` | 需要输入 `yes` 确认；会询问是否同时删除数据（默认保留） |
+| h HTTPS | `https --domain 域名` | 给已有 Nginx 加 HTTPS 站点。不新开 Web 服务器。详见 [`https.md`](https.md) |
 
 在子命令后加 `-y` / `--yes` 时不再提问，直接使用上次保存的配置或默认值，适合在其他脚本中调用；此时不会修改防火墙，除非再加 `--open-firewall`。
 
@@ -86,4 +87,8 @@ sudo ./syncnotes-server.sh logs -f            # 跟踪日志
 sudo ./syncnotes-server.sh update 新版.tar.gz  # 升级（失败自动回滚）
 sudo ./syncnotes-server.sh stop               # 停止
 sudo ./syncnotes-server.sh uninstall          # 卸载
+sudo ./syncnotes-server.sh https --domain notes.example.com   # 给已有 Nginx 加 HTTPS
 ```
+
+HTTPS 的行为（失败还原、续期、Windows 同一条命令）见 [`https.md`](https.md)。
+
