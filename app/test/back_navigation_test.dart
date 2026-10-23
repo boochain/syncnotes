@@ -53,6 +53,14 @@ void main() {
 
   int exits() => platformCalls.where((c) => c.method == 'SystemNavigator.pop').length;
 
+  Future<void> scrollSettings(WidgetTester tester, Finder target) {
+    return tester.scrollUntilVisible(
+      target,
+      200,
+      scrollable: find.descendant(of: find.byKey(const Key('settingsList')), matching: find.byType(Scrollable)),
+    );
+  }
+
   Future<void> back(WidgetTester tester) async {
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
@@ -252,6 +260,8 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.comma);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await tester.pumpAndSettle();
+    // 设置项变多后，未滚到的行还没挂到树上
+    await scrollSettings(tester, find.text('退出登录'));
     expect(find.text('退出登录', skipOffstage: false), findsOneWidget);
     await back(tester);
     expect(find.text('退出登录', skipOffstage: false), findsNothing);
@@ -293,6 +303,7 @@ void main() {
     await ctrl(tester, LogicalKeyboardKey.keyW);
     expect(find.byKey(const Key('pageTitle')), findsNothing);
     await ctrl(tester, LogicalKeyboardKey.comma);
+    await scrollSettings(tester, find.text('退出登录'));
     expect(find.text('退出登录', skipOffstage: false), findsOneWidget);
     await ctrl(tester, LogicalKeyboardKey.keyW);
     expect(find.text('退出登录', skipOffstage: false), findsNothing);

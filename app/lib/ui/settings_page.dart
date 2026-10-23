@@ -52,7 +52,11 @@ class _SettingsPageState extends State<SettingsPage> {
         alignment: Alignment.topCenter,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 680),
-          child: ListView(keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag, padding: const EdgeInsets.only(bottom: Gap.x3), children: [
+          child: ListView(
+            key: const Key('settingsList'),
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            padding: const EdgeInsets.only(bottom: Gap.x3),
+            children: [
             const SettingsSection('账号'),
             SettingsRow(icon: CupertinoIcons.person, title: st.username ?? '', subtitle: st.server ?? ''),
             ListenableBuilder(

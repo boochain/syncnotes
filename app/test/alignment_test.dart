@@ -182,6 +182,11 @@ void main() {
         }
         await tester.pumpAndSettle();
         expectClean(tester, 'settings');
+        await tester.scrollUntilVisible(
+          find.byKey(const Key('themeSelector')),
+          200,
+          scrollable: find.descendant(of: find.byKey(const Key('settingsList')), matching: find.byType(Scrollable)),
+        );
         expect(find.byKey(const Key('themeSelector')), findsOneWidget);
         // 1.3 倍字号下只允许单行增高（不换行）
         expect(r(tester, find.byKey(const Key('themeSelector'))).height, lessThanOrEqualTo(Sizes.control * 1.3));
