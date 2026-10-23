@@ -69,9 +69,7 @@ impl Ws {
             let next = tokio::time::timeout(Duration::from_secs(5), self.inner.next())
                 .await
                 .expect("timeout waiting for message");
-            let Some(m) = next else {
-                return None;
-            };
+            let m = next?;
             match m.unwrap() {
                 Message::Binary(b) => {
                     let plain = self.pair.recv.open(&b).expect("decrypt");
@@ -107,10 +105,12 @@ pub async fn post_json(addr: &str, path: &str, token: Option<&str>, body: &Value
     assert_eq!(res.status().as_u16(), 200, "outer seal status");
     let bytes = res.bytes().await.unwrap();
     let (st, raw) = pending.open_response(&bytes).unwrap();
-    let v = serde_json::from_slice(&raw).unwrap_or(Value::String(String::from_utf8_lossy(&raw).into_owned()));
+    let v = serde_json::from_slice(&raw)
+        .unwrap_or(Value::String(String::from_utf8_lossy(&raw).into_owned()));
     (st, v)
 }
 
+#[allow(dead_code)]
 pub async fn blob_put(addr: &str, token: &str, name: &str, data: &[u8]) -> (u16, Value) {
     let pubk = server_pub(addr).await;
     let meta = json!({"op":"put","name":name,"size":data.len() as u64,"token":token});
@@ -134,10 +134,12 @@ pub async fn blob_put(addr: &str, token: &str, name: &str, data: &[u8]) -> (u16,
     assert_eq!(res.status().as_u16(), 200, "blob outer");
     let bytes = res.bytes().await.unwrap();
     let (st, raw) = pending.open_response(&bytes).expect("open blob response");
-    let v = serde_json::from_slice(&raw).unwrap_or(Value::String(String::from_utf8_lossy(&raw).into_owned()));
+    let v = serde_json::from_slice(&raw)
+        .unwrap_or(Value::String(String::from_utf8_lossy(&raw).into_owned()));
     (st, v)
 }
 
+#[allow(dead_code)]
 pub async fn blob_get(addr: &str, token: &str, id: &str) -> (u16, Vec<u8>) {
     let pubk = server_pub(addr).await;
     let meta = json!({"op":"get","file_id":id,"token":token});
@@ -154,7 +156,9 @@ pub async fn blob_get(addr: &str, token: &str, id: &str) -> (u16, Vec<u8>) {
         .unwrap();
     let bytes = res.bytes().await.unwrap();
     if bytes.len() >= 4 && &bytes[..4] == b"SNC1" {
-        let (st, raw) = pending.open_response(&bytes).unwrap_or((500, b"open".to_vec()));
+        let (st, raw) = pending
+            .open_response(&bytes)
+            .unwrap_or((500, b"open".to_vec()));
         return (st, raw);
     }
     if bytes.len() < 4 {

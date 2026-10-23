@@ -105,8 +105,12 @@ async fn health_ok() {
         .await
         .unwrap();
     assert_eq!(v["status"], "ok");
-    assert!(v["features"].as_array().unwrap().iter().any(|f| f == "seal"));
-    assert_eq!(v["seal_pub"].as_str().unwrap().len() > 40, true);
+    assert!(v["features"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|f| f == "seal"));
+    assert!(v["seal_pub"].as_str().unwrap().len() > 40);
 }
 
 #[tokio::test]
@@ -523,7 +527,10 @@ async fn malformed_message_returns_error() {
     setup_user(&addr, "bill").await;
     let t1 = login(&addr, "bill", "pass1234", "pc").await.unwrap();
     let mut a = connect(&addr, &t1, "pc").await;
-    a.inner.send(Message::Text("not json".into())).await.unwrap();
+    a.inner
+        .send(Message::Text("not json".into()))
+        .await
+        .unwrap();
     assert_eq!(recv(&mut a).await["type"], "error");
     send(&mut a, json!({"type":"ping"})).await;
     assert_eq!(recv(&mut a).await["type"], "pong");
@@ -540,12 +547,7 @@ async fn file_upload_download_and_isolation() {
     assert_eq!(st, 200, "{r}");
     let id = r["file_id"].as_str().unwrap();
     let (gst, got) = wire::blob_get(&addr, &tb, id).await;
-    assert_eq!(
-        gst,
-        200,
-        "{}",
-        String::from_utf8_lossy(&got)
-    );
+    assert_eq!(gst, 200, "{}", String::from_utf8_lossy(&got));
     assert_eq!(got, "你好文件".as_bytes());
     let (ost, _) = wire::blob_get(&addr, &te, id).await;
     assert_eq!(ost, 404);

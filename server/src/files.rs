@@ -31,9 +31,7 @@ fn user_for(state: &AppState, token: Option<String>) -> Result<String, (StatusCo
 }
 
 fn safe_id(id: &str) -> bool {
-    !id.is_empty()
-        && id.len() <= 80
-        && id.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
+    !id.is_empty() && id.len() <= 80 && id.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
 }
 
 struct Reader {
@@ -217,7 +215,8 @@ pub async fn blob(State(state): State<AppState>, body: Body) -> axum::response::
             200,
             &serde_json::to_vec(&json!({"size": size, "name": meta.name})).unwrap_or_default(),
         );
-        let (mut tx, rx) = futures::channel::mpsc::channel::<Result<axum::body::Bytes, std::io::Error>>(2);
+        let (mut tx, rx) =
+            futures::channel::mpsc::channel::<Result<axum::body::Bytes, std::io::Error>>(2);
         tokio::spawn(async move {
             let mut prefix = Vec::with_capacity(4 + head.len());
             prefix.extend_from_slice(&(head.len() as u32).to_be_bytes());
@@ -237,11 +236,7 @@ pub async fn blob(State(state): State<AppState>, body: Body) -> axum::response::
                 let mut frame = Vec::with_capacity(4 + ct.len());
                 frame.extend_from_slice(&(ct.len() as u32).to_be_bytes());
                 frame.extend_from_slice(&ct);
-                if tx
-                    .send(Ok(axum::body::Bytes::from(frame)))
-                    .await
-                    .is_err()
-                {
+                if tx.send(Ok(axum::body::Bytes::from(frame))).await.is_err() {
                     return;
                 }
                 idx += 1;

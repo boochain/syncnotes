@@ -10,6 +10,8 @@
 //! Blobs: the same handshake key stream-encrypts independent chunks so a
 //! transfer never has to hold the whole file.
 
+#![allow(clippy::result_unit_err, clippy::new_without_default)]
+
 use std::path::Path;
 
 use base64::Engine;
@@ -93,10 +95,7 @@ fn hkdf(ikm: &[u8], info: &[u8]) -> [u8; 32] {
 fn aead_seal(key: &[u8; 32], nonce: &[u8; 12], aad: &[u8], plain: &[u8]) -> Vec<u8> {
     let cipher = ChaCha20Poly1305::new(key.into());
     cipher
-        .encrypt(
-            Nonce::from_slice(nonce),
-            Payload { msg: plain, aad },
-        )
+        .encrypt(Nonce::from_slice(nonce), Payload { msg: plain, aad })
         .expect("encrypt")
 }
 
@@ -168,7 +167,12 @@ impl HttpPending {
     }
 
     pub fn open_response(&self, envelope: &[u8]) -> Result<(u16, Vec<u8>), ()> {
-        let ct = open_envelope(envelope, &self.shared(), b"http-res", b"syncnotes-http-v1-res")?;
+        let ct = open_envelope(
+            envelope,
+            &self.shared(),
+            b"http-res",
+            b"syncnotes-http-v1-res",
+        )?;
         if ct.len() < 2 {
             return Err(());
         }
@@ -240,7 +244,12 @@ impl OpenedHttp {
     }
 }
 
-fn open_envelope(envelope: &[u8], shared: &[u8; 32], info: &[u8], aad: &[u8]) -> Result<Vec<u8>, ()> {
+fn open_envelope(
+    envelope: &[u8],
+    shared: &[u8; 32],
+    info: &[u8],
+    aad: &[u8],
+) -> Result<Vec<u8>, ()> {
     if envelope.len() < 4 + 32 + 12 + 16 || &envelope[..4] != HTTP_MAGIC {
         return Err(());
     }
@@ -434,7 +443,10 @@ mod tests {
         let id = SealIdentity::generate();
         let password = b"super-secret-password";
         let pending = HttpPending::seal(&id.public, 1, "/api/login", b"{}", password);
-        assert!(!pending.envelope.windows(password.len()).any(|w| w == password));
+        assert!(!pending
+            .envelope
+            .windows(password.len())
+            .any(|w| w == password));
         let opened = OpenedHttp::open(&id, &pending.envelope).unwrap();
         assert_eq!(opened.path, "/api/login");
         assert_eq!(opened.body, password);
@@ -454,7 +466,10 @@ mod tests {
         assert_eq!(ck, pending.chunk_key());
         let ct = seal_chunk(&ck, 0, b"hello file");
         assert!(!ct.windows(5).any(|w| w == b"hello"));
-        assert_eq!(open_chunk(&pending.chunk_key(), 0, &ct).unwrap(), b"hello file");
+        assert_eq!(
+            open_chunk(&pending.chunk_key(), 0, &ct).unwrap(),
+            b"hello file"
+        );
 
         let hello = ClientHello::new();
         let (frame, mut server) = accept_client_hello(&id, &hello.frame).unwrap();
