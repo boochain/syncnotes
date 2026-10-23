@@ -149,7 +149,9 @@ void main() {
     await pumpApp(tester);
     await tester.tap(find.byTooltip('设置'));
     await tester.pumpAndSettle();
-    expect(find.text('退出登录', skipOffstage: false), findsOneWidget);
+    // 设置项变多后，未滚到的行还没挂到树上
+    await tester.scrollUntilVisible(find.text('退出登录'), 200);
+    expect(find.text('退出登录'), findsOneWidget);
     await back(tester);
     expect(find.text('退出登录', skipOffstage: false), findsNothing);
     expect(find.byKey(const Key('homeTitle')), findsOneWidget);
