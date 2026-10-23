@@ -134,7 +134,7 @@ class HttpPending {
     required List<int> body,
   }) async {
     final eph = await WireSeal._x.newKeyPair();
-    final ephPub = await _pubBytes(eph);
+    final ephPub = await WireSeal._pubBytes(eph);
     final shared = await WireSeal._shared(eph, serverPub);
     final key = await WireSeal._kdf(shared, 'http-req');
     final pb = utf8.encode(path);
