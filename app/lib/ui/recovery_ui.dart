@@ -501,7 +501,6 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
       child: Focus(
       autofocus: true,
       child: Scaffold(
-      backgroundColor: pal.bg,
       appBar: AppBar(title: const Text('忘记密码')),
       body: Center(
         child: SingleChildScrollView(

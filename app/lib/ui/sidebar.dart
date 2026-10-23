@@ -446,7 +446,13 @@ class _PageTreeTileState extends State<PageTreeTile> {
                     ),
                   ),
                 for (final k in kids)
-                  PageTreeTile(page: k, depth: widget.depth + 1, selected: widget.selected, onSelect: widget.onSelect),
+                  PageTreeTile(
+                    key: ValueKey('page-tile-${k.id}'),
+                    page: k,
+                    depth: widget.depth + 1,
+                    selected: widget.selected,
+                    onSelect: widget.onSelect,
+                  ),
               ])
             : const SizedBox(width: double.infinity),
       ),

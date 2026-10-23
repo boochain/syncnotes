@@ -294,6 +294,9 @@ class BlockList extends StatelessWidget {
   final Set<BlockKind>? kinds;
   const BlockList({super.key, this.parentId, this.filter = '', this.kinds});
 
+  static final Set<String> _known = {};
+  static var _ready = false;
+
   @override
   Widget build(BuildContext context) {
     final sync = AppScope.of(context).sync;
@@ -314,6 +317,18 @@ class BlockList extends StatelessWidget {
           ...items.where((b) => b.kind == BlockKind.folder),
           ...items.where((b) => b.kind != BlockKind.folder),
         ];
+        // 懒加载的列表项第一次被建出来时不能再播进入动画，否则 PC 上往下滚，每一行都从头淡入。
+        // 只有「已经打开之后新来的一条」才动。一次同步进来很多条时不播，避免整表乱跳。
+        final fresh = [for (final b in items) if (!_known.contains(b.id)) b.id];
+        final enterId = _ready && fresh.length == 1 ? fresh.single : null;
+        if (enterId == null) {
+          for (final b in sync.blocks) {
+            _known.add(b.id);
+          }
+        } else {
+          _known.add(enterId);
+        }
+        _ready = true;
         if (items.isEmpty) {
           return LayoutBuilder(
             builder: (context, c) => SingleChildScrollView(
@@ -337,19 +352,44 @@ class BlockList extends StatelessWidget {
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           padding: const EdgeInsets.only(top: Gap.xs, bottom: Gap.x3),
           itemCount: items.length,
-          itemBuilder: (context, i) => TweenAnimationBuilder<double>(
-            key: ValueKey(items[i].id),
-            tween: Tween(begin: 0, end: 1),
-            duration: Duration(milliseconds: 220 + (i.clamp(0, 8) * 30)),
-            curve: Curves.easeOutCubic,
-            builder: (context, t, child) => Opacity(
-              opacity: t,
-              child: Transform.translate(offset: Offset(0, (1 - t) * 12), child: child),
-            ),
-            child: BlockCard(block: items[i]),
-          ),
+          itemBuilder: (context, i) {
+            final card = BlockCard(block: items[i]);
+            if (items[i].id != enterId) return card;
+            return _FadeIn(key: ValueKey('enter-${items[i].id}'), child: card);
+          },
         );
       },
+    );
+  }
+}
+
+class _FadeIn extends StatefulWidget {
+  final Widget child;
+  const _FadeIn({super.key, required this.child});
+  @override
+  State<_FadeIn> createState() => _FadeInState();
+}
+
+class _FadeInState extends State<_FadeIn> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 220))..forward();
+  late final CurvedAnimation _t = CurvedAnimation(parent: _c, curve: Curves.easeOutCubic);
+
+  @override
+  void dispose() {
+    _t.dispose();
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _t,
+      builder: (context, child) => Opacity(
+        opacity: _t.value,
+        child: Transform.translate(offset: Offset(0, (1 - _t.value) * 8), child: child),
+      ),
+      child: widget.child,
     );
   }
 }

@@ -67,6 +67,10 @@ class Settings {
   bool get closeToTray => prefs.getBool('close_to_tray') ?? true;
   set closeToTray(bool v) => prefs.setBool('close_to_tray', v);
 
+  /// 桌面窗口用侧边栏布局。默认开；收起后记住，避免每次启动都变回 400px 的手机窗口。
+  bool get windowExpanded => prefs.getBool('window_expanded') ?? true;
+  set windowExpanded(bool v) => prefs.setBool('window_expanded', v);
+
   /// 桌面：记住窗口位置和大小（[mode] = compact / expanded）
   Rect? windowBounds(String mode) {
     final v = prefs.getStringList('window_$mode');

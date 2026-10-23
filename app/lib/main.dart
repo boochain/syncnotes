@@ -194,10 +194,21 @@ class _SyncNotesAppState extends State<SyncNotesApp> with WidgetsBindingObserver
         supportedLocales: const [Locale('zh', 'CN'), Locale('en')],
         localizationsDelegates: GlobalMaterialLocalizations.delegates,
         // 系统栏图标随主题明暗切换（没有 AppBar 的页面也正确）
-        builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
-          value: systemBarsStyle(Theme.of(context).brightness),
-          child: child!,
-        ),
+        builder: (context, child) {
+          return ValueListenableBuilder<bool>(
+            valueListenable: Glass.enabled,
+            builder: (context, on, child) {
+              final theme = Theme.of(context);
+              Widget page = child!;
+              if (on) page = Theme(data: glassTheme(theme, true), child: page);
+              return AnnotatedRegion<SystemUiOverlayStyle>(
+                value: systemBarsStyle(theme.brightness),
+                child: page,
+              );
+            },
+            child: child,
+          );
+        },
         home: AnimatedSwitcher(
           duration: Motion.medium3,
           switchInCurve: Curves.easeOutCubic,

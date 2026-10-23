@@ -53,10 +53,11 @@ class DesktopShell with TrayListener, WindowListener {
 
   Future<void> init({required bool startHidden, Settings? settings}) async {
     _settings = settings;
+    expanded.value = settings?.windowExpanded ?? true;
     var hidden = startHidden;
     await windowManager.ensureInitialized();
     final opts = WindowOptions(
-      size: windowSize,
+      size: expanded.value ? expandedSize : windowSize,
       minimumSize: minimumSize,
       title: 'SyncNotes',
       skipTaskbar: false,
@@ -127,6 +128,7 @@ class DesktopShell with TrayListener, WindowListener {
   static const Size expandedSize = Size(1120, 740);
   Future<void> toggleExpanded() async {
     expanded.value = !expanded.value;
+    _settings?.windowExpanded = expanded.value;
     if (await _restoreBounds()) return;
     if (expanded.value) {
       await windowManager.setSize(expandedSize);

@@ -172,7 +172,6 @@ class _LoginPageState extends State<LoginPage> {
     final tt = Theme.of(context).textTheme;
     final divider = Divider(height: 1, thickness: 1, indent: Gap.l + Sizes.iconMd + Gap.l, color: pal.separator);
     return Scaffold(
-      backgroundColor: pal.bg,
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(Gap.x3),

@@ -107,5 +107,14 @@ class GlassBackdrop extends StatelessWidget {
   }
 }
 
+/// 液态玻璃打开时，页面底和顶栏改成透明，否则实色 Scaffold 会把背景渐变整个盖住。
+ThemeData glassTheme(ThemeData base, bool on) {
+  if (!on) return base;
+  return base.copyWith(
+    scaffoldBackgroundColor: Colors.transparent,
+    appBarTheme: base.appBarTheme.copyWith(backgroundColor: Colors.transparent, surfaceTintColor: Colors.transparent),
+  );
+}
+
 /// [HIG] 弹簧，用于菜单 / 快速切换器出现。
 final springCurve = SpringCurve(Springs.smooth);

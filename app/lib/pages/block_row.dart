@@ -558,11 +558,11 @@ class BlockRowState extends State<BlockRow> {
               ]),
             ),
             const SizedBox(height: Gap.xs),
-            AnimatedCrossFade(
-              duration: Motion.short3,
-              crossFadeState: _focus.hasFocus || _ctrl.text.isEmpty ? CrossFadeState.showFirst : CrossFadeState.showSecond,
-              firstChild: _textField(context),
-              secondChild: GestureDetector(
+            // 不用 CrossFade：高亮和输入框高度不一样，切换时会把光标和后面的块顶来顶去。
+            if (_focus.hasFocus || _ctrl.text.isEmpty)
+              _textField(context)
+            else
+              GestureDetector(
                 onTap: () => _focus.requestFocus(),
                 child: SizedBox(
                   width: double.infinity,
@@ -577,7 +577,6 @@ class BlockRowState extends State<BlockRow> {
                   ),
                 ),
               ),
-            ),
           ]),
         );
       case DocType.quote:
@@ -983,9 +982,12 @@ class _ImageBlock extends StatelessWidget {
               final f = files.first;
               final len = await f.xFile.length();
               try {
+                final disk = f.path;
+                final local = isDesktopPlatform && disk != null;
                 final up = await s.transfers.upload(
                   name: f.name,
-                  open: () => f.xFile.openRead(),
+                  path: local ? disk : null,
+                  open: local ? null : () => f.xFile.openRead(),
                   total: len,
                 );
                 doc.setPayload(block.id, {'file_id': up.id, 'name': f.name, 'size': up.size, if (up.sha256.isNotEmpty) 'sha256': up.sha256});

@@ -33,6 +33,8 @@ class _PageScreenState extends State<PageScreen> {
   final _title = TextEditingController();
   final _titleFocus = FocusNode();
   final _rowKeys = <String, GlobalKey<BlockRowState>>{};
+  final _rowSeen = <String>{};
+  bool _rowsReady = false;
   Timer? _titleDebounce;
   bool _headerHover = false;
 
@@ -73,6 +75,8 @@ class _PageScreenState extends State<PageScreen> {
       _doc = DocController(AppScope.of(context).sync, widget.pageId);
       _title.text = _doc!.page?.title ?? '';
       _rowKeys.clear();
+      _rowSeen.clear();
+      _rowsReady = false;
     }
   }
 
@@ -137,6 +141,16 @@ class _PageScreenState extends State<PageScreen> {
         for (final r in rows) {
           _rowKeys.putIfAbsent(r.block.id, () => GlobalKey<BlockRowState>());
         }
+        // 已经在页面里的块滚进视口时不再做高度动画，否则长文往下翻会一卡一卡。
+        // 只给「打开之后新插入的那一块」播一次。
+        final fresh = [for (final r in rows) if (!_rowSeen.contains(r.block.id)) r.block.id];
+        final playId = _rowsReady && fresh.length == 1 ? fresh.single : null;
+        if (playId == null) {
+          _rowSeen.addAll(fresh);
+        } else {
+          _rowSeen.add(playId);
+        }
+        _rowsReady = true;
         final wide = MediaQuery.sizeOf(context).width >= 720;
         // 文字左边缘（标题、图标、正文对齐线）。正文行 = 行左内边距 + 手柄栏 + 2
         final hPad = wide ? 56.0 : 28.0;
@@ -160,7 +174,6 @@ class _PageScreenState extends State<PageScreen> {
             const SingleActivator(LogicalKeyboardKey.keyY, control: true): doc.redo,
           },
           child: Scaffold(
-            backgroundColor: c.bg,
             appBar: AppBar(
               automaticallyImplyLeading: widget.standalone,
               leading: widget.onMenu != null
@@ -216,7 +229,7 @@ class _PageScreenState extends State<PageScreen> {
                               child: Padding(
                                 padding: EdgeInsets.only(left: (hPad - gutterWidth(context) - 2).clamp(0.0, 999.0), right: hPad),
                                 child: _AppearOnce(
-                                  id: r.block.id,
+                                  play: r.block.id == playId,
                                   child: BlockRow(key: _rowKeys[r.block.id], doc: doc, row: r, index: i),
                                 ),
                               ),
@@ -451,22 +464,23 @@ class _PageScreenState extends State<PageScreen> {
   }
 }
 
-/// 新出现的块淡入 + 展开动画（只在首次出现时播放）
+/// 新插入的一块才淡入并展开。已经存在的块直接显示，避免滚进屏幕时把后面的内容顶下去。
 class _AppearOnce extends StatefulWidget {
-  final String id;
+  final bool play;
   final Widget child;
-  const _AppearOnce({required this.id, required this.child});
-  static final Set<String> _seen = {};
+  const _AppearOnce({required this.play, required this.child});
   @override
   State<_AppearOnce> createState() => _AppearOnceState();
 }
 
 class _AppearOnceState extends State<_AppearOnce> with SingleTickerProviderStateMixin {
   late final AnimationController _c = AnimationController(vsync: this, duration: Motion.short4);
+  late final CurvedAnimation _a = CurvedAnimation(parent: _c, curve: Curves.easeOutCubic);
+
   @override
   void initState() {
     super.initState();
-    if (_AppearOnce._seen.add(widget.id)) {
+    if (widget.play) {
       _c.forward();
     } else {
       _c.value = 1;
@@ -475,14 +489,14 @@ class _AppearOnceState extends State<_AppearOnce> with SingleTickerProviderState
 
   @override
   void dispose() {
+    _a.dispose();
     _c.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final a = CurvedAnimation(parent: _c, curve: Curves.easeOutCubic);
-    return SizeTransition(sizeFactor: a, alignment: Alignment.topCenter, child: FadeTransition(opacity: a, child: widget.child));
+    return SizeTransition(sizeFactor: _a, alignment: Alignment.topCenter, child: FadeTransition(opacity: _a, child: widget.child));
   }
 }
 

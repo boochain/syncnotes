@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:cross_file/cross_file.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/cupertino.dart';
@@ -32,7 +34,12 @@ class FileDropZoneState extends State<FileDropZone> {
         continue;
       }
       if (!mounted) return n;
-      if (await uploadFileBlock(context, f.name, null, open: () => f.openRead(), size: len)) n++;
+      final disk = f.path;
+      final local = disk.isNotEmpty && !disk.startsWith('content:') && File(disk).existsSync();
+      if (await uploadFileBlock(context, f.name, null,
+          path: local ? disk : null, open: local ? null : () => f.openRead(), size: len)) {
+        n++;
+      }
     }
     return n;
   }

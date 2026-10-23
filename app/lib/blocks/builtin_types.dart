@@ -324,7 +324,11 @@ class FileType_ extends BlockType {
     if (!context.mounted) return false;
     final len = await pf.xFile.length();
     if (!context.mounted) return false;
-    // 用 XFile 自己的流。Android 上 path 经常读不了，File(path) 会让上传一直失败。
+    // 桌面的 path 是真文件，读两遍也稳。Android 的 path 经常是读不了的 content URI，必须用 XFile 的流。
+    final disk = pf.path;
+    if (isDesktopPlatform && disk != null) {
+      return uploadFileBlock(context, pf.name, null, path: disk, size: len, parentId: parentId);
+    }
     return uploadFileBlock(context, pf.name, null, open: () => pf.xFile.openRead(), size: len, parentId: parentId);
   }
 }

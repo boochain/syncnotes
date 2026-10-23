@@ -9,7 +9,6 @@ import '../models/block.dart';
 import '../platform/desktop.dart';
 import '../sync/sync_client.dart';
 import 'block_card.dart';
-import 'glass.dart';
 import 'quick_send_bar.dart';
 import 'settings_page.dart';
 
@@ -133,10 +132,7 @@ class _HomePageState extends State<HomePage> {
           }
         });
       },
-      child: ValueListenableBuilder<bool>(
-        valueListenable: Glass.enabled,
-        builder: (context, glass, _) => Scaffold(
-      backgroundColor: glass ? Colors.transparent : c.bg,
+      child: Scaffold(
       body: SafeArea(
         bottom: false,
         child: Column(children: [
@@ -171,8 +167,7 @@ class _HomePageState extends State<HomePage> {
         ]),
       ),
       bottomNavigationBar: const QuickSendBar(),
-        ),
-      ),
+    ),
     );
   }
 }
