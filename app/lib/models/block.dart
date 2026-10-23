@@ -119,13 +119,13 @@ class Block {
         parentId: j['parent_id'] as String?,
         viewedMode: viewedModeFrom(j['viewed_mode'] as String?),
         viewedGlobal: j['viewed_global'] == true,
-        createdAt: (j['created_at'] ?? 0) as int,
-        updatedAt: (j['updated_at'] ?? 0) as int,
+        createdAt: _n(j['created_at']),
+        updatedAt: _n(j['updated_at']),
         createdBy: (j['created_by'] ?? '') as String,
         deleted: j['deleted'] == true,
-        deletedAt: j['deleted_at'] as int?,
+        deletedAt: j['deleted_at'] == null ? null : _n(j['deleted_at']),
         deletedBy: j['deleted_by'] as String?,
-        seq: (j['seq'] ?? 0) as int,
+        seq: _n(j['seq']),
         viewedLocal: viewedLocal,
       );
 
@@ -165,4 +165,10 @@ class Block {
         'deleted': deleted,
         'deleted_at': deletedAt,
       };
+}
+
+int _n(Object? v) {
+  if (v is int) return v;
+  if (v is num) return v.toInt();
+  return 0;
 }

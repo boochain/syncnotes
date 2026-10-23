@@ -50,6 +50,7 @@ Future<void> _main(List<String> args) async {
   unawaited(Notifier.init());
   // SYNCNOTES_GLASS=0 → 退回 BackdropFilter 毛玻璃（旧显卡/远程桌面）
   Glass.useShader = Platform.environment['SYNCNOTES_GLASS'] != '0';
+  Glass.enabled.value = settings.liquidGlass && Glass.useShader;
   if (Glass.useShader) await LiquidGlassWidgets.initialize(enablePerformanceMonitor: false);
 
   final dir = await getApplicationSupportDirectory();

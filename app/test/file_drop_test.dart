@@ -18,7 +18,7 @@ import 'fake_channel.dart';
 class _FakeApi extends AuthApi {
   final uploads = <String>[];
   @override
-  Future<String> putFile({
+  Future<UploadedFile> putFile({
     required String server,
     required String token,
     required String name,
@@ -36,7 +36,7 @@ class _FakeApi extends AuthApi {
       }
     }
     onProgress?.call(n, total == 0 ? n : total);
-    return 'fid-$name';
+    return UploadedFile(id: 'fid-$name', sha256: '', size: n);
   }
 }
 

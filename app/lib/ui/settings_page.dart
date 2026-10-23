@@ -11,6 +11,7 @@ import '../services/local_export.dart';
 import '../sync/sync_client.dart';
 import '../sync/wire_seal.dart';
 import 'ds.dart';
+import 'glass.dart';
 import 'recovery_ui.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -120,6 +121,17 @@ class _SettingsPageState extends State<SettingsPage> {
               onTap: () => exportMyData(context, s),
             ),
             const SettingsSection('外观'),
+            SettingsRow(
+              key: const Key('settingsGlass'),
+              icon: CupertinoIcons.drop,
+              title: '液态玻璃',
+              subtitle: st.liquidGlass ? '菜单、登录页和背景使用 Liquid Glass' : '纯色界面',
+              trailing: sw(st.liquidGlass, (v) {
+                st.liquidGlass = v;
+                Glass.enabled.value = v;
+                setState(() {});
+              }),
+            ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: Gap.xl, vertical: Gap.s),
               child: ValueListenableBuilder<ThemeMode>(
@@ -250,7 +262,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 }
 
-const appVersion = '0.6.0';
+const appVersion = '0.6.1';
 
 /// 设置分组标题：12/500 次级色，上 24 下 4（Notion 设置分组）
 class SettingsSection extends StatelessWidget {

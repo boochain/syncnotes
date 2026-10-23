@@ -28,6 +28,22 @@ class _LoginPageState extends State<LoginPage> {
       TextEditingController(text: widget.settings.username ?? '');
   final _pw = TextEditingController();
   bool _busy = false;
+  late bool _remember;
+
+  @override
+  void initState() {
+    super.initState();
+    _remember = widget.settings.rememberPassword;
+    if (_remember) _pw.text = widget.settings.savedPassword ?? '';
+  }
+
+  @override
+  void dispose() {
+    _server.dispose();
+    _user.dispose();
+    _pw.dispose();
+    super.dispose();
+  }
   bool _registerMode = false;
   bool _discovering = false;
   String? _error;
@@ -81,7 +97,9 @@ class _LoginPageState extends State<LoginPage> {
     widget.settings
       ..server = server
       ..username = r.username
-      ..token = r.token;
+      ..token = r.token
+      ..rememberPassword = _remember
+      ..savedPassword = _remember ? _pw.text : null;
     widget.onLoggedIn();
   }
 
@@ -210,6 +228,22 @@ class _LoginPageState extends State<LoginPage> {
                       hint: '密码',
                       obscure: true,
                       onSubmitted: (_) => _submit()),
+                  divider,
+                  SizedBox(
+                    height: Sizes.bar,
+                    child: Row(children: [
+                      const SizedBox(width: Gap.l),
+                      SizedBox.square(dimension: Sizes.iconMd, child: Icon(CupertinoIcons.lock_shield, size: Sizes.iconMd - 2, color: pal.text2)),
+                      const SizedBox(width: Gap.l),
+                      Expanded(child: Text('记住密码', style: Theme.of(context).textTheme.bodyMedium)),
+                      AppSwitch(
+                        key: const Key('rememberPassword'),
+                        value: _remember,
+                        onChanged: (v) => setState(() => _remember = v),
+                      ),
+                      const SizedBox(width: Gap.s),
+                    ]),
+                  ),
                 ]),
               ),
               AnimatedSize(

@@ -521,7 +521,7 @@ class SyncClient extends ChangeNotifier {
     _outbox.removeWhere((o) =>
         o['type'] == 'upsert_block' &&
         o['id'] == incoming.id &&
-        (o['client_updated_at'] as int) <= incoming.updatedAt);
+        _asInt(o['client_updated_at']) <= incoming.updatedAt);
 
     // 若本地有更新的未确认修改，则保留本地版本（它会在 outbox 中重放）。
     if (existing != null && existing.pending && existing.updatedAt > incoming.updatedAt) {
@@ -531,17 +531,17 @@ class SyncClient extends ChangeNotifier {
     final stillPending = _outbox.any((o) =>
         o['type'] == 'upsert_block' &&
         o['id'] == incoming.id &&
-        (o['client_updated_at'] as int) > incoming.updatedAt);
+        _asInt(o['client_updated_at']) > incoming.updatedAt);
+    // 服务器把 JSON 对象的键排过序。按字符串比较会把没变的内容当成新改动，
+    // 于是自己的笔记每次同步都被标成未读，角标一直涨。
+    final changed = existing != null &&
+        (existing.title != incoming.title || !_sameJson(existing.payload, incoming.payload));
+    final viewedLocal = changed ? false : (existing?.viewedLocal ?? incoming.createdBy == deviceId);
     final merged = incoming.copyWith(
-      viewedLocal: existing?.viewedLocal ?? false,
+      viewedLocal: viewedLocal,
       pending: stillPending,
     );
-    // 内容变更 → 本设备视为未读（per-device 模式）。
-    final contentChanged = existing == null ||
-        existing.title != incoming.title ||
-        jsonEncode(existing.payload) != jsonEncode(incoming.payload);
-    final result = contentChanged ? merged.copyWith(viewedLocal: false) : merged;
-    _blocks[incoming.id] = result;
+    _blocks[incoming.id] = merged;
 
     if (existing == null &&
         !_catchingUp &&
@@ -549,7 +549,7 @@ class SyncClient extends ChangeNotifier {
         !incoming.deleted &&
         incoming.deletedAt == null &&
         incoming.kind != BlockKind.text) {
-      onRemoteNew?.call(result);
+      onRemoteNew?.call(merged);
     }
     _persist();
     _notify();
@@ -708,3 +708,21 @@ class SyncClient extends ChangeNotifier {
     super.dispose();
   }
 }
+
+int _asInt(Object? v) {
+  if (v is int) return v;
+  if (v is num) return v.toInt();
+  return 0;
+}
+
+Object? _canon(Object? v) {
+  if (v is Map) {
+    final keys = v.keys.map((k) => '$k').toList()..sort();
+    return {for (final k in keys) k: _canon(v[k])};
+  }
+  if (v is List) return [for (final e in v) _canon(e)];
+  if (v is num && v == v.roundToDouble()) return v.toInt();
+  return v;
+}
+
+bool _sameJson(Object? a, Object? b) => jsonEncode(_canon(a)) == jsonEncode(_canon(b));

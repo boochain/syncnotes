@@ -28,6 +28,17 @@ class Settings {
   String? get username => prefs.getString('username');
   set username(String? v) => v == null ? prefs.remove('username') : prefs.setString('username', v);
 
+  bool get rememberPassword => prefs.getBool('remember_password') ?? false;
+  set rememberPassword(bool v) => prefs.setBool('remember_password', v);
+
+  /// 仅在用户勾选「记住密码」时保存。和令牌一样放在本机设置里。
+  String? get savedPassword => prefs.getString('saved_password');
+  set savedPassword(String? v) => v == null || v.isEmpty ? prefs.remove('saved_password') : prefs.setString('saved_password', v);
+
+  /// 液态玻璃。默认开。
+  bool get liquidGlass => prefs.getBool('liquid_glass') ?? true;
+  set liquidGlass(bool v) => prefs.setBool('liquid_glass', v);
+
   bool get autoStart => prefs.getBool('auto_start') ?? false;
   set autoStart(bool v) => prefs.setBool('auto_start', v);
 

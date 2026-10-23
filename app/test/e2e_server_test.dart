@@ -118,4 +118,24 @@ void main() {
     a.dispose();
     b.dispose();
   });
+
+  test('sealed upload and download roundtrip', () async {
+    if (bin == null) {
+      markTestSkipped('SYNCNOTES_SERVER_BIN not set');
+      return;
+    }
+    final api = AuthApi();
+    final login = await api.login(addr, 'bill', 'pass1234', 'files');
+    final small = <int>[1, 2, 3, 4, 5];
+    final big = List<int>.generate(300 * 1024, (i) => i & 255);
+    for (final data in [small, big, <int>[]]) {
+      final up = await api
+          .putFile(server: addr, token: login.token, name: 'f.bin', bytes: data, total: data.length)
+          .timeout(const Duration(seconds: 20));
+      expect(up.sha256.length, 64);
+      expect(up.size, data.length);
+      final got = await api.downloadFile(addr, login.token, up.id).timeout(const Duration(seconds: 20));
+      expect(got, data);
+    }
+  });
 }

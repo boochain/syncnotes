@@ -196,7 +196,7 @@ void main() {
         expect(r(tester, find.byKey(const Key('loginButton'))).height, greaterThanOrEqualTo(48));
         expect(r(tester, find.byKey(const Key('userField'))).center.dy, isNotNull);
         final form = r(tester, find.byKey(const Key('loginForm')));
-        expect(form.height, closeTo(3 * Sizes.bar + 2 + 2, 0.01)); // 3 行 + 2 分隔线 + 上下边框
+        expect(form.height, closeTo(4 * Sizes.bar + 3 + 2, 0.01)); // 4 行（含记住密码）+ 3 分隔线 + 上下边框
       });
     }
   }

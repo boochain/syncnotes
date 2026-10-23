@@ -16,6 +16,7 @@ import '../platform/share_receive.dart';
 import 'back_handler.dart';
 import 'block_card.dart' show showCreateMenu;
 import 'file_drop.dart';
+import 'glass.dart';
 import 'home_page.dart';
 import 'quick_switcher.dart';
 import 'settings_page.dart';
@@ -259,9 +260,12 @@ class AppShellState extends State<AppShell> implements PageHost {
           ));
           final pal = AppColors.of(context);
           // 布局照 Notion / AppFlowy：侧边栏与内容区平铺，中间一条细分隔线；纯色背景
-          return Scaffold(
+          return ValueListenableBuilder<bool>(
+            valueListenable: Glass.enabled,
+            builder: (context, glass, _) {
+              final shell = Scaffold(
             key: _scaffold,
-            backgroundColor: pal.bg,
+            backgroundColor: Colors.transparent,
             drawer: _wide ? null : Drawer(child: SafeArea(child: sidebar)),
             body: Column(children: [
               Expanded(
@@ -269,7 +273,10 @@ class AppShellState extends State<AppShell> implements PageHost {
                     ? Row(children: [
                         Container(
                           width: Sizes.sidebarWidth,
-                          decoration: BoxDecoration(color: pal.sidebar, border: Border(right: BorderSide(color: pal.separator))),
+                          decoration: BoxDecoration(
+                            color: glass ? pal.sidebar.withValues(alpha: 0.78) : pal.sidebar,
+                            border: Border(right: BorderSide(color: pal.separator)),
+                          ),
                           child: sidebar,
                         ),
                         Expanded(child: _RebuildingHome(home: home, navKey: _navKey, child: content)),
@@ -278,6 +285,9 @@ class AppShellState extends State<AppShell> implements PageHost {
               ),
               TransferStrip(onOpen: _transfers),
             ]),
+          );
+              return GlassBackdrop(child: shell);
+            },
           );
         }),
       ),

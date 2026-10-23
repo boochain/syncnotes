@@ -546,6 +546,8 @@ async fn file_upload_download_and_isolation() {
     let (st, r) = wire::blob_put(&addr, &tb, "hello.txt", "你好文件".as_bytes()).await;
     assert_eq!(st, 200, "{r}");
     let id = r["file_id"].as_str().unwrap();
+    let sha = r["sha256"].as_str().unwrap();
+    assert_eq!(sha.len(), 64);
     let (gst, got) = wire::blob_get(&addr, &tb, id).await;
     assert_eq!(gst, 200, "{}", String::from_utf8_lossy(&got));
     assert_eq!(got, "你好文件".as_bytes());

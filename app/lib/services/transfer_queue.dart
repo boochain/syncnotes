@@ -21,6 +21,7 @@ class TransferJob {
     this.path,
     this.open,
     this.fileId,
+    this.sha256,
     this.dest,
     this.keepBytes = false,
     this.onSuccess,
@@ -33,9 +34,10 @@ class TransferJob {
   final String? path;
   final Stream<List<int>> Function()? open;
   final bool keepBytes;
-  final void Function(String fileId)? onSuccess;
+  final void Function(String fileId, String sha256, int size)? onSuccess;
 
   String? fileId;
+  String? sha256;
   String? dest;
   int total;
   int done = 0;
@@ -77,13 +79,13 @@ class TransferQueue extends ChangeNotifier {
     return null;
   }
 
-  Future<String> upload({
+  Future<UploadedFile> upload({
     required String name,
     List<int>? bytes,
     String? path,
     Stream<List<int>> Function()? open,
     int total = 0,
-    void Function(String fileId)? onSuccess,
+    void Function(String fileId, String sha256, int size)? onSuccess,
   }) {
     final job = TransferJob(
       id: 't${++_seq}',
@@ -98,10 +100,16 @@ class TransferQueue extends ChangeNotifier {
     jobs.add(job);
     notifyListeners();
     _pump();
-    return job.completer.future;
+    return job.completer.future.then((id) => UploadedFile(id: id, sha256: job.sha256 ?? '', size: job.done));
   }
 
-  Future<void> downloadToFile({required String name, required String fileId, required String dest, int total = 0}) {
+  Future<void> downloadToFile({
+    required String name,
+    required String fileId,
+    required String dest,
+    int total = 0,
+    String? expectSha256,
+  }) {
     for (final j in jobs) {
       if (j.dir == TransferDir.down &&
           j.fileId == fileId &&
@@ -117,6 +125,7 @@ class TransferQueue extends ChangeNotifier {
       total: total,
       fileId: fileId,
       dest: dest,
+      sha256: expectSha256,
     );
     jobs.add(job);
     notifyListeners();
@@ -231,7 +240,19 @@ class TransferQueue extends ChangeNotifier {
       final token = settings.token;
       if (server == null || token == null) throw AuthException('未登录');
       if (j.dir == TransferDir.up) {
-        final id = await api.putFile(
+        if (j.bytes != null) {
+          j.total = j.bytes!.length;
+        } else if (j.open != null || j.path != null) {
+          // 声明长度和实际流经常对不上（尤其是 Android 的 content URI）。先数一遍，再按真实长度上传。
+          final probe = j.open?.call() ?? File(j.path!).openRead();
+          var n = 0;
+          await for (final part in probe) {
+            if (j.cancelRequested) throw AuthException('已取消');
+            n += part.length;
+          }
+          j.total = n;
+        }
+        final up = await api.putFile(
           server: server,
           token: token,
           name: j.name,
@@ -241,18 +262,21 @@ class TransferQueue extends ChangeNotifier {
           onProgress: (d, t) => _progress(j, d, t),
           isCanceled: () => j.cancelRequested,
         );
-        j.fileId = id;
+        j.fileId = up.id;
+        j.sha256 = up.sha256;
+        j.done = up.size;
+        j.total = up.size;
         j.status = TransferStatus.done;
         j.speed = 0;
         try {
-          j.onSuccess?.call(id);
+          j.onSuccess?.call(up.id, up.sha256, up.size);
         } catch (_) {}
-        if (!j.completer.isCompleted) j.completer.complete(id);
+        if (!j.completer.isCompleted) j.completer.complete(up.id);
       } else if (j.keepBytes) {
         final b = BytesBuilder(copy: false);
         await api.downloadStream(server, token, j.fileId!, (plain) async {
           b.add(plain);
-        }, onProgress: (d, t) => _progress(j, d, t), isCanceled: () => j.cancelRequested);
+        }, onProgress: (d, t) => _progress(j, d, t), isCanceled: () => j.cancelRequested, expectSha256: j.sha256);
         j.mem = b.takeBytes();
         j.done = j.mem!.length;
         j.status = TransferStatus.done;
@@ -266,7 +290,7 @@ class TransferQueue extends ChangeNotifier {
         try {
           await api.downloadStream(server, token, j.fileId!, (plain) async {
             await raf.writeFrom(plain);
-          }, onProgress: (d, t) => _progress(j, d, t), isCanceled: () => j.cancelRequested);
+          }, onProgress: (d, t) => _progress(j, d, t), isCanceled: () => j.cancelRequested, expectSha256: j.sha256);
         } finally {
           await raf.close();
         }

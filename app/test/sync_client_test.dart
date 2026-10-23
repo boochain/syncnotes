@@ -99,11 +99,44 @@ void main() {
     // 仍待确认，直到服务器回传
     expect(c.pendingCount, 2);
     for (final u in ups) {
-      ch.serverSend({'type': 'block_update', 'block': serverBlock(u['id'], title: u['title'], updated: u['client_updated_at'], createdBy: 'dev-a', seq: 9)});
+      ch.serverSend({
+        'type': 'block_update',
+        'block': serverBlock(u['id'] as String,
+            kind: u['kind'] as String,
+            title: u['title'] as String,
+            payload: Map<String, dynamic>.from(u['payload'] as Map),
+            updated: u['client_updated_at'] as int,
+            createdBy: 'dev-a',
+            seq: 9),
+      });
     }
     await pump();
     expect(c.pendingCount, 0);
     expect(c.blocks.every((b) => !b.pending), isTrue);
+    expect(c.unreadCount, 0, reason: '自己发出的内容回声不应变成未读');
+  });
+
+  test('reordered payload keys do not mark an existing block unread', () async {
+    c.connect('h:1', 't');
+    await pump();
+    await goOnline();
+    final b = c.create(kind: BlockKind.file, title: 'a.bin', payload: {'z': 1, 'a': 'n', 'file_id': 'f'});
+    await pump();
+    final u = ch.sentOfType('upsert_block').last;
+    ch.serverSend({
+      'type': 'block_update',
+      'block': serverBlock(b.id,
+          kind: 'file',
+          title: 'a.bin',
+          payload: {'a': 'n', 'file_id': 'f', 'z': 1},
+          updated: u['client_updated_at'] as int,
+          createdBy: 'dev-a',
+          seq: 4),
+    });
+    await pump();
+    expect(c.pendingCount, 0);
+    expect(c.byId(b.id)!.isViewed, isTrue);
+    expect(c.unreadCount, 0);
   });
 
   test('repeated offline edits of one block collapse into one upsert', () async {

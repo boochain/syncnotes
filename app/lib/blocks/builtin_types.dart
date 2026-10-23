@@ -230,10 +230,12 @@ class FileType_ extends BlockType {
   Widget buildPreview(BuildContext context, Block block) {
     final name = (block.payload['name'] ?? block.title) as String;
     final size = (block.payload['size'] ?? 0) as int;
+    final sha = block.payload['sha256'] as String?;
+    final short = sha != null && sha.length >= 8 ? sha.substring(0, 8) : null;
     return Row(children: [
       Icon(CupertinoIcons.paperclip, size: 16, color: Theme.of(context).colorScheme.outline),
       const SizedBox(width: 4),
-      Expanded(child: Text('$name · ${_fmtSize(size)}', overflow: TextOverflow.ellipsis)),
+      Expanded(child: Text('$name · ${_fmtSize(size)}${short == null ? '' : ' · $short'}', overflow: TextOverflow.ellipsis)),
     ]);
   }
 
@@ -250,11 +252,13 @@ class FileType_ extends BlockType {
     final out = File('${dir.path}${Platform.pathSeparator}SyncNotes${Platform.pathSeparator}$name');
     await out.parent.create(recursive: true);
     final size = block.payload['size'];
+    final sha = block.payload['sha256'] as String?;
     await s.transfers.downloadToFile(
       name: name,
       fileId: fileId,
       dest: out.path,
       total: size is int ? size : 0,
+      expectSha256: sha,
     );
     return out;
   }
@@ -320,12 +324,8 @@ class FileType_ extends BlockType {
     if (!context.mounted) return false;
     final len = await pf.xFile.length();
     if (!context.mounted) return false;
-    if (pf.path != null && pf.path!.isNotEmpty) {
-      return uploadFileBlock(context, pf.name, null, path: pf.path, size: len, parentId: parentId);
-    }
-    final bytes = await pf.xFile.readAsBytes();
-    if (!context.mounted) return false;
-    return uploadFileBlock(context, pf.name, bytes, parentId: parentId);
+    // 用 XFile 自己的流。Android 上 path 经常读不了，File(path) 会让上传一直失败。
+    return uploadFileBlock(context, pf.name, null, open: () => pf.xFile.openRead(), size: len, parentId: parentId);
   }
 }
 
@@ -346,13 +346,13 @@ Future<bool> uploadFileBlock(BuildContext context, String name, List<int>? bytes
       path: path,
       open: open,
       total: total,
-      onSuccess: (id) {
+      onSuccess: (id, sha, size) {
         if (created) return;
         created = true;
         s.sync.create(
           kind: BlockKind.file,
           title: name,
-          payload: {'name': name, 'size': total, 'file_id': id},
+          payload: {'name': name, 'size': size, 'file_id': id, if (sha.isNotEmpty) 'sha256': sha},
           parentId: parentId,
           viewedMode: mode,
         );

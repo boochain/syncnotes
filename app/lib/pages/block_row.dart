@@ -982,15 +982,13 @@ class _ImageBlock extends StatelessWidget {
               if (files.isEmpty) return;
               final f = files.first;
               final len = await f.xFile.length();
-              final hasPath = f.path != null && f.path!.isNotEmpty;
               try {
-                final id = await s.transfers.upload(
+                final up = await s.transfers.upload(
                   name: f.name,
-                  path: hasPath ? f.path : null,
-                  bytes: hasPath ? null : await f.xFile.readAsBytes(),
+                  open: () => f.xFile.openRead(),
                   total: len,
                 );
-                doc.setPayload(block.id, {'file_id': id, 'name': f.name});
+                doc.setPayload(block.id, {'file_id': up.id, 'name': f.name, 'size': up.size, if (up.sha256.isNotEmpty) 'sha256': up.sha256});
               } catch (e) {
                 if (context.mounted) {
                   showToast(context, '上传失败（需在线）：$e');
