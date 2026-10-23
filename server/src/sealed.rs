@@ -44,17 +44,9 @@ pub async fn reject_plain() -> impl IntoResponse {
     )
 }
 
-pub async fn handle(
-    State(state): State<AppState>,
-    MaybeIp(ip): MaybeIp,
-    body: Bytes,
-) -> Response {
+pub async fn handle(State(state): State<AppState>, MaybeIp(ip): MaybeIp, body: Bytes) -> Response {
     if body.len() > 1024 * 1024 {
-        return (
-            StatusCode::PAYLOAD_TOO_LARGE,
-            "加密请求过大",
-        )
-            .into_response();
+        return (StatusCode::PAYLOAD_TOO_LARGE, "加密请求过大").into_response();
     }
     let opened = match OpenedHttp::open(&state.seal, &body) {
         Ok(v) => v,
@@ -117,23 +109,16 @@ async fn dispatch(state: &AppState, ip: &str, req: &OpenedHttp) -> (u16, Vec<u8>
                 Err(e) => Err(e),
             }
         }
-        (1, "/api/logout") => {
-            match crate::sync::logout(State(state.clone()), headers).await {
-                Ok(code) => Ok((code.as_u16(), Vec::new())),
-                Err(e) => Err(e),
-            }
-        }
+        (1, "/api/logout") => match crate::sync::logout(State(state.clone()), headers).await {
+            Ok(code) => Ok((code.as_u16(), Vec::new())),
+            Err(e) => Err(e),
+        },
         (1, "/api/recover") => {
             let parsed: RecoverRequest = match serde_json::from_slice(&req.body) {
                 Ok(v) => v,
                 Err(_) => return (400, "请求格式错误".into()),
             };
-            match crate::recovery::recover(
-                State(state.clone()),
-                peer(ip),
-                axum::Json(parsed),
-            )
-            .await
+            match crate::recovery::recover(State(state.clone()), peer(ip), axum::Json(parsed)).await
             {
                 Ok(axum::Json(v)) => Ok((200, serde_json::to_vec(&v).unwrap_or_default())),
                 Err(e) => Err(e),

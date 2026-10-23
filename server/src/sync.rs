@@ -133,11 +133,11 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         Ok(Some(Ok(Message::Binary(b)))) => b,
         _ => return,
     };
-    let (server_hello, mut pair) = match crate::seal::accept_client_hello(&state.seal, &client_frame)
-    {
-        Ok(v) => v,
-        Err(()) => return,
-    };
+    let (server_hello, mut pair) =
+        match crate::seal::accept_client_hello(&state.seal, &client_frame) {
+            Ok(v) => v,
+            Err(()) => return,
+        };
     if sink.send(Message::Binary(server_hello)).await.is_err() {
         return;
     }

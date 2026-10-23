@@ -198,7 +198,11 @@ async fn delete_restore_purge_sync_over_ws() {
         .await
         .unwrap();
     assert_eq!(h["protocol"], 3);
-    assert!(h["features"].as_array().unwrap().iter().any(|f| f == "seal"));
+    assert!(h["features"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|f| f == "seal"));
     assert_eq!(h["trash_retention_days"], 30);
     assert_eq!(
         wire::post_json(
@@ -233,9 +237,7 @@ async fn delete_restore_purge_sync_over_ws() {
             }
         }
     }
-    let msg = |ts: i64, at: Value, del: bool| {
-        json!({"type":"upsert_block","id":"n1","kind":"note","title":"t","payload":{},"parent_id":null,"viewed_mode":"global","client_updated_at":ts,"deleted":del,"deleted_at":at})
-    };
+    let msg = |ts: i64, at: Value, del: bool| json!({"type":"upsert_block","id":"n1","kind":"note","title":"t","payload":{},"parent_id":null,"viewed_mode":"global","client_updated_at":ts,"deleted":del,"deleted_at":at});
     let (a, b) = ws.split_at_mut(1);
     let (a, b) = (&mut a[0], &mut b[0]);
     a.send_json(&msg(1, Value::Null, false)).await;

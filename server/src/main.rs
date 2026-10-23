@@ -168,7 +168,10 @@ async fn main() {
     let mut seal_path = args.db.as_os_str().to_owned();
     seal_path.push(".seal");
     let seal = SealIdentity::load_or_create(std::path::Path::new(&seal_path)).expect("seal key");
-    tracing::info!("传输加密 syncnotes-seal-v1 指纹 {}", &seal.fingerprint()[..16]);
+    tracing::info!(
+        "传输加密 syncnotes-seal-v1 指纹 {}",
+        &seal.fingerprint()[..16]
+    );
     let state = AppState::new(storage, args.allow_register)
         .with_files_dir(args.files_dir.clone())
         .with_trash_days(args.trash_retention_days)
