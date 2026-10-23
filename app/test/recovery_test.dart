@@ -121,7 +121,7 @@ void main() {
       final api = AuthApi(client: MockClient((r) async {
         reqs.add(r);
         return h(r);
-      }));
+      }), wireSeal: false);
       await tester.pumpWidget(wrap(ForgotPasswordPage(api: api, server: 'h:1', username: 'bill', deviceId: 'dev-1')));
       await tester.pumpAndSettle();
       return reqs;
@@ -204,7 +204,7 @@ void main() {
         api: AuthApi(client: MockClient((r) async {
           reqs.add(r);
           return h(r);
-        })),
+        }), wireSeal: false),
         channelFactory: (_) => FakeChannel(),
       ));
       await tester.pumpAndSettle();

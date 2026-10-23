@@ -91,7 +91,7 @@ class SyncNotesApp extends StatefulWidget {
 }
 
 class _SyncNotesAppState extends State<SyncNotesApp> with WidgetsBindingObserver {
-  late final AuthApi _api = widget.api ?? AuthApi();
+  late final AuthApi _api = widget.api ?? AuthApi(pins: widget.settings);
   late SyncClient _sync;
   late AppServices _services;
   bool _loggedIn = false;
@@ -112,6 +112,7 @@ class _SyncNotesAppState extends State<SyncNotesApp> with WidgetsBindingObserver
     final c = SyncClient(
       store: widget.store,
       deviceId: widget.settings.deviceId,
+      settings: widget.settings,
       channelFactory: widget.channelFactory,
     );
     c.onRemoteNew = _onRemoteNew;

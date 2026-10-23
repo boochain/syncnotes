@@ -1,13 +1,17 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
+import 'dart:typed_data';
 
+import 'package:cryptography/cryptography.dart';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../models/block.dart';
+import '../services/settings.dart';
 import 'local_store.dart';
+import 'wire_seal.dart';
 
 enum ConnState { offline, connecting, online, authError }
 
@@ -22,6 +26,10 @@ class SyncClient extends ChangeNotifier {
   final ChannelFactory channelFactory;
   final String deviceId;
   final Duration maxBackoff;
+  final Settings? settings;
+
+  /// 真实套接字走 seal；测试传入 [channelFactory] 时保持明文 JSON。
+  final bool sealWire;
 
   /// 心跳间隔；超过 2.5 倍间隔没有收到任何消息则认为连接已死并重连。
   final Duration pingInterval;
@@ -30,12 +38,31 @@ class SyncClient extends ChangeNotifier {
   void Function(Block block)? onRemoteNew;
 
   SyncClient({
-    required this.store,
-    required this.deviceId,
+    required LocalStore store,
+    required String deviceId,
     ChannelFactory? channelFactory,
-    this.maxBackoff = const Duration(seconds: 30),
-    this.pingInterval = const Duration(seconds: 25),
-  }) : channelFactory = channelFactory ?? WebSocketChannel.connect;
+    Settings? settings,
+    Duration maxBackoff = const Duration(seconds: 30),
+    Duration pingInterval = const Duration(seconds: 25),
+  }) : this._(
+          store,
+          channelFactory ?? WebSocketChannel.connect,
+          deviceId,
+          maxBackoff,
+          settings,
+          channelFactory == null,
+          pingInterval,
+        );
+
+  SyncClient._(
+    this.store,
+    this.channelFactory,
+    this.deviceId,
+    this.maxBackoff,
+    this.settings,
+    this.sealWire,
+    this.pingInterval,
+  );
 
   final Map<String, Block> _blocks = {};
   final List<Map<String, dynamic>> _outbox = [];
@@ -53,6 +80,13 @@ class SyncClient extends ChangeNotifier {
   bool _catchingUp = false;
   DateTime _lastRx = DateTime.now();
   String? lastError;
+
+  /// 指纹不符或握手证明失败时停住，不再退避重连。
+  bool sealBlocked = false;
+  int _epoch = 0;
+  WsSession? _ws;
+  Future<void> _sendQ = Future<void>.value();
+  Future<void> _recvQ = Future<void>.value();
 
   ConnState get state => _state;
   int get lastSeq => _lastSeq;
@@ -220,12 +254,14 @@ class SyncClient extends ChangeNotifier {
     _serverUrl = serverUrl;
     _token = token;
     _wantConnected = true;
+    sealBlocked = false;
     _attempt = 0;
     _open();
   }
 
   void disconnect() {
     _wantConnected = false;
+    _epoch++;
     _reconnectTimer?.cancel();
     _closeChannel();
     _setState(ConnState.offline);
@@ -235,29 +271,146 @@ class SyncClient extends ChangeNotifier {
     _pingTimer?.cancel();
     _sub?.cancel();
     _sub = null;
-    _ch?.sink.close();
+    _ws = null;
+    try {
+      _ch?.sink.close();
+    } catch (_) {}
     _ch = null;
   }
 
   void _open() {
-    if (_disposed || !_wantConnected || _serverUrl == null) return;
+    if (_disposed || !_wantConnected || _serverUrl == null || sealBlocked) return;
+    final epoch = ++_epoch;
     _closeChannel();
     _setState(ConnState.connecting);
+    if (!sealWire) {
+      _openPlain();
+      return;
+    }
+    unawaited(_openSealed(epoch));
+  }
+
+  void _openPlain() {
     try {
       final ch = channelFactory(wsUri(_serverUrl!));
       _ch = ch;
-      // 连接失败会同时体现在 ready 和 stream 上；这里吞掉 ready 的错误，避免"未处理异常"。
       ch.ready.catchError((_) {});
       _sub = ch.stream.listen(
         (data) => _onMessage(data),
-        onError: (e) => _onDisconnected('$e'),
-        onDone: () => _onDisconnected(null),
+        onError: (e) {
+          if (_ch != ch) return;
+          _onDisconnected('$e');
+        },
+        onDone: () {
+          if (_ch != ch) return;
+          _onDisconnected(null);
+        },
         cancelOnError: true,
       );
       _send({'type': 'auth', 'token': _token, 'device_id': deviceId});
     } catch (e) {
       _onDisconnected('$e');
     }
+  }
+
+  Future<void> _openSealed(int epoch) async {
+    final Uint8List pub;
+    final KeyPair eph;
+    try {
+      pub = await WireSeal.serverPublic(_serverUrl!, pins: settings);
+      if (epoch != _epoch || !_wantConnected) return;
+      eph = await newEph();
+      if (epoch != _epoch || !_wantConnected) return;
+    } catch (e) {
+      if (epoch != _epoch) return;
+      if (e is WireException && e.fatal) {
+        _blockSeal('$e');
+      } else {
+        lastError = '$e';
+        _setState(ConnState.offline);
+        _scheduleReconnect();
+      }
+      return;
+    }
+    if (epoch != _epoch || !_wantConnected) return;
+    try {
+      final ch = channelFactory(wsUri(_serverUrl!));
+      if (epoch != _epoch || !_wantConnected) {
+        try {
+          ch.sink.close();
+        } catch (_) {}
+        return;
+      }
+      _ch = ch;
+      _ws = null;
+      ch.ready.catchError((_) {});
+      _sub = ch.stream.listen(
+        (data) {
+          if (_ch != ch) return;
+          _onRaw(data, epoch, pub, eph);
+        },
+        onError: (e) {
+          if (_ch != ch) return;
+          _onDisconnected('$e');
+        },
+        onDone: () {
+          if (_ch != ch) return;
+          _onDisconnected(null);
+        },
+        cancelOnError: true,
+      );
+      final hello = await clientHello(eph);
+      if (epoch != _epoch || _ch != ch) return;
+      ch.sink.add(hello);
+    } catch (e) {
+      if (epoch != _epoch) return;
+      if (_ch == null) {
+        lastError = '$e';
+        _setState(ConnState.offline);
+        _scheduleReconnect();
+      } else {
+        _onDisconnected('$e');
+      }
+    }
+  }
+
+  void _onRaw(dynamic data, int epoch, Uint8List pub, KeyPair eph) {
+    _recvQ = _recvQ.then((_) => _handleRaw(data, epoch, pub, eph));
+  }
+
+  Future<void> _handleRaw(dynamic data, int epoch, Uint8List pub, KeyPair eph) async {
+    if (epoch != _epoch) return;
+    try {
+      final bytes = data is Uint8List ? data : (data is List<int> ? Uint8List.fromList(data) : null);
+      if (_ws == null) {
+        if (bytes == null) throw WireException('加密握手失败', fatal: true);
+        _ws = await wsFinish(pub, eph, bytes);
+        if (epoch != _epoch) return;
+        _send({'type': 'auth', 'token': _token, 'device_id': deviceId});
+        return;
+      }
+      if (bytes == null) throw WireException('无法解密');
+      final plain = await _ws!.open(bytes);
+      if (epoch != _epoch) return;
+      _onMessage(utf8.decode(plain));
+    } catch (e) {
+      if (epoch != _epoch) return;
+      if (e is WireException && e.fatal) {
+        _blockSeal('$e');
+      } else {
+        _onDisconnected('$e');
+      }
+    }
+  }
+
+  void _blockSeal(String message) {
+    lastError = message;
+    sealBlocked = true;
+    _wantConnected = false;
+    _epoch++;
+    _closeChannel();
+    _setState(ConnState.offline);
+    _notify();
   }
 
   void _onDisconnected(String? err) {
@@ -269,23 +422,41 @@ class SyncClient extends ChangeNotifier {
   }
 
   void _scheduleReconnect() {
-    if (!_wantConnected || _disposed || _state == ConnState.authError) return;
+    if (!_wantConnected || _disposed || _state == ConnState.authError || sealBlocked) return;
     _reconnectTimer?.cancel();
     final ms = min(maxBackoff.inMilliseconds, 500 * pow(2, _attempt).toInt());
     _attempt = min(_attempt + 1, 10);
     _reconnectTimer = Timer(Duration(milliseconds: ms), _open);
   }
 
-  /// 立即重连（如网络恢复、应用回到前台）。
+  /// 立即重连（如网络恢复、应用回到前台、用户在设置里重试）。
   void reconnectNow() {
-    if (!_wantConnected) return;
+    if (_serverUrl == null || _token == null) return;
+    if (!_wantConnected && !sealBlocked) return;
+    sealBlocked = false;
+    _wantConnected = true;
     _attempt = 0;
     _reconnectTimer?.cancel();
     if (_state != ConnState.online) _open();
   }
 
   void _send(Map<String, dynamic> m) {
-    _ch?.sink.add(jsonEncode(m));
+    final ch = _ch;
+    if (ch == null) return;
+    final session = _ws;
+    if (session == null) {
+      if (!sealWire) ch.sink.add(jsonEncode(m));
+      return;
+    }
+    final epoch = _epoch;
+    _sendQ = _sendQ.then((_) async {
+      if (epoch != _epoch || _ws != session || _ch != ch) return;
+      try {
+        final frame = await session.seal(utf8.encode(jsonEncode(m)));
+        if (epoch != _epoch || _ch != ch) return;
+        ch.sink.add(frame);
+      } catch (_) {}
+    });
   }
 
   void _onMessage(dynamic data) {
@@ -532,6 +703,7 @@ class SyncClient extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _wantConnected = false;
+    _epoch++;
     _reconnectTimer?.cancel();
     _closeChannel();
     super.dispose();

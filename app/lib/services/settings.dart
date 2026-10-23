@@ -73,4 +73,19 @@ class Settings {
   void logout() {
     token = null;
   }
+
+  String _pinKey(String server) => 'seal_pin_${server.trim()}';
+
+  /// 第一次连上时记住的服务器公钥指纹（十六进制）。
+  String? sealPin(String server) => prefs.getString(_pinKey(server));
+
+  void setSealPin(String server, String hex) => prefs.setString(_pinKey(server), hex);
+
+  void clearSealPin(String server) => prefs.remove(_pinKey(server));
+
+  void clearSealPins() {
+    for (final k in prefs.getKeys().where((k) => k.startsWith('seal_pin_')).toList()) {
+      prefs.remove(k);
+    }
+  }
 }

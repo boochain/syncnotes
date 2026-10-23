@@ -14,6 +14,7 @@ import '../app_scope.dart';
 import '../models/block.dart';
 import '../ui/ds.dart';
 import '../ui/glass.dart';
+import '../ui/server_image.dart';
 import 'commands.dart';
 import 'doc.dart';
 import 'inline_md.dart';
@@ -957,11 +958,8 @@ class _ImageBlock extends StatelessWidget {
     final s = AppScope.of(context);
     final url = block.payload['url'] as String?;
     final fileId = block.payload['file_id'] as String?;
-    String? src = url;
-    if (src == null && fileId != null && s.settings.server != null && s.settings.token != null) {
-      src = s.api.fileUrl(s.settings.server!, s.settings.token!, fileId).toString();
-    }
-    if (src == null) {
+    final external = url != null && (url.startsWith('http://') || url.startsWith('https://'));
+    if (!external && fileId == null) {
       return Container(
         key: ValueKey('imagePlaceholder-${block.id}'),
         padding: const EdgeInsets.all(Gap.l),
@@ -983,9 +981,13 @@ class _ImageBlock extends StatelessWidget {
               final files = await FilePicker.pickFiles(type: FileType.image);
               if (files.isEmpty) return;
               final f = files.first;
-              final bytes = await f.xFile.readAsBytes();
               try {
-                final id = await s.api.uploadFile(s.settings.server!, s.settings.token!, f.name, bytes);
+                final id = await s.transfers.upload(
+                  name: f.name,
+                  path: (f.path != null && f.path!.isNotEmpty) ? f.path : null,
+                  bytes: (f.path == null || f.path!.isEmpty) ? (f.bytes ?? await f.xFile.readAsBytes()) : null,
+                  total: f.size,
+                );
                 doc.setPayload(block.id, {'file_id': id, 'name': f.name});
               } catch (e) {
                 if (context.mounted) {
@@ -1027,27 +1029,29 @@ class _ImageBlock extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppRadius.s),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxHeight: 420),
-          child: Image.network(
-            src,
-            fit: BoxFit.contain,
-            loadingBuilder: (ctx, child, p) => p == null
-                ? child
-                : Container(
-                    height: 120,
+          child: external
+              ? Image.network(
+                  url!,
+                  fit: BoxFit.contain,
+                  loadingBuilder: (ctx, child, p) => p == null
+                      ? child
+                      : Container(
+                          height: 120,
+                          color: c.fill,
+                          child: const Center(child: SizedBox.square(dimension: Sizes.iconMd, child: CircularProgressIndicator(strokeWidth: 2))),
+                        ),
+                  errorBuilder: (ctx, e, st) => Container(
+                    key: const Key('imageError'),
+                    height: 80,
                     color: c.fill,
-                    child: const Center(child: SizedBox.square(dimension: Sizes.iconMd, child: CircularProgressIndicator(strokeWidth: 2))),
+                    child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                      Icon(CupertinoIcons.exclamationmark_triangle, size: Sizes.iconSm, color: c.text3),
+                      const SizedBox(width: Gap.m),
+                      Text('图片加载失败', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: c.text3)),
+                    ]),
                   ),
-            errorBuilder: (ctx, e, st) => Container(
-              key: const Key('imageError'),
-              height: 80,
-              color: c.fill,
-              child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                Icon(CupertinoIcons.exclamationmark_triangle, size: Sizes.iconSm, color: c.text3),
-                const SizedBox(width: Gap.m),
-                Text('图片加载失败', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: c.text3)),
-              ]),
-            ),
-          ),
+                )
+              : ServerImage(fileId: fileId!, name: block.payload['name'] as String?),
         ),
       ),
     );

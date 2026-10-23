@@ -132,7 +132,7 @@ pub enum ServerMessage {
 pub struct HealthResponse {
     pub status: String,
     pub version: String,
-    /// Wire protocol revision. 2 = recycle bin (deleted_at / deleted_by).
+    /// Wire protocol revision. 3 = application-layer seal (syncnotes-seal-v1) + recycle bin.
     #[serde(default)]
     pub protocol: u32,
     #[serde(default)]
@@ -140,9 +140,12 @@ pub struct HealthResponse {
     /// Recycle-bin retention in days (0 = never purge).
     #[serde(default)]
     pub trash_retention_days: u32,
+    /// X25519 static public key, standard base64. Not a secret.
+    #[serde(default)]
+    pub seal_pub: String,
 }
 
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 3;
 
 /// Distinguish a missing field (None) from an explicit null (Some(None)).
 fn double_option<'de, D>(d: D) -> Result<Option<Option<i64>>, D::Error>

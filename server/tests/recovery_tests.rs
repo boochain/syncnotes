@@ -5,13 +5,15 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use futures::{SinkExt, StreamExt};
+use futures::StreamExt;
 use serde_json::{json, Value};
 use syncnotes_server::{admin, build_router, AppState, Storage};
-use tokio::net::TcpStream;
-use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
+use tokio_tungstenite::tungstenite::Message;
 
-type Ws = WebSocketStream<MaybeTlsStream<TcpStream>>;
+#[path = "common/wire.rs"]
+mod wire;
+
+use wire::Ws;
 
 struct Srv {
     addr: String,
@@ -56,16 +58,7 @@ async fn spawn() -> Srv {
 }
 
 async fn post(addr: &str, path: &str, token: Option<&str>, body: Value) -> (u16, Value) {
-    let mut r = reqwest::Client::new()
-        .post(format!("http://{addr}{path}"))
-        .json(&body);
-    if let Some(t) = token {
-        r = r.bearer_auth(t);
-    }
-    let r = r.send().await.unwrap();
-    let st = r.status().as_u16();
-    let txt = r.text().await.unwrap();
-    (st, serde_json::from_str(&txt).unwrap_or(Value::String(txt)))
+    wire::post_json(addr, path, token, &body).await
 }
 
 async fn register(addr: &str, u: &str, pw: &str) -> Value {
@@ -101,24 +94,15 @@ async fn recover(addr: &str, u: &str, code: &str, pw: &str) -> (u16, Value) {
 }
 
 async fn send(ws: &mut Ws, v: Value) {
-    ws.send(Message::Text(v.to_string())).await.unwrap();
+    ws.send_json(&v).await;
 }
 
 async fn recv(ws: &mut Ws) -> Option<Value> {
-    loop {
-        let m = tokio::time::timeout(Duration::from_secs(5), ws.next())
-            .await
-            .expect("timeout")?;
-        match m {
-            Ok(Message::Text(t)) => return Some(serde_json::from_str(&t).unwrap()),
-            Ok(Message::Close(_)) | Err(_) => return None,
-            _ => {}
-        }
-    }
+    ws.recv_json().await
 }
 
 async fn ws_auth(addr: &str, token: &str, dev: &str) -> (Ws, Value) {
-    let (mut ws, _) = connect_async(format!("ws://{addr}/ws")).await.unwrap();
+    let mut ws = Ws::connect(addr).await;
     send(
         &mut ws,
         json!({"type": "auth", "token": token, "device_id": dev}),
@@ -135,29 +119,17 @@ async fn connect(addr: &str, token: &str, dev: &str) -> Ws {
 }
 
 async fn upload(addr: &str, token: &str, name: &str, data: &[u8]) -> String {
-    let r = reqwest::Client::new()
-        .put(format!("http://{addr}/api/files?name={name}"))
-        .bearer_auth(token)
-        .body(data.to_vec())
-        .send()
-        .await
-        .unwrap();
-    assert!(r.status().is_success());
-    let v: Value = r.json().await.unwrap();
+    let (st, v) = wire::blob_put(addr, token, name, data).await;
+    assert_eq!(st, 200, "{v}");
     v["file_id"].as_str().unwrap().to_string()
 }
 
 async fn download(addr: &str, token: &str, id: &str) -> Option<Vec<u8>> {
-    let r = reqwest::Client::new()
-        .get(format!("http://{addr}/api/files/{id}"))
-        .bearer_auth(token)
-        .send()
-        .await
-        .unwrap();
-    if !r.status().is_success() {
+    let (st, data) = wire::blob_get(addr, token, id).await;
+    if st != 200 {
         return None;
     }
-    Some(r.bytes().await.unwrap().to_vec())
+    Some(data)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1035,7 +1007,7 @@ async fn e2e_rescue_script_reset_keeps_all_data() {
     // The old session (other process revoked it) is closed by the periodic re-check.
     let closed = tokio::time::timeout(Duration::from_secs(20), async {
         loop {
-            match stale.next().await {
+            match stale.inner.next().await {
                 None | Some(Err(_)) | Some(Ok(Message::Close(_))) => break,
                 _ => {}
             }

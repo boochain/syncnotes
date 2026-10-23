@@ -41,9 +41,10 @@ Future<void> exportMyData(BuildContext context, AppServices s) async {
       readAttachment: (b) async {
         final local = await readLocalAttachment(b);
         if (local != null) return local;
-        final fid = (b['payload'] as Map?)?['file_id'] as String?;
+        final payload = (b['payload'] as Map?) ?? const {};
+        final fid = payload['file_id'] as String?;
         if (fid == null || st.server == null || st.token == null) return null;
-        return s.api.downloadFile(st.server!, st.token!, fid).timeout(const Duration(seconds: 20));
+        return s.transfers.downloadBytes(name: (payload['name'] ?? fid).toString(), fileId: fid);
       },
     );
     final ts = DateTime.now().toIso8601String().substring(0, 16).replaceAll(RegExp('[-:T]'), '');

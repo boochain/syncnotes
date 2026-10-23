@@ -241,15 +241,21 @@ class FileType_ extends BlockType {
     final s = AppScope.of(context);
     final fileId = block.payload['file_id'] as String?;
     if (fileId == null) throw Exception('文件尚未上传');
-    final bytes = await s.api.downloadFile(s.settings.server!, s.settings.token!, fileId);
     Directory? dir;
     try {
       dir = await getDownloadsDirectory();
     } catch (_) {}
     dir ??= await getApplicationDocumentsDirectory();
-    final out = File('${dir.path}${Platform.pathSeparator}SyncNotes${Platform.pathSeparator}${safeFileName((block.payload['name'] ?? block.id) as String)}');
+    final name = safeFileName((block.payload['name'] ?? block.id) as String);
+    final out = File('${dir.path}${Platform.pathSeparator}SyncNotes${Platform.pathSeparator}$name');
     await out.parent.create(recursive: true);
-    await out.writeAsBytes(bytes);
+    final size = block.payload['size'];
+    await s.transfers.downloadToFile(
+      name: name,
+      fileId: fileId,
+      dest: out.path,
+      total: size is int ? size : 0,
+    );
     return out;
   }
 
@@ -311,29 +317,48 @@ class FileType_ extends BlockType {
     final res = await FilePicker.pickFiles();
     if (res.isEmpty) return false;
     final pf = res.first;
-    final List<int> bytes = await pf.xFile.readAsBytes();
+    if (!context.mounted) return false;
+    if (pf.path != null && pf.path!.isNotEmpty) {
+      final len = pf.size > 0 ? pf.size : await File(pf.path!).length();
+      if (!context.mounted) return false;
+      return uploadFileBlock(context, pf.name, null, path: pf.path, size: len, parentId: parentId);
+    }
+    final bytes = pf.bytes ?? await pf.xFile.readAsBytes();
     if (!context.mounted) return false;
     return uploadFileBlock(context, pf.name, bytes, parentId: parentId);
   }
 }
 
 /// 上传一个文件并创建文件块（选择文件 / 拖放 / 分享进来共用）。
-Future<bool> uploadFileBlock(BuildContext context, String name, List<int> bytes, {String? parentId}) async {
+/// [bytes] 只给已经在内存里的小内容；有路径或可读流时不要再整文件读进来。
+Future<bool> uploadFileBlock(BuildContext context, String name, List<int>? bytes,
+    {String? parentId, String? path, Stream<List<int>> Function()? open, int? size}) async {
   final s = AppScope.of(context);
-  final server = s.settings.server, token = s.settings.token;
-  if (server == null || token == null) return false;
-  _toast(context, '正在上传 $name…');
+  if (s.settings.server == null || s.settings.token == null) return false;
+  if (bytes == null && path == null && open == null) return false;
+  final mode = defaultViewedMode(context);
+  final total = size ?? bytes?.length ?? 0;
+  var created = false;
   try {
-    final id = await s.api.uploadFile(server, token, name, bytes);
-    if (!context.mounted) return false;
-    s.sync.create(
-      kind: BlockKind.file,
-      title: name,
-      payload: {'name': name, 'size': bytes.length, 'file_id': id},
-      parentId: parentId,
-      viewedMode: defaultViewedMode(context),
+    await s.transfers.upload(
+      name: name,
+      bytes: bytes,
+      path: path,
+      open: open,
+      total: total,
+      onSuccess: (id) {
+        if (created) return;
+        created = true;
+        s.sync.create(
+          kind: BlockKind.file,
+          title: name,
+          payload: {'name': name, 'size': total, 'file_id': id},
+          parentId: parentId,
+          viewedMode: mode,
+        );
+      },
     );
-    _toast(context, '上传完成');
+    if (context.mounted) _toast(context, '上传完成');
     return true;
   } catch (e) {
     if (context.mounted) _toast(context, '上传失败（需在线）：$e');

@@ -7,10 +7,11 @@ import 'trash_page.dart';
 import '../app_scope.dart';
 import '../platform/android_service.dart';
 import '../platform/desktop.dart';
+import '../services/local_export.dart';
 import '../sync/sync_client.dart';
+import '../sync/wire_seal.dart';
 import 'ds.dart';
 import 'recovery_ui.dart';
-import '../services/local_export.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -64,9 +65,34 @@ class _SettingsPageState extends State<SettingsPage> {
                   ConnState.authError => '登录已失效，请重新登录',
                   ConnState.offline => '离线（将自动重连）',
                 },
-                subtitle:
-                    '同步序号 ${s.sync.lastSeq} · 待发送 ${s.sync.pendingCount} · 设备 ${st.deviceId.length > 8 ? st.deviceId.substring(0, 8) : st.deviceId}',
+                subtitle: [
+                  '同步序号 ${s.sync.lastSeq} · 待发送 ${s.sync.pendingCount} · 设备 ${st.deviceId.length > 8 ? st.deviceId.substring(0, 8) : st.deviceId}',
+                  if (s.sync.lastError != null) s.sync.lastError!,
+                ].join('\n'),
                 trailing: TextButton(onPressed: s.sync.reconnectNow, child: const Text('重连')),
+              ),
+            ),
+            SettingsRow(
+              key: const Key('settingsSeal'),
+              icon: CupertinoIcons.checkmark_shield,
+              title: '传输加密',
+              subtitle: () {
+                final pin = st.server == null ? null : st.sealPin(st.server!);
+                if (pin == null || pin.isEmpty) return '笔记、密码和文件在传输中加密。第一次连接时记住服务器指纹。';
+                final short = pin.length > 16 ? '${pin.substring(0, 16)}…' : pin;
+                return '已记住服务器指纹 $short。指纹变化会拒绝连接。';
+              }(),
+              trailing: TextButton(
+                onPressed: () {
+                  final server = st.server;
+                  if (server != null) {
+                    st.clearSealPin(server);
+                    WireSeal.forget(server);
+                  }
+                  s.sync.reconnectNow();
+                  setState(() {});
+                },
+                child: const Text('清除指纹'),
               ),
             ),
             SettingsRow(
@@ -224,7 +250,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 }
 
-const appVersion = '0.5.0';
+const appVersion = '0.6.0';
 
 /// 设置分组标题：12/500 次级色，上 24 下 4（Notion 设置分组）
 class SettingsSection extends StatelessWidget {

@@ -61,17 +61,20 @@ Future<void> saveShared(BuildContext context, SharedPayload p) async {
     if (p.files.isEmpty) showToast(context, '已保存分享的内容');
   }
   for (final f in p.files) {
-    List<int> bytes;
+    final file = File(f.path);
+    int len;
     try {
-      bytes = await File(f.path).readAsBytes();
+      len = await file.length();
     } catch (_) {
       if (context.mounted) showToast(context, '无法读取 ${f.name}');
       continue;
     }
     if (!context.mounted) return;
-    await uploadFileBlock(context, f.name, bytes);
-    try {
-      await File(f.path).delete();
-    } catch (_) {}
+    final ok = await uploadFileBlock(context, f.name, null, path: f.path, size: len);
+    if (ok) {
+      try {
+        await file.delete();
+      } catch (_) {}
+    }
   }
 }

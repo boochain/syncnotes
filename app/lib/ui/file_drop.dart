@@ -24,15 +24,15 @@ class FileDropZoneState extends State<FileDropZone> {
   Future<int> handleFiles(List<XFile> files) async {
     var n = 0;
     for (final f in files) {
-      List<int> bytes;
+      int len;
       try {
-        bytes = await f.readAsBytes();
+        len = await f.length();
       } catch (_) {
         if (mounted) showToast(context, '无法读取 ${f.name}（文件夹暂不支持拖放）');
         continue;
       }
       if (!mounted) return n;
-      if (await uploadFileBlock(context, f.name, bytes)) n++;
+      if (await uploadFileBlock(context, f.name, null, open: () => f.openRead(), size: len)) n++;
     }
     return n;
   }

@@ -4,6 +4,7 @@ import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../platform/notifications.dart';
+import '../services/settings.dart';
 import '../sync/local_store.dart';
 import '../sync/sync_client.dart';
 
@@ -71,7 +72,8 @@ class _SyncTaskHandler extends TaskHandler {
     if (server == null || token == null || deviceId == null) return;
     await Notifier.init(requestPermission: false);
     // 服务隔离区只负责通知：使用内存存储，首次追赶不提示。
-    final c = SyncClient(store: MemoryStore(), deviceId: deviceId);
+    final settings = Settings(prefs);
+    final c = SyncClient(store: MemoryStore(), deviceId: deviceId, settings: settings);
     c.onRemoteNew = (b) {
       if (prefs.getBool('notifications') ?? true) Notifier.showBlock(b);
     };

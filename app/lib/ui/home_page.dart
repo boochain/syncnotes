@@ -227,12 +227,14 @@ class ConnectionBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
-    final (color, label) = switch (sync.state) {
-      ConnState.online => (c.success, '在线'),
-      ConnState.connecting => (c.warning, '连接中'),
-      ConnState.authError => (c.danger, '登录失效'),
-      ConnState.offline => (c.text3, '离线'),
-    };
+    final (color, label) = sync.sealBlocked
+        ? (c.danger, '已拒绝')
+        : switch (sync.state) {
+            ConnState.online => (c.success, '在线'),
+            ConnState.connecting => (c.warning, '连接中'),
+            ConnState.authError => (c.danger, '登录失效'),
+            ConnState.offline => (c.text3, '离线'),
+          };
     final pending = sync.pendingCount;
     final text = pending > 0 ? '$label · $pending 待同步' : label;
     final dot = AnimatedContainer(

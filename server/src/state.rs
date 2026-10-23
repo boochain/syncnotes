@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::protocol::ServerMessage;
+use crate::seal::SealIdentity;
 use crate::storage::Storage;
 
 pub type ConnId = u64;
@@ -28,6 +29,9 @@ pub struct AppState {
     pub files_dir: std::path::PathBuf,
     /// Recycle-bin retention in days (0 = keep forever).
     pub trash_days: u32,
+    /// X25519 static key for the application-layer seal. Plaintext never leaves
+    /// this process; the wire only ever sees ciphertext under this key.
+    pub seal: SealIdentity,
     /// Failed-attempt limiter for password recovery (per user and per IP).
     pub recovery_limiter: RateLimiter,
 }
@@ -101,6 +105,7 @@ impl AppState {
             allow_register,
             files_dir: std::env::temp_dir().join("syncnotes-files"),
             trash_days: 30,
+            seal: SealIdentity::generate(),
             recovery_limiter: RateLimiter::default(),
         }
     }
@@ -138,6 +143,11 @@ impl AppState {
 
     pub fn with_trash_days(mut self, d: u32) -> Self {
         self.trash_days = d;
+        self
+    }
+
+    pub fn with_seal(mut self, seal: SealIdentity) -> Self {
+        self.seal = seal;
         self
     }
 

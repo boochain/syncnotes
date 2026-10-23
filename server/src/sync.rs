@@ -22,8 +22,9 @@ pub async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
         status: "ok".into(),
         version: env!("CARGO_PKG_VERSION").into(),
         protocol: PROTOCOL_VERSION,
-        features: vec!["trash".into()],
+        features: vec!["trash".into(), "seal".into()],
         trash_retention_days: state.trash_days,
+        seal_pub: state.seal.public_b64(),
     })
 }
 
@@ -125,18 +126,36 @@ pub async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> 
 
 async fn handle_socket(socket: WebSocket, state: AppState) {
     let (mut sink, mut stream) = socket.split();
+    // Handshake before any application byte. A plaintext frame is dropped;
+    // we never echo it.
+    let hello = tokio::time::timeout(std::time::Duration::from_secs(15), stream.next()).await;
+    let client_frame = match hello {
+        Ok(Some(Ok(Message::Binary(b)))) => b,
+        _ => return,
+    };
+    let (server_hello, mut pair) = match crate::seal::accept_client_hello(&state.seal, &client_frame)
+    {
+        Ok(v) => v,
+        Err(()) => return,
+    };
+    if sink.send(Message::Binary(server_hello)).await.is_err() {
+        return;
+    }
     let (tx, mut rx) = mpsc::unbounded_channel::<ServerMessage>();
 
-    // Writer task
+    // Writer task — every outbound frame is sealed with this socket's key.
+    let mut send_dir = pair.send;
     let writer = tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
-            let Ok(text) = serde_json::to_string(&msg) else {
+            let Ok(text) = serde_json::to_vec(&msg) else {
                 continue;
             };
-            if sink.send(Message::Text(text)).await.is_err() {
+            let frame = send_dir.seal(&text);
+            if sink.send(Message::Binary(frame)).await.is_err() {
                 break;
             }
         }
+        let _ = sink.send(Message::Close(None)).await;
     });
 
     let mut conn_id: Option<u64> = None;
@@ -173,9 +192,23 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
             }
         }
         let text = match msg {
-            Message::Text(t) => t,
+            Message::Binary(b) => match pair.recv.open(&b) {
+                Ok(p) => String::from_utf8(p).unwrap_or_default(),
+                Err(()) => {
+                    let _ = tx.send(ServerMessage::Error {
+                        message: "无法解密".into(),
+                    });
+                    continue;
+                }
+            },
+            Message::Text(_) => {
+                let _ = tx.send(ServerMessage::Error {
+                    message: "拒绝明文帧".into(),
+                });
+                continue;
+            }
             Message::Close(_) => break,
-            Message::Ping(_) | Message::Pong(_) | Message::Binary(_) => continue,
+            Message::Ping(_) | Message::Pong(_) => continue,
         };
         let client: ClientMessage = match serde_json::from_str(&text) {
             Ok(m) => m,

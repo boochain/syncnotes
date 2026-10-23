@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 import 'package:cross_file/cross_file.dart';
 import 'package:flutter/material.dart';
@@ -17,8 +18,24 @@ import 'fake_channel.dart';
 class _FakeApi extends AuthApi {
   final uploads = <String>[];
   @override
-  Future<String> uploadFile(String server, String token, String name, List<int> bytes) async {
+  Future<String> putFile({
+    required String server,
+    required String token,
+    required String name,
+    List<int>? bytes,
+    Stream<List<int>>? source,
+    int total = 0,
+    void Function(int done, int total)? onProgress,
+    bool Function()? isCanceled,
+  }) async {
     uploads.add(name);
+    var n = bytes?.length ?? 0;
+    if (source != null) {
+      await for (final c in source) {
+        n += c.length;
+      }
+    }
+    onProgress?.call(n, total == 0 ? n : total);
     return 'fid-$name';
   }
 }

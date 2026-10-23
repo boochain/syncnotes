@@ -20,6 +20,7 @@ import 'home_page.dart';
 import 'quick_switcher.dart';
 import 'settings_page.dart';
 import 'sidebar.dart';
+import 'transfer_page.dart';
 import 'trash_page.dart';
 
 /// 宽屏断点：≥ 720 显示常驻侧边栏，否则使用抽屉。
@@ -123,6 +124,7 @@ class AppShellState extends State<AppShell> implements PageHost {
   Future<void> _settings() async {
     _scaffold.currentState?.closeDrawer();
     if (_inSettings) return;
+    if (_inTrash || _inTransfers) _navKey.currentState?.popUntil((r) => r.isFirst);
     setState(() => _inSettings = true);
     await _navKey.currentState?.push(MaterialPageRoute(builder: (_) => const SettingsPage()));
     if (mounted) setState(() => _inSettings = false);
@@ -132,10 +134,20 @@ class AppShellState extends State<AppShell> implements PageHost {
   Future<void> _trash() async {
     _scaffold.currentState?.closeDrawer();
     if (_inTrash) return;
-    if (_inSettings) _navKey.currentState?.popUntil((r) => r.isFirst);
+    if (_inSettings || _inTransfers) _navKey.currentState?.popUntil((r) => r.isFirst);
     setState(() => _inTrash = true);
     await _navKey.currentState?.push(MaterialPageRoute(builder: (_) => const TrashPage()));
     if (mounted) setState(() => _inTrash = false);
+  }
+
+  bool _inTransfers = false;
+  Future<void> _transfers() async {
+    _scaffold.currentState?.closeDrawer();
+    if (_inTransfers) return;
+    if (_inSettings || _inTrash) _navKey.currentState?.popUntil((r) => r.isFirst);
+    setState(() => _inTransfers = true);
+    await _navKey.currentState?.push(MaterialPageRoute(builder: (_) => const TransferPage()));
+    if (mounted) setState(() => _inTransfers = false);
   }
 
   /// 系统返回（Android 返回键 / 预测性返回手势）：
@@ -204,11 +216,13 @@ class AppShellState extends State<AppShell> implements PageHost {
           final page = _page == null ? null : sync.byId(_page!);
           final pageId = page == null || sync.isHidden(page) ? null : _page;
           final sidebar = Sidebar(
-            selectedPage: _inSettings || _inTrash ? null : pageId,
-            inboxSelected: pageId == null && !_inSettings && !_inTrash,
-            settingsSelected: _inSettings && !_inTrash,
+            selectedPage: _inSettings || _inTrash || _inTransfers ? null : pageId,
+            inboxSelected: pageId == null && !_inSettings && !_inTrash && !_inTransfers,
+            settingsSelected: _inSettings && !_inTrash && !_inTransfers,
             trashSelected: _inTrash,
+            transfersSelected: _inTransfers,
             onTrash: _trash,
+            onTransfers: _transfers,
             onSelect: _select,
             onSearch: () {
               _scaffold.currentState?.closeDrawer();
@@ -249,16 +263,21 @@ class AppShellState extends State<AppShell> implements PageHost {
             key: _scaffold,
             backgroundColor: pal.bg,
             drawer: _wide ? null : Drawer(child: SafeArea(child: sidebar)),
-            body: _wide
-                ? Row(children: [
-                    Container(
-                      width: Sizes.sidebarWidth,
-                      decoration: BoxDecoration(color: pal.sidebar, border: Border(right: BorderSide(color: pal.separator))),
-                      child: sidebar,
-                    ),
-                    Expanded(child: _RebuildingHome(home: home, navKey: _navKey, child: content)),
-                  ])
-                : _RebuildingHome(home: home, navKey: _navKey, child: content),
+            body: Column(children: [
+              Expanded(
+                child: _wide
+                    ? Row(children: [
+                        Container(
+                          width: Sizes.sidebarWidth,
+                          decoration: BoxDecoration(color: pal.sidebar, border: Border(right: BorderSide(color: pal.separator))),
+                          child: sidebar,
+                        ),
+                        Expanded(child: _RebuildingHome(home: home, navKey: _navKey, child: content)),
+                      ])
+                    : _RebuildingHome(home: home, navKey: _navKey, child: content),
+              ),
+              TransferStrip(onOpen: _transfers),
+            ]),
           );
         }),
       ),

@@ -7,7 +7,7 @@ use std::time::Duration;
 use clap::{Parser, Subcommand};
 use tracing_subscriber::EnvFilter;
 
-use syncnotes_server::{AppState, Storage};
+use syncnotes_server::{seal::SealIdentity, AppState, Storage};
 
 #[derive(Parser, Debug)]
 #[command(name = "syncnotes-server", version, about = "SyncNotes 实时同步服务器")]
@@ -165,9 +165,14 @@ async fn main() {
     }
     let storage = Storage::open(&args.db).expect("open db");
     std::fs::create_dir_all(&args.files_dir).expect("create files dir");
+    let mut seal_path = args.db.as_os_str().to_owned();
+    seal_path.push(".seal");
+    let seal = SealIdentity::load_or_create(std::path::Path::new(&seal_path)).expect("seal key");
+    tracing::info!("传输加密 syncnotes-seal-v1 指纹 {}", &seal.fingerprint()[..16]);
     let state = AppState::new(storage, args.allow_register)
         .with_files_dir(args.files_dir.clone())
-        .with_trash_days(args.trash_retention_days);
+        .with_trash_days(args.trash_retention_days)
+        .with_seal(seal);
 
     if args.trash_retention_days > 0 {
         let st = state.clone();

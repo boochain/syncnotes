@@ -20,6 +20,8 @@ class Sidebar extends StatelessWidget {
   final VoidCallback onSettings;
   final bool trashSelected;
   final VoidCallback? onTrash;
+  final bool transfersSelected;
+  final VoidCallback? onTransfers;
   const Sidebar({
     super.key,
     required this.selectedPage,
@@ -30,6 +32,8 @@ class Sidebar extends StatelessWidget {
     required this.onSettings,
     this.trashSelected = false,
     this.onTrash,
+    this.transfersSelected = false,
+    this.onTransfers,
   });
 
   @override
@@ -42,7 +46,7 @@ class Sidebar extends StatelessWidget {
       child: SafeArea(
         right: false,
         child: ListenableBuilder(
-          listenable: s.sync,
+          listenable: Listenable.merge([s.sync, s.transfers]),
           builder: (context, _) {
             final roots = rootPages(s.sync);
             final name = s.settings.username ?? '';
@@ -101,6 +105,15 @@ class Sidebar extends StatelessWidget {
                       ? Text('${s.sync.trash.length}', maxLines: 1, style: tt.bodySmall?.copyWith(color: c.text3))
                       : null,
                   onTap: onTrash!,
+                ),
+              if (onTransfers != null)
+                SidebarRow(
+                  key: const Key('sidebarTransfers'),
+                  leading: const Icon(CupertinoIcons.arrow_up_arrow_down),
+                  label: '传输',
+                  selected: transfersSelected,
+                  trailing: s.transfers.activeCount > 0 ? CountBadge(s.transfers.activeCount) : null,
+                  onTap: onTransfers!,
                 ),
               const SizedBox(height: Gap.l),
               SizedBox(

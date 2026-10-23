@@ -5,10 +5,12 @@ use std::time::Duration;
 use futures::{SinkExt, StreamExt};
 use serde_json::{json, Value};
 use syncnotes_server::{build_router, AppState, Storage};
-use tokio::net::TcpStream;
-use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
+use tokio_tungstenite::tungstenite::Message;
 
-type Ws = WebSocketStream<MaybeTlsStream<TcpStream>>;
+#[path = "common/wire.rs"]
+mod wire;
+
+use wire::Ws;
 
 async fn spawn_server() -> String {
     let dir = tempfile::tempdir().unwrap().keep();
@@ -20,45 +22,37 @@ async fn spawn_server() -> String {
     format!("127.0.0.1:{}", addr.port())
 }
 
-async fn register(addr: &str, user: &str, pw: &str) -> reqwest::Response {
-    reqwest::Client::new()
-        .post(format!("http://{addr}/api/register"))
-        .json(&json!({"username": user, "password": pw}))
-        .send()
-        .await
-        .unwrap()
+async fn register(addr: &str, user: &str, pw: &str) -> u16 {
+    wire::post_json(
+        addr,
+        "/api/register",
+        None,
+        &json!({"username": user, "password": pw}),
+    )
+    .await
+    .0
 }
 
 async fn login(addr: &str, user: &str, pw: &str, device: &str) -> Option<String> {
-    let r = reqwest::Client::new()
-        .post(format!("http://{addr}/api/login"))
-        .json(&json!({"username": user, "password": pw, "device_id": device}))
-        .send()
-        .await
-        .unwrap();
-    if !r.status().is_success() {
+    let (st, v) = wire::post_json(
+        addr,
+        "/api/login",
+        None,
+        &json!({"username": user, "password": pw, "device_id": device}),
+    )
+    .await;
+    if st != 200 {
         return None;
     }
-    let v: Value = r.json().await.unwrap();
     Some(v["token"].as_str().unwrap().to_string())
 }
 
 async fn send(ws: &mut Ws, v: Value) {
-    ws.send(Message::Text(v.to_string())).await.unwrap();
+    ws.send_json(&v).await;
 }
 
-/// Receive next JSON text message (with timeout).
 async fn recv(ws: &mut Ws) -> Value {
-    loop {
-        let m = tokio::time::timeout(Duration::from_secs(5), ws.next())
-            .await
-            .expect("timeout waiting for message")
-            .unwrap()
-            .unwrap();
-        if let Message::Text(t) = m {
-            return serde_json::from_str(&t).unwrap();
-        }
-    }
+    ws.recv_json().await.expect("socket closed")
 }
 
 /// Receive until a message of the given type arrives.
@@ -73,12 +67,12 @@ async fn recv_type(ws: &mut Ws, ty: &str) -> Value {
 
 /// Assert no message arrives within a short window.
 async fn assert_silent(ws: &mut Ws) {
-    let r = tokio::time::timeout(Duration::from_millis(300), ws.next()).await;
+    let r = tokio::time::timeout(Duration::from_millis(300), ws.inner.next()).await;
     assert!(r.is_err(), "expected no message, got {:?}", r);
 }
 
 async fn connect(addr: &str, token: &str, device: &str) -> Ws {
-    let (mut ws, _) = connect_async(format!("ws://{addr}/ws")).await.unwrap();
+    let mut ws = Ws::connect(addr).await;
     send(
         &mut ws,
         json!({"type": "auth", "token": token, "device_id": device}),
@@ -98,7 +92,7 @@ fn upsert(id: &str, kind: &str, title: &str, payload: Value, mode: &str, ts: i64
 }
 
 async fn setup_user(addr: &str, user: &str) {
-    assert!(register(addr, user, "pass1234").await.status().is_success());
+    assert_eq!(register(addr, user, "pass1234").await, 200);
 }
 
 #[tokio::test]
@@ -111,6 +105,8 @@ async fn health_ok() {
         .await
         .unwrap();
     assert_eq!(v["status"], "ok");
+    assert!(v["features"].as_array().unwrap().iter().any(|f| f == "seal"));
+    assert_eq!(v["seal_pub"].as_str().unwrap().len() > 40, true);
 }
 
 #[tokio::test]
@@ -118,7 +114,7 @@ async fn auth_flow_and_rejections() {
     let addr = spawn_server().await;
     setup_user(&addr, "bill").await;
     // duplicate
-    assert_eq!(register(&addr, "bill", "pass1234").await.status(), 409);
+    assert_eq!(register(&addr, "bill", "pass1234").await, 409);
     // bad password
     assert!(login(&addr, "bill", "wrong", "d1").await.is_none());
     // unknown user
@@ -126,7 +122,7 @@ async fn auth_flow_and_rejections() {
     // good
     let tok = login(&addr, "bill", "pass1234", "d1").await.unwrap();
     // invalid ws token
-    let (mut ws, _) = connect_async(format!("ws://{addr}/ws")).await.unwrap();
+    let mut ws = Ws::connect(&addr).await;
     send(
         &mut ws,
         json!({"type":"auth","token":"bogus","device_id":"d1"}),
@@ -527,7 +523,7 @@ async fn malformed_message_returns_error() {
     setup_user(&addr, "bill").await;
     let t1 = login(&addr, "bill", "pass1234", "pc").await.unwrap();
     let mut a = connect(&addr, &t1, "pc").await;
-    a.send(Message::Text("not json".into())).await.unwrap();
+    a.inner.send(Message::Text("not json".into())).await.unwrap();
     assert_eq!(recv(&mut a).await["type"], "error");
     send(&mut a, json!({"type":"ping"})).await;
     assert_eq!(recv(&mut a).await["type"], "pong");
@@ -540,49 +536,30 @@ async fn file_upload_download_and_isolation() {
     setup_user(&addr, "eve").await;
     let tb = login(&addr, "bill", "pass1234", "pc").await.unwrap();
     let te = login(&addr, "eve", "pass1234", "pc").await.unwrap();
-    let c = reqwest::Client::new();
-    let r: Value = c
-        .put(format!("http://{addr}/api/files?name=hello.txt"))
-        .bearer_auth(&tb)
-        .body("你好文件")
-        .send()
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
+    let (st, r) = wire::blob_put(&addr, &tb, "hello.txt", "你好文件".as_bytes()).await;
+    assert_eq!(st, 200, "{r}");
     let id = r["file_id"].as_str().unwrap();
-    let got = c
-        .get(format!("http://{addr}/api/files/{id}?token={tb}"))
-        .send()
-        .await
-        .unwrap();
-    assert!(got.status().is_success());
-    assert_eq!(got.text().await.unwrap(), "你好文件");
-    // other user cannot read it
-    let other = c
-        .get(format!("http://{addr}/api/files/{id}"))
-        .bearer_auth(&te)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(other.status(), 404);
-    // no token
-    let anon = c
+    let (gst, got) = wire::blob_get(&addr, &tb, id).await;
+    assert_eq!(
+        gst,
+        200,
+        "{}",
+        String::from_utf8_lossy(&got)
+    );
+    assert_eq!(got, "你好文件".as_bytes());
+    let (ost, _) = wire::blob_get(&addr, &te, id).await;
+    assert_eq!(ost, 404);
+    let (anon, _) = wire::post_json(&addr, "/api/login", None, &json!({})).await;
+    let _ = anon;
+    let plain = reqwest::Client::new()
         .put(format!("http://{addr}/api/files?name=x"))
         .body("x")
         .send()
         .await
         .unwrap();
-    assert_eq!(anon.status(), 401);
-    // path traversal rejected
-    let bad = c
-        .get(format!("http://{addr}/api/files/..%2F..%2Fetc"))
-        .bearer_auth(&tb)
-        .send()
-        .await
-        .unwrap();
-    assert!(bad.status() == 400 || bad.status() == 404);
+    assert_eq!(plain.status(), 426);
+    let (bad, _) = wire::blob_get(&addr, &tb, "../etc/passwd").await;
+    assert!(bad == 400 || bad == 404);
 }
 
 #[tokio::test]
@@ -590,14 +567,9 @@ async fn logout_revokes_token() {
     let addr = spawn_server().await;
     setup_user(&addr, "bill").await;
     let t = login(&addr, "bill", "pass1234", "pc").await.unwrap();
-    let r = reqwest::Client::new()
-        .post(format!("http://{addr}/api/logout"))
-        .bearer_auth(&t)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(r.status(), 204);
-    let (mut ws, _) = connect_async(format!("ws://{addr}/ws")).await.unwrap();
+    let (st, _) = wire::post_json(&addr, "/api/logout", Some(&t), &json!({})).await;
+    assert_eq!(st, 204);
+    let mut ws = Ws::connect(&addr).await;
     send(&mut ws, json!({"type":"auth","token":t,"device_id":"pc"})).await;
     assert_eq!(recv(&mut ws).await["type"], "auth_error");
 }

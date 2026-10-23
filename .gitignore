@@ -3,6 +3,7 @@ server/target/
 *.db
 *.db-shm
 *.db-wal
+*.seal
 syncnotes-files/
 
 # Flutter

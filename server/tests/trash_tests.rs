@@ -1,12 +1,11 @@
 //! Recycle bin (回收站) tests: soft delete, restore, purge, retention, migration, cascade.
 
-use std::time::Duration;
-
-use futures::{SinkExt, StreamExt};
 use serde_json::{json, Value};
 use syncnotes_server::blocks::ViewedMode;
 use syncnotes_server::{build_router, AppState, Storage};
-use tokio_tungstenite::{connect_async, tungstenite::Message};
+
+#[path = "common/wire.rs"]
+mod wire;
 
 const DAY: i64 = 24 * 3600 * 1000;
 
@@ -192,79 +191,61 @@ async fn delete_restore_purge_sync_over_ws() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    let c = reqwest::Client::new();
-    c.post(format!("http://{addr}/api/register"))
-        .json(&json!({"username":"bill","password":"pw12"}))
-        .send()
-        .await
-        .unwrap();
-    let h: Value = c
-        .get(format!("http://{addr}/health"))
-        .send()
+    let h: Value = reqwest::get(format!("http://{addr}/health"))
         .await
         .unwrap()
         .json()
         .await
         .unwrap();
-    assert_eq!(h["protocol"], 2);
+    assert_eq!(h["protocol"], 3);
+    assert!(h["features"].as_array().unwrap().iter().any(|f| f == "seal"));
     assert_eq!(h["trash_retention_days"], 30);
+    assert_eq!(
+        wire::post_json(
+            &addr.to_string(),
+            "/api/register",
+            None,
+            &json!({"username":"bill","password":"pw12"})
+        )
+        .await
+        .0,
+        200
+    );
     let mut ws = Vec::new();
     for dev in ["a", "b"] {
-        let v: Value = c
-            .post(format!("http://{addr}/api/login"))
-            .json(&json!({"username":"bill","password":"pw12","device_id":dev}))
-            .send()
-            .await
-            .unwrap()
-            .json()
-            .await
-            .unwrap();
-        let (mut w, _) = connect_async(format!("ws://{addr}/ws")).await.unwrap();
-        w.send(Message::Text(
-            json!({"type":"auth","token":v["token"],"device_id":dev}).to_string(),
-        ))
-        .await
-        .unwrap();
+        let (_st, v) = wire::post_json(
+            &addr.to_string(),
+            "/api/login",
+            None,
+            &json!({"username":"bill","password":"pw12","device_id":dev}),
+        )
+        .await;
+        let mut w = wire::Ws::connect(&addr.to_string()).await;
+        w.send_json(&json!({"type":"auth","token":v["token"],"device_id":dev}))
+            .await;
         ws.push(w);
     }
-    async fn next_block(
-        w: &mut tokio_tungstenite::WebSocketStream<
-            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-        >,
-    ) -> Value {
+    async fn next_block(w: &mut wire::Ws) -> Value {
         loop {
-            let m = tokio::time::timeout(Duration::from_secs(5), w.next())
-                .await
-                .unwrap()
-                .unwrap()
-                .unwrap();
-            if let Message::Text(t) = m {
-                let v: Value = serde_json::from_str(&t).unwrap();
-                if v["type"] == "block_update" {
-                    return v["block"].clone();
-                }
+            let v = w.recv_json().await.unwrap();
+            if v["type"] == "block_update" {
+                return v["block"].clone();
             }
         }
     }
-    let msg = |ts: i64, at: Value, del: bool| json!({"type":"upsert_block","id":"n1","kind":"note","title":"t","payload":{},"parent_id":null,"viewed_mode":"global","client_updated_at":ts,"deleted":del,"deleted_at":at});
+    let msg = |ts: i64, at: Value, del: bool| {
+        json!({"type":"upsert_block","id":"n1","kind":"note","title":"t","payload":{},"parent_id":null,"viewed_mode":"global","client_updated_at":ts,"deleted":del,"deleted_at":at})
+    };
     let (a, b) = ws.split_at_mut(1);
     let (a, b) = (&mut a[0], &mut b[0]);
-    a.send(Message::Text(msg(1, Value::Null, false).to_string()))
-        .await
-        .unwrap();
+    a.send_json(&msg(1, Value::Null, false)).await;
     next_block(b).await;
-    a.send(Message::Text(msg(2, json!(99), false).to_string()))
-        .await
-        .unwrap();
+    a.send_json(&msg(2, json!(99), false)).await;
     let v = next_block(b).await;
     assert_eq!(v["deleted_at"], 99);
     assert_eq!(v["deleted_by"], "a");
-    a.send(Message::Text(msg(3, Value::Null, false).to_string()))
-        .await
-        .unwrap();
+    a.send_json(&msg(3, Value::Null, false)).await;
     assert!(next_block(b).await["deleted_at"].is_null());
-    a.send(Message::Text(msg(4, json!(100), true).to_string()))
-        .await
-        .unwrap();
+    a.send_json(&msg(4, json!(100), true)).await;
     assert_eq!(next_block(b).await["deleted"], true);
 }
