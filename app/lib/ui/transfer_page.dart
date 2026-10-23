@@ -85,7 +85,7 @@ class _Tile extends StatelessWidget {
     final eta = formatEta(job);
     final sub = switch (job.status) {
       TransferStatus.queued => '等待中',
-      TransferStatus.running => [formatPct(job), formatSpeed(job.speed), if (eta != null) eta].join(' · '),
+      TransferStatus.running => [formatPct(job), formatSpeed(job.speed), ?eta].join(' · '),
       TransferStatus.done => '完成 · ${formatBytes(job.done == 0 ? job.total : job.done)}',
       TransferStatus.failed => job.error ?? '失败',
       TransferStatus.canceled => '已取消',

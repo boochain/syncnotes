@@ -981,12 +981,14 @@ class _ImageBlock extends StatelessWidget {
               final files = await FilePicker.pickFiles(type: FileType.image);
               if (files.isEmpty) return;
               final f = files.first;
+              final len = await f.xFile.length();
+              final hasPath = f.path != null && f.path!.isNotEmpty;
               try {
                 final id = await s.transfers.upload(
                   name: f.name,
-                  path: (f.path != null && f.path!.isNotEmpty) ? f.path : null,
-                  bytes: (f.path == null || f.path!.isEmpty) ? (f.bytes ?? await f.xFile.readAsBytes()) : null,
-                  total: f.size,
+                  path: hasPath ? f.path : null,
+                  bytes: hasPath ? null : await f.xFile.readAsBytes(),
+                  total: len,
                 );
                 doc.setPayload(block.id, {'file_id': id, 'name': f.name});
               } catch (e) {
@@ -1031,7 +1033,7 @@ class _ImageBlock extends StatelessWidget {
           constraints: const BoxConstraints(maxHeight: 420),
           child: external
               ? Image.network(
-                  url!,
+                  url,
                   fit: BoxFit.contain,
                   loadingBuilder: (ctx, child, p) => p == null
                       ? child

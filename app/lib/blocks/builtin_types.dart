@@ -318,12 +318,12 @@ class FileType_ extends BlockType {
     if (res.isEmpty) return false;
     final pf = res.first;
     if (!context.mounted) return false;
+    final len = await pf.xFile.length();
+    if (!context.mounted) return false;
     if (pf.path != null && pf.path!.isNotEmpty) {
-      final len = pf.size > 0 ? pf.size : await File(pf.path!).length();
-      if (!context.mounted) return false;
       return uploadFileBlock(context, pf.name, null, path: pf.path, size: len, parentId: parentId);
     }
-    final bytes = pf.bytes ?? await pf.xFile.readAsBytes();
+    final bytes = await pf.xFile.readAsBytes();
     if (!context.mounted) return false;
     return uploadFileBlock(context, pf.name, bytes, parentId: parentId);
   }

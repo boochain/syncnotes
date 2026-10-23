@@ -79,7 +79,7 @@ class Settings {
   /// 第一次连上时记住的服务器公钥指纹（十六进制）。
   String? sealPin(String server) => prefs.getString(_pinKey(server));
 
-  void setSealPin(String server, String hex) => prefs.setString(_pinKey(server), hex);
+  Future<bool> setSealPin(String server, String hex) => prefs.setString(_pinKey(server), hex);
 
   void clearSealPin(String server) => prefs.remove(_pinKey(server));
 

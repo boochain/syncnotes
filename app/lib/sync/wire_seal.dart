@@ -97,6 +97,12 @@ class WireSeal {
     return Uint8List.fromList([...box.cipherText, ...box.mac.bytes]);
   }
 
+  static Future<Uint8List> _pubBytes(KeyPair kp) async {
+    final p = await kp.extractPublicKey();
+    if (p is! SimplePublicKey || p.bytes.length != 32) throw WireException('公钥无效');
+    return Uint8List.fromList(p.bytes);
+  }
+
   static Future<Uint8List> _open(List<int> key, List<int> nonce, List<int> aad, List<int> ct) async {
     if (ct.length < 16) throw WireException('密文太短');
     final box = SecretBox(ct.sublist(0, ct.length - 16), nonce: nonce, mac: Mac(ct.sublist(ct.length - 16)));
@@ -128,7 +134,7 @@ class HttpPending {
     required List<int> body,
   }) async {
     final eph = await WireSeal._x.newKeyPair();
-    final ephPub = Uint8List.fromList((await eph.extractPublicKey()).bytes);
+    final ephPub = await _pubBytes(eph);
     final shared = await WireSeal._shared(eph, serverPub);
     final key = await WireSeal._kdf(shared, 'http-req');
     final pb = utf8.encode(path);
@@ -158,7 +164,7 @@ class HttpPending {
     return (status, Uint8List.sublistView(plain, 2));
   }
 
-  Future<Uint8List> chunkKey() => WireSeal._kdf(await _ss(), 'blob');
+  Future<Uint8List> chunkKey() async => WireSeal._kdf(await _ss(), 'blob');
 
   static Future<Uint8List> _openEnv(List<int> envelope, List<int> shared, String info, String aad) async {
     if (envelope.length < 48 + 16 ||
@@ -257,7 +263,7 @@ Future<WsSession> wsFinish(Uint8List serverPub, KeyPair eph, List<int> serverFra
   final ssE = await WireSeal._shared(eph, serverEph);
   final ssS = await WireSeal._shared(eph, serverPub);
   final key = await WireSeal._kdf([...ssE, ...ssS], 'ws');
-  final clientEph = (await eph.extractPublicKey()).bytes;
+  final clientEph = await WireSeal._pubBytes(eph);
   final aad = [...clientEph, ...serverEph];
   final expect = await WireSeal._seal(key, Uint8List(12), aad, const []);
   if (expect.length != tag.length) throw WireException('服务器身份校验失败', fatal: true);
@@ -268,7 +274,7 @@ Future<WsSession> wsFinish(Uint8List serverPub, KeyPair eph, List<int> serverFra
 }
 
 Future<Uint8List> clientHello(KeyPair eph) async {
-  final pub = (await eph.extractPublicKey()).bytes;
+  final pub = await WireSeal._pubBytes(eph);
   return Uint8List.fromList([...utf8.encode('SNW1'), ...pub]);
 }
 
