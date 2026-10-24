@@ -150,6 +150,7 @@ class AuthApi {
               headers: {'content-type': 'application/octet-stream'}, body: pending.envelope)
           .timeout(const Duration(seconds: 15));
     } catch (e) {
+      if (e is SealPinMismatch) rethrow;
       if (e is AuthException || e is WireException) throw AuthException('$e');
       throw AuthException('无法连接服务器：$e');
     }

@@ -8,6 +8,7 @@ import '../app_scope.dart';
 import '../models/block.dart';
 import '../platform/desktop.dart';
 import '../sync/sync_client.dart';
+import '../sync/wire_seal.dart';
 import 'block_card.dart';
 import 'quick_send_bar.dart';
 import 'settings_page.dart';
@@ -157,6 +158,36 @@ class _HomePageState extends State<HomePage> {
                   ),
               ],
             ),
+          ),
+          ListenableBuilder(
+            listenable: s.sync,
+            builder: (context, _) {
+              if (!s.sync.sealBlocked) return const SizedBox.shrink();
+              return Material(
+                color: c.danger.withValues(alpha: 0.12),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: Gap.l, vertical: Gap.xs),
+                  child: Row(children: [
+                    Expanded(
+                      child: Text(s.sync.lastError ?? '服务器指纹和上次不一致',
+                          style: tt.bodySmall?.copyWith(color: c.danger)),
+                    ),
+                    TextButton(
+                      key: const Key('trustFingerprintHome'),
+                      onPressed: () {
+                        final server = s.settings.server;
+                        if (server != null) {
+                          s.settings.clearSealPin(server);
+                          WireSeal.forget(server);
+                        }
+                        s.sync.reconnectNow();
+                      },
+                      child: const Text('改用新指纹'),
+                    ),
+                  ]),
+                ),
+              );
+            },
           ),
           Expanded(
             child: RefreshIndicator(

@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 
 import '../services/auth_api.dart';
 import '../services/settings.dart';
+import '../sync/wire_seal.dart';
 import 'ds.dart';
 import 'tokens.dart';
 
@@ -443,12 +444,13 @@ Future<bool> askGenerateLegacyCode(BuildContext context) async {
 /// 登录页「忘记密码？」：用户名 + 恢复码 + 新密码。成功后 pop 出 [AuthResult]（已显示过新恢复码）。
 class ForgotPasswordPage extends StatefulWidget {
   final AuthApi api;
+  final Settings? settings;
   final String server;
   final String username;
   final String deviceId;
   final String? deviceName;
   const ForgotPasswordPage(
-      {super.key, required this.api, required this.server, required this.username, required this.deviceId, this.deviceName});
+      {super.key, required this.api, this.settings, required this.server, required this.username, required this.deviceId, this.deviceName});
   @override
   State<ForgotPasswordPage> createState() => _ForgotPasswordPageState();
 }
@@ -460,6 +462,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
   final _pw1 = TextEditingController();
   final _pw2 = TextEditingController();
   String? _error;
+  bool _pinMismatch = false;
   bool _busy = false;
 
   Future<void> _submit() async {
@@ -472,6 +475,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
     setState(() {
       _busy = true;
       _error = null;
+      _pinMismatch = false;
     });
     try {
       final r = await widget.api.recover(server, user, code, _pw1.text, widget.deviceId, deviceName: widget.deviceName);
@@ -482,7 +486,12 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
       }
       if (mounted) Navigator.of(context).pop((r, server));
     } catch (e) {
-      if (mounted) setState(() => _error = '$e');
+      if (mounted) {
+        setState(() {
+          _pinMismatch = e is SealPinMismatch;
+          _error = '$e';
+        });
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -541,6 +550,23 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                             key: const Key('forgotError'), textAlign: TextAlign.center, style: tt.bodySmall?.copyWith(color: pal.danger)),
                       ),
               ),
+              if (_pinMismatch)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: Gap.s),
+                  child: FilledButton.tonal(
+                    key: const Key('trustFingerprintForgot'),
+                    onPressed: _busy
+                        ? null
+                        : () async {
+                            final server = _server.text.trim();
+                            widget.settings?.clearSealPin(server);
+                            WireSeal.forget(server);
+                            await _submit();
+                          },
+                    style: FilledButton.styleFrom(fixedSize: const Size.fromHeight(Sizes.bar), minimumSize: const Size.fromHeight(Sizes.bar)),
+                    child: const Text('改用新指纹并继续'),
+                  ),
+                ),
               FilledButton(
                 key: const Key('resetPasswordButton'),
                 onPressed: _busy ? null : _submit,

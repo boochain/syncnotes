@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import '../services/auth_api.dart';
 import '../services/discovery.dart';
 import '../services/settings.dart';
+import '../sync/wire_seal.dart';
 import 'recovery_ui.dart';
 
 /// 登录 / 注册页面。支持手动输入服务器地址或局域网发现。
@@ -47,6 +48,7 @@ class _LoginPageState extends State<LoginPage> {
   bool _registerMode = false;
   bool _discovering = false;
   String? _error;
+  bool _pinMismatch = false;
   List<DiscoveredServer> _found = [];
 
   Future<void> _submit() async {
@@ -58,6 +60,7 @@ class _LoginPageState extends State<LoginPage> {
     setState(() {
       _busy = true;
       _error = null;
+      _pinMismatch = false;
     });
     try {
       String? newCode;
@@ -87,7 +90,10 @@ class _LoginPageState extends State<LoginPage> {
       if (!mounted) return;
       _finishLogin(server, r);
     } catch (e) {
-      setState(() => _error = '$e');
+      setState(() {
+        _pinMismatch = e is SealPinMismatch;
+        _error = '$e';
+      });
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -103,10 +109,18 @@ class _LoginPageState extends State<LoginPage> {
     widget.onLoggedIn();
   }
 
+  Future<void> _trustNewPin() async {
+    final server = _server.text.trim();
+    widget.settings.clearSealPin(server);
+    WireSeal.forget(server);
+    await _submit();
+  }
+
   Future<void> _forgot() async {
     final res = await Navigator.of(context).push<(AuthResult, String)>(MaterialPageRoute(
       builder: (_) => ForgotPasswordPage(
         api: widget.api,
+        settings: widget.settings,
         server: _server.text.trim(),
         username: _user.text.trim(),
         deviceId: widget.settings.deviceId,
@@ -271,6 +285,16 @@ class _LoginPageState extends State<LoginPage> {
                         child: Text(_error!, key: const Key('loginError'), textAlign: TextAlign.center, style: tt.bodySmall?.copyWith(color: pal.danger)),
                       ),
               ),
+              if (_pinMismatch)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: Gap.s),
+                  child: FilledButton.tonal(
+                    key: const Key('trustFingerprint'),
+                    onPressed: _busy ? null : _trustNewPin,
+                    style: FilledButton.styleFrom(fixedSize: const Size.fromHeight(Sizes.bar), minimumSize: const Size.fromHeight(Sizes.bar)),
+                    child: const Text('改用新指纹并登录'),
+                  ),
+                ),
               FilledButton(
                 key: const Key('loginButton'),
                 onPressed: _busy ? null : _submit,

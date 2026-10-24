@@ -19,6 +19,16 @@ class WireException implements Exception {
   String toString() => message;
 }
 
+/// 已记住的服务器公钥和这次看到的不一样。调用方可以清掉旧指纹后再试。
+class SealPinMismatch extends WireException {
+  final String saved;
+  final String current;
+  SealPinMismatch({required this.saved, required this.current})
+      : super('服务器指纹和上次不一致（${_fpShort(saved)} → ${_fpShort(current)}）。', fatal: true);
+}
+
+String _fpShort(String h) => h.length <= 16 ? h : '${h.substring(0, 8)}…${h.substring(h.length - 4)}';
+
 class WireSeal {
   static const chunkSize = 256 * 1024;
   static final _x = X25519();
@@ -61,7 +71,7 @@ class WireSeal {
         await pins?.setSealPin(server, hex);
         _memPin[server] = hex;
       } else if (saved != hex) {
-        throw WireException('服务器指纹和上次不一致，已拒绝连接。若你重置了服务器密钥，到设置里清除指纹后再连。', fatal: true);
+        throw SealPinMismatch(saved: saved, current: hex);
       }
       _pubs[server] = pub;
       return pub;
