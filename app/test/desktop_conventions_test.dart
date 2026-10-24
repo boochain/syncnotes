@@ -22,10 +22,11 @@ void main() {
     expect(DesktopShell.plausibleBounds(const Rect.fromLTWH(-5000, 100, 400, 640)), isFalse);
   });
 
-  test('close-to-tray defaults on and is configurable', () async {
+  test('close-to-tray defaults on; a normal launch is not hidden', () async {
     SharedPreferences.setMockInitialValues({});
     final s = await Settings.load();
     expect(s.closeToTray, isTrue);
+    expect(s.startMinimized, isFalse);
     s.closeToTray = false;
     expect(s.closeToTray, isFalse);
   });

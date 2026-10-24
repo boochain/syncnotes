@@ -28,7 +28,28 @@ class DesktopShell with TrayListener, WindowListener {
 
   /// 保存的位置是否可信（显示器拔掉后不要把窗口放到屏幕外太远）
   static bool plausibleBounds(Rect r) =>
-      r.width >= minimumSize.width && r.height >= minimumSize.height && r.left > -200 && r.top > -50 && r.left < 16000 && r.top < 9000;
+      r.width >= minimumSize.width &&
+      r.height >= minimumSize.height &&
+      r.width <= 6000 &&
+      r.height <= 4000 &&
+      r.left > -200 &&
+      r.top >= 0 &&
+      r.left < 8000 &&
+      r.top < 5000 &&
+      r.left + r.width > 80;
+
+  /// 比屏幕大的窗口缩进可见区域，避免标题栏跑到屏幕外面。
+  static Size fitToDisplay(Size want) {
+    final displays = WidgetsBinding.instance.platformDispatcher.displays;
+    if (displays.isEmpty) return want;
+    final d = displays.first;
+    final scale = d.devicePixelRatio == 0 ? 1.0 : d.devicePixelRatio;
+    final maxW = d.size.width / scale - 48;
+    final maxH = d.size.height / scale - 80;
+    final width = want.width <= maxW ? want.width : (maxW < minimumSize.width ? minimumSize.width : maxW);
+    final height = want.height <= maxH ? want.height : (maxH < minimumSize.height ? minimumSize.height : maxH);
+    return Size(width, height);
+  }
 
   Future<bool> _restoreBounds() async {
     final r = _settings?.windowBounds(_mode);
@@ -56,21 +77,35 @@ class DesktopShell with TrayListener, WindowListener {
     expanded.value = settings?.windowExpanded ?? true;
     var hidden = startHidden;
     await windowManager.ensureInitialized();
+    final size = fitToDisplay(expanded.value ? expandedSize : windowSize);
     final opts = WindowOptions(
-      size: expanded.value ? expandedSize : windowSize,
+      size: size,
       minimumSize: minimumSize,
       title: 'SyncNotes',
       skipTaskbar: false,
       titleBarStyle: TitleBarStyle.normal,
     );
-    await windowManager.waitUntilReadyToShow(opts, () async {
-      // 记住上次的位置和大小；没有记录时放在右下角（托盘旁）
-      if (!await _restoreBounds()) await windowManager.setAlignment(Alignment.bottomRight);
-      if (!hidden) {
+    try {
+      await windowManager.waitUntilReadyToShow(opts, () async {
+        try {
+          if (!await _restoreBounds()) {
+            await windowManager.setAlignment(expanded.value ? Alignment.center : Alignment.bottomRight);
+          }
+        } catch (e) {
+          debugPrint('place window: $e');
+        }
+        if (!hidden) {
+          await windowManager.show();
+          await windowManager.focus();
+        }
+      });
+    } catch (e) {
+      debugPrint('window ready: $e');
+      try {
         await windowManager.show();
         await windowManager.focus();
-      }
-    });
+      } catch (_) {}
+    }
     await windowManager.setPreventClose(true);
     windowManager.addListener(this);
 

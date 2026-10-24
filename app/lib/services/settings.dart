@@ -49,7 +49,8 @@ class Settings {
   bool get notificationRationaleShown => prefs.getBool('notif_rationale_shown') ?? false;
   set notificationRationaleShown(bool v) => prefs.setBool('notif_rationale_shown', v);
 
-  bool get startMinimized => prefs.getBool('start_minimized') ?? true;
+  /// 桌面启动时藏进托盘。默认关：登录后双击程序必须能看到窗口。
+  bool get startMinimized => prefs.getBool('start_minimized') ?? false;
   set startMinimized(bool v) => prefs.setBool('start_minimized', v);
 
   /// 新建块时默认的已读模式

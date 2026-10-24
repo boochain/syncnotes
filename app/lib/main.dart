@@ -40,7 +40,11 @@ Future<void> _main(List<String> args) async {
     final primary = await SingleInstance.acquire(onActivate: () => DesktopShell.instance.showNearTray());
     if (!primary) exit(0);
     final hidden = args.contains('--hidden') || (settings.isLoggedIn && settings.startMinimized);
-    await DesktopShell.instance.init(startHidden: hidden, settings: settings);
+    try {
+      await DesktopShell.instance.init(startHidden: hidden, settings: settings);
+    } catch (e, st) {
+      debugPrint('desktop init failed: $e\n$st');
+    }
   }
   if (Platform.isAndroid) {
     AndroidSyncService.init(autoRunOnBoot: settings.autoStart);
@@ -48,19 +52,30 @@ Future<void> _main(List<String> args) async {
     unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
   }
   unawaited(Notifier.init());
-  // SYNCNOTES_GLASS=0 → 退回 BackdropFilter 毛玻璃（旧显卡/远程桌面）
   Glass.useShader = Platform.environment['SYNCNOTES_GLASS'] != '0';
   Glass.enabled.value = settings.liquidGlass && Glass.useShader;
-  if (Glass.useShader) await LiquidGlassWidgets.initialize(enablePerformanceMonitor: false);
+  if (Glass.useShader) {
+    try {
+      await LiquidGlassWidgets.initialize(enablePerformanceMonitor: false);
+    } catch (e, st) {
+      debugPrint('glass init failed: $e\n$st');
+      Glass.useShader = false;
+      Glass.enabled.value = false;
+    }
+  }
 
   final dir = await getApplicationSupportDirectory();
-  runApp(LiquidGlassWidgets.wrap(
-    brightnessResolver: Theme.maybeBrightnessOf,
-    adaptiveQuality: false,
-    child: SyncNotesApp(
+  final app = SyncNotesApp(
     settings: settings,
     store: FileStore(File('${dir.path}${Platform.pathSeparator}syncnotes_cache.json')),
-  )));
+  );
+  runApp(Glass.useShader
+      ? LiquidGlassWidgets.wrap(
+          brightnessResolver: Theme.maybeBrightnessOf,
+          adaptiveQuality: false,
+          child: app,
+        )
+      : app);
 }
 
 ThemeData buildTheme(Brightness b) => buildAppTheme(b);

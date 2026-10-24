@@ -211,14 +211,29 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
+      - name: Prepare release keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          # 仓库里有一把固定的正式密钥，保证每次安装包签名相同。
+          # 如果以后配了 Actions secret，用 secret 覆盖，仓库里的密钥就不再参与打包。
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/syncnotes-release.p12"
+            echo "SYNCNOTES_KEYSTORE=$RUNNER_TEMP/syncnotes-release.p12" >> "$GITHUB_ENV"
+          fi
       - name: Build APK
         working-directory: app
+        env:
+          SYNCNOTES_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          SYNCNOTES_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          SYNCNOTES_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: flutter build apk --release
       - name: Package
         run: |
           mkdir -p dist
           cp app/build/app/outputs/flutter-apk/app-release.apk dist/SyncNotes-android.apk
           unzip -l dist/SyncNotes-android.apk | grep -q 'lib/arm64-v8a/libapp.so' || (echo "APK missing arm64 code"; exit 1)
+          unzip -l dist/SyncNotes-android.apk | grep -E 'META-INF/.*\.(SF|RSA|EC|DSA)$' || (echo "APK missing v1 signature"; exit 1)
       - uses: actions/upload-artifact@v4
         with:
           name: app-android
