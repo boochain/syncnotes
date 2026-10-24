@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../ui/tokens.dart';
 
+import '../ui/motion.dart';
 import 'page_screen.dart';
 
 /// 由外壳（宽屏布局）实现：在右侧内容区打开页面，而不是压栈。
@@ -25,15 +25,4 @@ void openPage(BuildContext context, String id) {
   Navigator.of(context).push(pageRoute(PageScreen(pageId: id, standalone: true)));
 }
 
-Route<T> pageRoute<T>(Widget page) => PageRouteBuilder<T>(
-      pageBuilder: (_, _, _) => page,
-      transitionDuration: Motion.medium2,
-      reverseTransitionDuration: Motion.medium1,
-      transitionsBuilder: (_, a, _, child) {
-        final c = CurvedAnimation(parent: a, curve: Curves.easeOutCubic, reverseCurve: Curves.easeInCubic);
-        return FadeTransition(
-          opacity: c,
-          child: SlideTransition(position: Tween(begin: const Offset(0.04, 0), end: Offset.zero).animate(c), child: child),
-        );
-      },
-    );
+Route<T> pageRoute<T>(Widget page) => fadeRoute(page);

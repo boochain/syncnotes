@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'motion.dart';
 import 'tokens.dart';
 
 import '../models/block.dart';
@@ -71,13 +72,9 @@ Future<Block?> showQuickSwitcher(BuildContext context, SyncClient sync) => showG
       barrierDismissible: true,
       barrierLabel: '关闭',
       barrierColor: Colors.black26,
-      transitionDuration: Motion.medium4,
+      transitionDuration: Motion.short4,
       pageBuilder: (c, _, _) => _QuickSwitcher(sync: sync),
-      transitionBuilder: (c, a, _, child) {
-        final t = CurvedAnimation(parent: a, curve: Curves.easeOutCubic);
-        final sp = CurvedAnimation(parent: a, curve: springCurve, reverseCurve: Curves.easeIn);
-        return FadeTransition(opacity: t, child: ScaleTransition(scale: Tween(begin: 0.9, end: 1.0).animate(sp), child: child));
-      },
+      transitionBuilder: (_, animation, _, child) => MotionFade(animation: animation, child: child),
     );
 
 class _QuickSwitcher extends StatefulWidget {

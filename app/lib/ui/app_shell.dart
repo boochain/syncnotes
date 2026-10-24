@@ -3,7 +3,6 @@ import 'dart:async';
 import 'ds.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'tokens.dart';
 
 import '../app_scope.dart';
 import '../models/block.dart';
@@ -18,6 +17,7 @@ import 'block_card.dart' show showCreateMenu;
 import 'file_drop.dart';
 import 'glass.dart';
 import 'home_page.dart';
+import 'motion.dart';
 import 'quick_switcher.dart';
 import 'settings_page.dart';
 import 'sidebar.dart';
@@ -233,13 +233,7 @@ class AppShellState extends State<AppShell> implements PageHost {
           );
           final Widget home;
           if (_wide) {
-            home = AnimatedSwitcher(
-              duration: Motion.medium1,
-              switchInCurve: Curves.easeOutCubic,
-              transitionBuilder: (child, a) => FadeTransition(
-                opacity: a,
-                child: SlideTransition(position: Tween(begin: const Offset(0, 0.01), end: Offset.zero).animate(a), child: child),
-              ),
+            home = MotionSwitch(
               child: pageId == null
                   ? const HomePage(key: ValueKey('inbox'), embedded: true)
                   : PageScreen(key: ValueKey('page-$pageId'), pageId: pageId),
@@ -259,13 +253,9 @@ class AppShellState extends State<AppShell> implements PageHost {
             ),
           ));
           final pal = AppColors.of(context);
-          // 布局照 Notion / AppFlowy：侧边栏与内容区平铺，中间一条细分隔线；纯色背景
-          return ValueListenableBuilder<bool>(
-            valueListenable: Glass.enabled,
-            builder: (context, glass, _) {
-              final shell = Scaffold(
+          final shell = Scaffold(
             key: _scaffold,
-            backgroundColor: Colors.transparent,
+            backgroundColor: pal.bg,
             drawer: _wide ? null : Drawer(child: SafeArea(child: sidebar)),
             body: Column(children: [
               Expanded(
@@ -274,7 +264,7 @@ class AppShellState extends State<AppShell> implements PageHost {
                         Container(
                           width: Sizes.sidebarWidth,
                           decoration: BoxDecoration(
-                            color: glass ? pal.sidebar.withValues(alpha: 0.78) : pal.sidebar,
+                            color: pal.sidebar,
                             border: Border(right: BorderSide(color: pal.separator)),
                           ),
                           child: sidebar,
@@ -286,9 +276,7 @@ class AppShellState extends State<AppShell> implements PageHost {
               TransferStrip(onOpen: _transfers),
             ]),
           );
-              return GlassBackdrop(child: shell);
-            },
-          );
+          return GlassBackdrop(child: shell);
         }),
       ),
     ),

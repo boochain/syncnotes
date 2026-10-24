@@ -7,10 +7,10 @@ import 'ds.dart';
 import 'theme.dart';
 import 'tokens.dart';
 
-/// 浮层材质（v0.4：只用于浮动的界面元素——菜单、斜杠菜单、快速查找、格式工具栏）。
+/// 浮层材质。只用于菜单、斜杠菜单、快速查找、格式工具栏。
 ///
-/// 外观统一：elevated 色（94% 不透明）+ 细边 + 阴影。着色器版本使用 liquid_glass_widgets，
-/// 只保留很淡的边缘高光，保证文字可读、颜色和其余界面一致；[useShader] 为 false 时用 BackdropFilter。
+/// 着色器走 [GlassQuality.standard]（轻量片段着色器）。色差和强折射在高分屏上
+/// 不会随 devicePixelRatio 缩小，3.5x 的手机会把背景再画一遍，看起来像叠了两层。
 class Glass extends StatelessWidget {
   static bool useShader = true;
 
@@ -22,12 +22,12 @@ class Glass extends StatelessWidget {
   final EdgeInsetsGeometry? padding;
   final EdgeInsetsGeometry? margin;
 
-  /// 兼容旧参数；v0.4 所有浮层同一外观
+  /// 兼容旧参数；浮层同一外观
   final bool strong;
   const Glass({super.key, required this.child, this.radius = AppRadius.l, this.padding, this.margin, this.strong = true});
 
   static Color tint(BuildContext context) {
-    final a = enabled.value ? 0.62 : 0.94;
+    final a = enabled.value ? 0.92 : 0.94;
     return AppColors.of(context).elevated.withValues(alpha: a);
   }
 
@@ -41,17 +41,23 @@ class Glass extends StatelessWidget {
         final deco = floatingDecoration(context, radius: radius);
         Widget body;
         if (useShader && on) {
+          final dpr = MediaQuery.devicePixelRatioOf(context);
+          final hi = dpr >= 2.5;
           body = GlassContainer(
             useOwnLayer: true,
+            quality: GlassQuality.standard,
             clipBehavior: Clip.antiAlias,
             shape: LiquidRoundedSuperellipse(borderRadius: radius),
             settings: LiquidGlassSettings(
               glassColor: tint(context),
-              blur: Materials.blurContent,
-              thickness: 20,
-              saturation: 1.15,
-              lightIntensity: dark ? 0.35 : 0.5,
-              chromaticAberration: 0.18,
+              blur: hi ? 4 : 8,
+              thickness: hi ? 4 : 8,
+              refractiveIndex: 1.02,
+              saturation: 1,
+              lightIntensity: dark ? 0.15 : 0.22,
+              glowIntensity: 0.12,
+              chromaticAberration: 0,
+              bodyMode: GlassBodyMode.clear,
             ),
             child: inner,
           );
@@ -59,7 +65,7 @@ class Glass extends StatelessWidget {
           body = ClipRRect(
             borderRadius: BorderRadius.circular(radius),
             child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: Materials.blurContent, sigmaY: Materials.blurContent),
+              filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
               child: ColoredBox(color: tint(context), child: inner),
             ),
           );
@@ -77,42 +83,21 @@ class Glass extends StatelessWidget {
   }
 }
 
-/// v0.4：背景是纯色（不再有彩色流动渐变）。保留类名以免改动调用处。
+/// 窗口底色。页面本身不透明，这里只垫一层纯色，避免切换时空一帧。
 class GlassBackdrop extends StatelessWidget {
   final Widget child;
   const GlassBackdrop({super.key, required this.child});
   @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<bool>(
-      valueListenable: Glass.enabled,
-      builder: (context, on, _) {
-        final c = AppColors.of(context);
-        if (!on) return ColoredBox(color: c.bg, child: child);
-        return DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Color.alphaBlend(c.accent.withValues(alpha: 0.22), c.bg),
-                c.bg,
-                Color.alphaBlend(const Color(0xFF64D2FF).withValues(alpha: 0.16), c.sidebar),
-              ],
-            ),
-          ),
-          child: child,
-        );
-      },
-    );
-  }
+  Widget build(BuildContext context) => ColoredBox(color: AppColors.of(context).bg, child: child);
 }
 
-/// 液态玻璃打开时，页面底和顶栏改成透明，否则实色 Scaffold 会把背景渐变整个盖住。
+/// 页面保持不透明。透明 Scaffold 会让渐变和上一页透出来，玻璃再采样一次就叠成两层。
 ThemeData glassTheme(ThemeData base, bool on) {
   if (!on) return base;
+  final bg = base.scaffoldBackgroundColor;
   return base.copyWith(
-    scaffoldBackgroundColor: Colors.transparent,
-    appBarTheme: base.appBarTheme.copyWith(backgroundColor: Colors.transparent, surfaceTintColor: Colors.transparent),
+    scaffoldBackgroundColor: bg,
+    appBarTheme: base.appBarTheme.copyWith(backgroundColor: bg, surfaceTintColor: Colors.transparent),
   );
 }
 

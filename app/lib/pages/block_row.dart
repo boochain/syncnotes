@@ -800,11 +800,9 @@ class SlashMenu extends StatelessWidget {
     final maxW = (MediaQuery.sizeOf(context).width - 72).clamp(200.0, 300.0);
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0, end: 1),
-      duration: Motion.medium4,
-      curve: springCurve,
-      builder: (_, t, child) => Opacity(
-          opacity: t.clamp(0.0, 1.0),
-          child: Transform.scale(scale: 0.96 + 0.04 * t, alignment: Alignment.topLeft, child: child)),
+      duration: Motion.short4,
+      curve: MotionCurves.enter,
+      builder: (_, t, child) => Opacity(opacity: t.clamp(0.0, 1.0), child: child),
       child: Glass(
         key: const Key('slashMenu'),
         radius: AppRadius.l,

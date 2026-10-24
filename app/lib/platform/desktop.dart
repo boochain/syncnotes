@@ -38,17 +38,29 @@ class DesktopShell with TrayListener, WindowListener {
       r.top < 5000 &&
       r.left + r.width > 80;
 
+  /// 把想要的窗口（逻辑像素）限制在这块显示器里。
+  ///
+  /// [physical] 是 [Display.size]，单位是物理像素。只除一次 [devicePixelRatio]。
+  /// Windows 上 window_manager 的 setSize 会再乘视图的缩放比，这里不能除第二次，
+  /// 否则 200% 缩放的窗口会缩成四分之一。
+  static Size fitWithin(Size want, {required Size physical, required double devicePixelRatio}) {
+    final scale = devicePixelRatio <= 0 ? 1.0 : devicePixelRatio;
+    final maxW = physical.width / scale - 48;
+    final maxH = physical.height / scale - 80;
+    final width = want.width <= maxW ? want.width : (maxW < minimumSize.width ? minimumSize.width : maxW);
+    final height = want.height <= maxH ? want.height : (maxH < minimumSize.height ? minimumSize.height : maxH);
+    return Size(width, height);
+  }
+
   /// 比屏幕大的窗口缩进可见区域，避免标题栏跑到屏幕外面。
   static Size fitToDisplay(Size want) {
     final displays = WidgetsBinding.instance.platformDispatcher.displays;
     if (displays.isEmpty) return want;
     final d = displays.first;
-    final scale = d.devicePixelRatio == 0 ? 1.0 : d.devicePixelRatio;
-    final maxW = d.size.width / scale - 48;
-    final maxH = d.size.height / scale - 80;
-    final width = want.width <= maxW ? want.width : (maxW < minimumSize.width ? minimumSize.width : maxW);
-    final height = want.height <= maxH ? want.height : (maxH < minimumSize.height ? minimumSize.height : maxH);
-    return Size(width, height);
+    final views = WidgetsBinding.instance.platformDispatcher.views;
+    final viewScale = views.isEmpty ? 0.0 : views.first.devicePixelRatio;
+    final scale = d.devicePixelRatio > 0 ? d.devicePixelRatio : (viewScale > 0 ? viewScale : 1.0);
+    return fitWithin(want, physical: d.size, devicePixelRatio: scale);
   }
 
   Future<bool> _restoreBounds() async {
@@ -165,11 +177,12 @@ class DesktopShell with TrayListener, WindowListener {
     expanded.value = !expanded.value;
     _settings?.windowExpanded = expanded.value;
     if (await _restoreBounds()) return;
+    final next = fitToDisplay(expanded.value ? expandedSize : windowSize);
     if (expanded.value) {
-      await windowManager.setSize(expandedSize);
+      await windowManager.setSize(next);
       await windowManager.center();
     } else {
-      await windowManager.setSize(windowSize);
+      await windowManager.setSize(next);
       await windowManager.setAlignment(Alignment.bottomRight);
     }
   }

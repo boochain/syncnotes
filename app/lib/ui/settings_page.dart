@@ -129,7 +129,7 @@ class _SettingsPageState extends State<SettingsPage> {
               key: const Key('settingsGlass'),
               icon: CupertinoIcons.drop,
               title: '液态玻璃',
-              subtitle: st.liquidGlass ? '菜单、登录页和背景使用 Liquid Glass' : '纯色界面',
+              subtitle: st.liquidGlass ? '菜单和浮层使用 Liquid Glass，页面保持不透明' : '纯色界面',
               trailing: sw(st.liquidGlass, (v) {
                 st.liquidGlass = v;
                 Glass.enabled.value = v;
@@ -266,7 +266,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 }
 
-const appVersion = '0.6.4';
+const appVersion = '0.6.5';
 
 /// 设置分组标题：12/500 次级色，上 24 下 4（Notion 设置分组）
 class SettingsSection extends StatelessWidget {

@@ -1,5 +1,6 @@
 import 'dart:io';
 import '../ui/ds.dart';
+import '../ui/motion.dart';
 import '../ui/tokens.dart';
 
 import 'package:file_picker/file_picker.dart';
@@ -463,21 +464,7 @@ class UnknownType extends BlockType {
   Future<bool> edit(BuildContext context, Block? block, {String? parentId}) async => false;
 }
 
-Route<T> _fade<T>(Widget page) => PageRouteBuilder<T>(
-      pageBuilder: (_, _, _) => page,
-      transitionDuration: const Duration(milliseconds: 260),
-      reverseTransitionDuration: Motion.short4,
-      transitionsBuilder: (_, a, _, child) {
-        final curved = CurvedAnimation(parent: a, curve: Curves.easeOutCubic);
-        return FadeTransition(
-          opacity: curved,
-          child: SlideTransition(
-            position: Tween(begin: const Offset(0, 0.04), end: Offset.zero).animate(curved),
-            child: child,
-          ),
-        );
-      },
-    );
+Route<T> _fade<T>(Widget page) => fadeRoute(page);
 
 // ------------------------------------------------------------------ page
 

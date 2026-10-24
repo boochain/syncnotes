@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:io';
-import 'ui/tokens.dart';
+import 'ui/motion.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -224,9 +224,7 @@ class _SyncNotesAppState extends State<SyncNotesApp> with WidgetsBindingObserver
             child: child,
           );
         },
-        home: AnimatedSwitcher(
-          duration: Motion.medium3,
-          switchInCurve: Curves.easeOutCubic,
+        home: MotionSwitch(
           child: _loggedIn
               ? const AppShell(key: ValueKey('home'))
               : RootBackScope(key: const ValueKey('login'), child: GlassBackdrop(child: LoginPage(

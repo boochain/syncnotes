@@ -244,10 +244,13 @@ class _PageScreenState extends State<PageScreen> {
               ),
               ValueListenableBuilder<String?>(
                 valueListenable: doc.focusedId,
-                builder: (context, id, _) => AnimatedSwitcher(
+                builder: (context, id, _) => AnimatedSize(
                   duration: Motion.short4,
-                  transitionBuilder: (c, a) => SizeTransition(sizeFactor: a, alignment: Alignment.topCenter, child: c),
-                  child: id == null ? const SizedBox.shrink() : _Toolbar(key: const ValueKey('toolbar'), doc: doc, row: () => _focusedRow),
+                  curve: MotionCurves.enter,
+                  alignment: Alignment.bottomCenter,
+                  child: id == null
+                      ? const SizedBox(key: ValueKey('no-toolbar'), width: double.infinity, height: 0)
+                      : _Toolbar(key: const ValueKey('toolbar'), doc: doc, row: () => _focusedRow),
                 ),
               ),
             ]),
@@ -495,9 +498,7 @@ class _AppearOnceState extends State<_AppearOnce> with SingleTickerProviderState
   }
 
   @override
-  Widget build(BuildContext context) {
-    return SizeTransition(sizeFactor: _a, alignment: Alignment.topCenter, child: FadeTransition(opacity: _a, child: widget.child));
-  }
+  Widget build(BuildContext context) => FadeTransition(opacity: _a, child: widget.child);
 }
 
 class _Breadcrumbs extends StatelessWidget {
