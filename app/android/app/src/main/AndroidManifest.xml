@@ -7,6 +7,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <application
         android:label="SyncNotes"
@@ -52,6 +53,10 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- 状态栏小图标：白色剪影，不能用彩色启动器图标 -->
+        <meta-data
+            android:name="com.syncnotes.service_icon"
+            android:resource="@mipmap/ic_launcher_monochrome" />
         <!-- flutter_foreground_task: 后台保持同步连接 -->
         <service
             android:name="com.pravera.flutter_foreground_task.service.ForegroundService"

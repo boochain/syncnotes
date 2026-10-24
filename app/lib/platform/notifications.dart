@@ -39,7 +39,7 @@ class Notifier {
     try {
       await _plugin.initialize(
         settings: const InitializationSettings(
-          android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+          android: AndroidInitializationSettings('@mipmap/ic_launcher_monochrome'),
           linux: LinuxInitializationSettings(defaultActionName: '打开'),
           windows: WindowsInitializationSettings(
             appName: 'SyncNotes',
@@ -113,6 +113,7 @@ class Notifier {
         notificationDetails: const NotificationDetails(
           android: AndroidNotificationDetails('syncnotes_new', '新内容',
               channelDescription: '其他设备同步过来的新消息/笔记/文件',
+              icon: '@mipmap/ic_launcher_monochrome',
               importance: Importance.high,
               priority: Priority.high),
           linux: LinuxNotificationDetails(),

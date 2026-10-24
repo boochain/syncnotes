@@ -22,7 +22,7 @@ class AutoStart {
 Type=Application
 Name=SyncNotes
 Comment=多设备实时同步笔记
-Exec="$exe" --hidden
+Exec="$exe"
 Terminal=false
 X-GNOME-Autostart-enabled=true
 ''';
@@ -36,20 +36,28 @@ X-GNOME-Autostart-enabled=true
     return false;
   }
 
-  static Future<void> setEnabled(bool on) async {
-    if (Platform.isLinux) {
-      final f = _linuxDesktopFile();
-      if (on) {
-        await f.parent.create(recursive: true);
-        await f.writeAsString(linuxDesktopEntry(exePath));
-      } else if (await f.exists()) {
-        await f.delete();
+  /// 登录时启动程序本身。要不要藏进托盘由设置「启动时最小化」决定，
+  /// 这里不要再加 --hidden，否则那个开关对自启无效，没有托盘图标时程序会直接消失。
+  static Future<bool> setEnabled(bool on) async {
+    try {
+      if (Platform.isLinux) {
+        final f = _linuxDesktopFile();
+        if (on) {
+          await f.parent.create(recursive: true);
+          await f.writeAsString(linuxDesktopEntry(exePath));
+        } else if (await f.exists()) {
+          await f.delete();
+        }
+        return true;
       }
-    } else if (Platform.isWindows) {
-      final args = on
-          ? ['add', _runKey, '/v', appName, '/t', 'REG_SZ', '/d', '"$exePath" --hidden', '/f']
-          : ['delete', _runKey, '/v', appName, '/f'];
-      await Process.run('reg', args);
-    }
+      if (Platform.isWindows) {
+        final args = on
+            ? ['add', _runKey, '/v', appName, '/t', 'REG_SZ', '/d', '"$exePath"', '/f']
+            : ['delete', _runKey, '/v', appName, '/f'];
+        final r = await Process.run('reg', args);
+        return r.exitCode == 0;
+      }
+    } catch (_) {}
+    return false;
   }
 }

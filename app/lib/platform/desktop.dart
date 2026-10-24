@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -25,6 +26,32 @@ class DesktopShell with TrayListener, WindowListener {
   Settings? _settings;
   static const Size minimumSize = Size(340, 420);
   String get _mode => expanded.value ? 'expanded' : 'compact';
+
+  /// tray_manager 只会在「可执行文件旁边的 data/flutter_assets」里找图标。
+  static String bundledAssetPath(String executable, String asset, {String? separator}) {
+    final sep = separator ?? Platform.pathSeparator;
+    final cut = executable.lastIndexOf(sep);
+    final dir = cut < 0 ? '.' : executable.substring(0, cut);
+    return '$dir${sep}data${sep}flutter_assets$sep${asset.replaceAll('/', sep)}';
+  }
+
+  static String get _trayAsset => Platform.isWindows ? 'assets/tray_icon.ico' : 'assets/tray_icon.png';
+
+  /// Windows 的 LoadImage 读不了 PNG 压缩的 ico。图标必须是按尺寸展开的 BMP，
+  /// 并且包含 16/20/24/32/40/48/64，高缩放比才找得到对应的小图标。
+  static Future<bool> _ensureTrayIcon() async {
+    final file = File(bundledAssetPath(Platform.resolvedExecutable, _trayAsset));
+    try {
+      if (await file.exists() && await file.length() > 0) return true;
+      final data = await rootBundle.load(_trayAsset);
+      await file.parent.create(recursive: true);
+      await file.writeAsBytes(data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes), flush: true);
+      return await file.exists();
+    } catch (e) {
+      debugPrint('tray icon file: $e');
+      return false;
+    }
+  }
 
   /// 保存的位置是否可信（显示器拔掉后不要把窗口放到屏幕外太远）
   static bool plausibleBounds(Rect r) =>
@@ -122,7 +149,8 @@ class DesktopShell with TrayListener, WindowListener {
     windowManager.addListener(this);
 
     try {
-      await trayManager.setIcon(Platform.isWindows ? 'assets/tray_icon.ico' : 'assets/tray_icon.png');
+      if (!await _ensureTrayIcon()) throw StateError('tray icon file missing');
+      await trayManager.setIcon(_trayAsset);
       if (!Platform.isLinux) await trayManager.setToolTip('SyncNotes');
       await _setMenu(unread: 0);
       trayManager.addListener(this);
@@ -188,7 +216,7 @@ class DesktopShell with TrayListener, WindowListener {
   }
 
   static Future<bool> isAutoStartEnabled() => AutoStart.isEnabled();
-  static Future<void> setAutoStart(bool v) => AutoStart.setEnabled(v);
+  static Future<bool> setAutoStart(bool v) => AutoStart.setEnabled(v);
 
   @override
   void onTrayIconMouseDown() => toggle();

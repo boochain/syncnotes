@@ -164,17 +164,27 @@ class _SettingsPageState extends State<SettingsPage> {
                 _autoStart == null
                     ? null
                     : (v) async {
-                        st.autoStart = v;
                         if (isDesktop) {
-                          await DesktopShell.setAutoStart(v);
+                          final ok = await DesktopShell.setAutoStart(v);
+                          if (!ok) {
+                            if (context.mounted) showToast(context, '开机自启没有写成功');
+                            setState(() => _autoStart = !v);
+                            return;
+                          }
                         } else if (Platform.isAndroid) {
                           AndroidSyncService.init(autoRunOnBoot: v);
-                          // 开机自启依赖前台服务：开启自启时一并开启后台连接
-                          if (v && !st.foregroundService) {
-                            st.foregroundService = true;
+                          if (v && !st.foregroundService) st.foregroundService = true;
+                          if (v) {
+                            final ok = await AndroidSyncService.start();
+                            if (!ok) {
+                              st.autoStart = false;
+                              if (context.mounted) showToast(context, '后台服务没有启动');
+                              setState(() => _autoStart = false);
+                              return;
+                            }
                           }
-                          if (v) await AndroidSyncService.start();
                         }
+                        st.autoStart = v;
                         setState(() => _autoStart = v);
                       },
                 key: const Key('autoStartSwitch'),
@@ -184,6 +194,9 @@ class _SettingsPageState extends State<SettingsPage> {
               SettingsRow(
                 icon: CupertinoIcons.eye_slash,
                 title: '启动时最小化到托盘',
+                subtitle: DesktopShell.instance.trayAvailable
+                    ? '登录后启动只留托盘图标。开机自启也遵守这个开关。'
+                    : '当前没有托盘图标，启动时仍会打开窗口，避免程序消失。',
                 trailing: sw(st.startMinimized, (v) => setState(() => st.startMinimized = v)),
               ),
             if (isDesktop)
@@ -191,17 +204,31 @@ class _SettingsPageState extends State<SettingsPage> {
                 key: const Key('closeToTrayRow'),
                 icon: CupertinoIcons.xmark_square,
                 title: '关闭窗口时最小化到托盘',
-                subtitle: st.closeToTray ? '点关闭按钮隐藏到托盘，从托盘菜单“退出”才会结束' : '点关闭按钮直接退出 SyncNotes',
+                subtitle: !DesktopShell.instance.trayAvailable
+                    ? (Platform.isLinux
+                        ? '没有托盘图标，点关闭会退出。Linux 需安装 libayatana-appindicator3-1 后重启。'
+                        : '没有托盘图标，点关闭会退出。')
+                    : (st.closeToTray ? '点关闭按钮隐藏到托盘，从托盘菜单「退出」才会结束' : '点关闭按钮直接退出 SyncNotes'),
                 trailing: sw(st.closeToTray, (v) => setState(() => st.closeToTray = v), key: const Key('closeToTraySwitch')),
               ),
             if (Platform.isAndroid)
               SettingsRow(
                 icon: CupertinoIcons.bell_circle,
                 title: '后台保持连接（前台服务）',
-                subtitle: '常驻通知栏，保证及时收到新消息推送',
+                subtitle: '状态栏保留同步图标。关掉后切到别的应用就不再保持连接。',
                 trailing: sw(st.foregroundService, (v) async {
+                  if (v) {
+                    AndroidSyncService.init(autoRunOnBoot: st.autoStart);
+                    final ok = await AndroidSyncService.start();
+                    if (!ok) {
+                      if (context.mounted) showToast(context, '后台服务没有启动');
+                      setState(() => st.foregroundService = false);
+                      return;
+                    }
+                  } else {
+                    await AndroidSyncService.stop();
+                  }
                   setState(() => st.foregroundService = v);
-                  v ? await AndroidSyncService.start() : await AndroidSyncService.stop();
                 }),
               ),
             const SettingsSection('通知与已读'),
@@ -266,7 +293,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 }
 
-const appVersion = '0.6.5';
+const appVersion = '0.6.6';
 
 /// 设置分组标题：12/500 次级色，上 24 下 4（Notion 设置分组）
 class SettingsSection extends StatelessWidget {

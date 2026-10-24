@@ -13,7 +13,8 @@ void main() {
     await AutoStart.setEnabled(true);
     expect(await AutoStart.isEnabled(), isTrue);
     final f = File('${tmp.path}/.config/autostart/syncnotes.desktop');
-    expect(await f.readAsString(), contains('Exec="/opt/syncnotes/syncnotes" --hidden'));
+    expect(await f.readAsString(), contains('Exec="/opt/syncnotes/syncnotes"\n'));
+    expect(await f.readAsString(), isNot(contains('--hidden')));
     await AutoStart.setEnabled(false);
     expect(await AutoStart.isEnabled(), isFalse);
     await tmp.delete(recursive: true);

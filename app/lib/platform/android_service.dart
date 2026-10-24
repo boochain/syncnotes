@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -13,13 +14,21 @@ import '../sync/sync_client.dart';
 class AndroidSyncService {
   static bool get supported => Platform.isAndroid;
 
+  /// 状态栏小图标必须是单色。用启动器彩色图标时，不少系统会直接不显示这条通知。
+  static const serviceIcon = NotificationIcon(metaDataName: 'com.syncnotes.service_icon');
+
   static void init({required bool autoRunOnBoot}) {
     if (!supported) return;
     FlutterForegroundTask.init(
       androidNotificationOptions: AndroidNotificationOptions(
-        channelId: 'syncnotes_service',
+        channelId: 'syncnotes_bg',
         channelName: '后台同步',
         channelDescription: '保持与服务器的实时连接',
+        // LOW 会被系统当成静默通知，状态栏图标默认隐藏。DEFAULT 才固定出现在状态栏，声音仍然关掉。
+        channelImportance: NotificationChannelImportance.DEFAULT,
+        priority: NotificationPriority.DEFAULT,
+        playSound: false,
+        enableVibration: false,
         onlyAlertOnce: true,
       ),
       iosNotificationOptions: const IOSNotificationOptions(),
@@ -29,24 +38,53 @@ class AndroidSyncService {
         autoRunOnMyPackageReplaced: true,
         allowWakeLock: true,
         allowWifiLock: true,
+        allowAutoRestart: true,
+        stopWithTask: false,
       ),
     );
   }
 
-  static Future<void> start() async {
-    if (!supported) return;
-    await FlutterForegroundTask.requestNotificationPermission();
-    if (await FlutterForegroundTask.isRunningService) {
-      await FlutterForegroundTask.restartService();
-      return;
+  static Future<bool> start() async {
+    if (!supported) return false;
+    try {
+      await FlutterForegroundTask.requestNotificationPermission();
+      // 正在跑的服务还记着旧的通知渠道（静默、没有小图标）。停掉再用新设置拉起来。
+      if (await FlutterForegroundTask.isRunningService) {
+        await FlutterForegroundTask.stopService();
+      }
+      final result = await FlutterForegroundTask.startService(
+        serviceId: 7700,
+        serviceTypes: [ForegroundServiceTypes.remoteMessaging],
+        notificationTitle: 'SyncNotes 同步中',
+        notificationText: '保持实时连接以接收新消息',
+        notificationIcon: serviceIcon,
+        callback: startSyncServiceCallback,
+      );
+      if (result is ServiceRequestFailure) {
+        debugPrint('foreground service: ${result.error}');
+        return false;
+      }
+      await _askBatteryOnce();
+      return true;
+    } catch (e) {
+      debugPrint('foreground service: $e');
+      return false;
     }
-    await FlutterForegroundTask.startService(
-      serviceId: 7700,
-      serviceTypes: [ForegroundServiceTypes.remoteMessaging],
-      notificationTitle: 'SyncNotes 同步中',
-      notificationText: '保持实时连接以接收新消息',
-      callback: startSyncServiceCallback,
-    );
+  }
+
+  static Future<void> _askBatteryOnce() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool('asked_battery') ?? false) return;
+      if (await FlutterForegroundTask.isIgnoringBatteryOptimizations) {
+        await prefs.setBool('asked_battery', true);
+        return;
+      }
+      await FlutterForegroundTask.requestIgnoreBatteryOptimization();
+      await prefs.setBool('asked_battery', true);
+    } catch (e) {
+      debugPrint('battery optimization: $e');
+    }
   }
 
   static Future<void> stop() async {
