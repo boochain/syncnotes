@@ -14,6 +14,7 @@ app/.flutter-plugins-dependencies
 app/.idea/
 app/*.iml
 app/android/.gradle/
+app/android/.kotlin/
 app/android/local.properties
 app/android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
 app/android/key.properties
