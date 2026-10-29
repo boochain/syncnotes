@@ -84,10 +84,10 @@ class _SettingsPageState extends State<SettingsPage> {
               subtitle: () {
                 final pin = st.server == null ? null : st.sealPin(st.server!);
                 if (pin == null || pin.isEmpty) {
-                  return '指纹是服务器的长期公钥。第一次连上就记住。之后对不上就拒绝登录和同步，避免连到另一台。它不加密硬盘：服务器进程里笔记仍是明文。';
+                  return '第一次连上就记住服务器公钥。对不上就拒绝登录和同步。';
                 }
                 final short = pin.length > 16 ? '${pin.substring(0, 16)}…' : pin;
-                return '已记住 $short。对不上就会停。重装、换数据目录或删了 .seal 都会变。不确定原因不要清除。';
+                return '已记住 $short。对不上就会停。重装或换数据目录都会变。';
               }(),
               trailing: TextButton(
                 onPressed: () {
@@ -102,18 +102,6 @@ class _SettingsPageState extends State<SettingsPage> {
                 child: const Text('清除指纹'),
               ),
             ),
-            const _WireMap(),
-            if (st.knownServers.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(Gap.xl, Gap.s, Gap.xl, Gap.m),
-                child: Wrap(spacing: Gap.s, runSpacing: Gap.s, children: [
-                  for (final host in st.knownServers)
-                    InputChip(
-                      label: Text(host, overflow: TextOverflow.ellipsis),
-                      onDeleted: host == st.server ? null : () => setState(() => st.forgetServer(host)),
-                    ),
-                ]),
-              ),
             if (st.localDataDir != null)
               SettingsRow(
                 key: const Key('localDataDirRow'),
@@ -156,40 +144,6 @@ class _SettingsPageState extends State<SettingsPage> {
                 Glass.enabled.value = v;
                 setState(() {});
               }),
-            ),
-            if (st.liquidGlass)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(Gap.xl, 0, Gap.xl, Gap.s),
-                child: Row(children: [
-                  Text('玻璃透明度', style: Theme.of(context).textTheme.bodySmall),
-                  Expanded(
-                    child: Slider(
-                      value: st.glassOpacity,
-                      min: 0.35,
-                      max: 0.92,
-                      onChanged: (v) {
-                        st.glassOpacity = v;
-                        Glass.opacity.value = v;
-                        setState(() {});
-                      },
-                    ),
-                  ),
-                ]),
-              ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(Gap.xl, Gap.s, Gap.xl, Gap.s),
-              child: Wrap(spacing: Gap.s, runSpacing: Gap.s, children: [
-                for (final (id, label) in const [('default', '默认'), ('sea', '海蓝'), ('dusk', '暮色'), ('paper', '纸色'), ('ink', '墨色')])
-                  ChoiceChip(
-                    label: Text(label),
-                    selected: st.bgPreset == id,
-                    onSelected: (_) {
-                      st.bgPreset = id;
-                      Glass.preset.value = id;
-                      setState(() {});
-                    },
-                  ),
-              ]),
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: Gap.xl, vertical: Gap.s),
@@ -316,6 +270,52 @@ class _SettingsPageState extends State<SettingsPage> {
               trailing: sw(st.defaultGlobalViewed, (v) => setState(() => st.defaultGlobalViewed = v), key: const Key('globalSwitch')),
             ),
             const SettingsSection('其他'),
+            if (st.liquidGlass)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(Gap.xl, Gap.s, Gap.xl, 0),
+                child: Row(children: [
+                  Text('玻璃透明度', style: Theme.of(context).textTheme.bodySmall),
+                  Expanded(
+                    child: Slider(
+                      value: st.glassOpacity,
+                      min: 0.35,
+                      max: 0.92,
+                      onChanged: (v) {
+                        st.glassOpacity = v;
+                        Glass.opacity.value = v;
+                        setState(() {});
+                      },
+                    ),
+                  ),
+                ]),
+              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(Gap.xl, Gap.s, Gap.xl, Gap.s),
+              child: Wrap(spacing: Gap.s, runSpacing: Gap.s, children: [
+                for (final (id, label) in const [('default', '默认'), ('sea', '海蓝'), ('dusk', '暮色'), ('paper', '纸色'), ('ink', '墨色')])
+                  ChoiceChip(
+                    label: Text(label),
+                    selected: st.bgPreset == id,
+                    onSelected: (_) {
+                      st.bgPreset = id;
+                      Glass.preset.value = id;
+                      setState(() {});
+                    },
+                  ),
+              ]),
+            ),
+            const _WireMap(),
+            if (st.knownServers.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(Gap.xl, 0, Gap.xl, Gap.s),
+                child: Wrap(spacing: Gap.s, runSpacing: Gap.s, children: [
+                  for (final host in st.knownServers)
+                    InputChip(
+                      label: Text(host, overflow: TextOverflow.ellipsis),
+                      onDeleted: host == st.server ? null : () => setState(() => st.forgetServer(host)),
+                    ),
+                ]),
+              ),
             SettingsRow(
               key: const Key('settingsTrash'),
               icon: CupertinoIcons.trash,
@@ -428,7 +428,7 @@ class SettingsRow extends StatelessWidget {
                 Text(title, style: tt.bodyMedium?.copyWith(color: fg)),
                 if (hasSub) ...[
                   const SizedBox(height: 2),
-                  Text(subtitle!, maxLines: 6, overflow: TextOverflow.ellipsis, style: tt.bodySmall?.copyWith(color: c.text2)),
+                  Text(subtitle!, maxLines: 2, overflow: TextOverflow.ellipsis, style: tt.bodySmall?.copyWith(color: c.text2)),
                 ],
               ]),
             ),
@@ -466,6 +466,7 @@ class _WireMap extends StatelessWidget {
         row('地址是 https 时', '外面再包一层 TLS', true),
         row('/health', '明文，只有公钥，没有笔记', false),
         row('服务器硬盘', '明文。管服务器的人看得到', false),
+        row('指纹', '认出是不是同一台服务器，不加密硬盘', false),
       ]),
     );
   }
