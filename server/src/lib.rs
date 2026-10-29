@@ -8,6 +8,7 @@ pub mod auth;
 pub mod blocks;
 pub mod files;
 pub mod protocol;
+pub mod paths;
 pub mod recovery;
 pub mod seal;
 pub mod sealed;

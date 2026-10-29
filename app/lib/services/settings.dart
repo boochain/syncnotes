@@ -8,6 +8,9 @@ class Settings {
   final SharedPreferences prefs;
   Settings(this.prefs);
 
+  /// 本机数据目录。不写入配置。和程序目录分开，覆盖安装不会清掉。
+  String? localDataDir;
+
   static Future<Settings> load() async => Settings(await SharedPreferences.getInstance());
 
   String get deviceId {

@@ -132,7 +132,9 @@ cd syncnotes-server-v0.3.0-linux-x86_64
 ./syncnotes-server --bind 0.0.0.0:7700
 ```
 
-Windows：解压 zip 后运行 `syncnotes-server.exe`。
+数据不在这个版本目录里。普通用户是 `~/.local/share/syncnotes`，root 是 `/var/lib/syncnotes`，Windows 是 `%ProgramData%\SyncNotes`。目录里有 `syncnotes.db`、`syncnotes.db.seal`（传输加密密钥）和 `syncnotes-files`。如果当前目录里已经有旧的 `syncnotes.db`，第一次启动会把它复制过去，原文件保留。要用别的位置：`--db` / `--files-dir`，或环境变量 `SYNCNOTES_DATA`。
+
+Windows：解压 zip 后运行 `syncnotes-server.exe`。数据同样在 `%ProgramData%\SyncNotes`，不在解压目录里。
 
 启动后：
 
@@ -144,8 +146,8 @@ Windows：解压 zip 后运行 `syncnotes-server.exe`。
 | 参数 | 环境变量 | 默认值 | 说明 |
 |---|---|---|---|
 | `--bind` | `SYNCNOTES_BIND` | `0.0.0.0:7700` | 监听地址 |
-| `--db` | `SYNCNOTES_DB` | `syncnotes.db` | SQLite 数据库路径 |
-| `--files-dir` | `SYNCNOTES_FILES` | `syncnotes-files` | 文件块的存储目录 |
+| `--db` | `SYNCNOTES_DB` | 见下方数据目录 | SQLite 数据库路径。指定后不再使用默认数据目录 |
+| `--files-dir` | `SYNCNOTES_FILES` | 数据目录下的 `syncnotes-files` | 文件块的存储目录 |
 | `--allow-register` | `SYNCNOTES_ALLOW_REGISTER` | `true` | 是否允许注册新用户。**建好自己的账号后建议设为 `false`** |
 | `--trash-retention-days` | `SYNCNOTES_TRASH_DAYS` | `30` | 回收站保留天数，超过后自动彻底删除（含文件）；`0` = 永不自动清理 |
 | `--mdns` | `SYNCNOTES_MDNS` | `true` | 是否在局域网广播 `_syncnotes._tcp` 服务 |

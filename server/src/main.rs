@@ -16,27 +16,17 @@ struct Args {
     #[arg(long, env = "SYNCNOTES_BIND", default_value = "0.0.0.0:7700")]
     bind: String,
 
-    /// SQLite database path
-    #[arg(
-        long,
-        env = "SYNCNOTES_DB",
-        default_value = "syncnotes.db",
-        global = true
-    )]
-    db: PathBuf,
+    /// SQLite 数据库路径。不填则放在独立数据目录，不放在这个版本的程序目录里。
+    #[arg(long, env = "SYNCNOTES_DB", global = true)]
+    db: Option<PathBuf>,
 
     /// Allow /api/register (set false in production after creating accounts)
     #[arg(long, env = "SYNCNOTES_ALLOW_REGISTER", default_value_t = true, action = clap::ArgAction::Set)]
     allow_register: bool,
 
-    /// Directory for uploaded files (file blocks)
-    #[arg(
-        long,
-        env = "SYNCNOTES_FILES",
-        default_value = "syncnotes-files",
-        global = true
-    )]
-    files_dir: PathBuf,
+    /// 上传文件目录。不填则放在数据目录里的 syncnotes-files。
+    #[arg(long, env = "SYNCNOTES_FILES", global = true)]
+    files_dir: Option<PathBuf>,
 
     /// Recycle-bin retention in days; items older than this are purged permanently (0 = never)
     #[arg(long, env = "SYNCNOTES_TRASH_DAYS", default_value_t = 30)]
@@ -84,15 +74,15 @@ enum AdminCmd {
     Backup { out: PathBuf },
 }
 
-fn run_admin(args: &Args, cmd: &AdminCmd) -> Result<(), String> {
+fn run_admin(db: &std::path::Path, files: &std::path::Path, cmd: &AdminCmd) -> Result<(), String> {
     use syncnotes_server::admin;
-    if !args.db.exists() {
+    if !db.exists() {
         return Err(format!(
             "数据库不存在: {}（用 --db 或 SYNCNOTES_DB 指定）",
-            args.db.display()
+            db.display()
         ));
     }
-    let st = Storage::open(&args.db).map_err(|e| format!("打开数据库失败: {e}"))?;
+    let st = Storage::open(db).map_err(|e| format!("打开数据库失败: {e}"))?;
     match cmd {
         AdminCmd::ListUsers => {
             print!("{}", admin::format_users(&admin::list_users(&st)?));
@@ -126,7 +116,7 @@ fn run_admin(args: &Args, cmd: &AdminCmd) -> Result<(), String> {
             println!("笔记、文件、回收站均未改动。建议用户登录后在 设置 → 账号 重新生成恢复码。");
         }
         AdminCmd::Export { username, out } => {
-            let s = admin::export_user(&st, &args.files_dir, username, out)?;
+            let s = admin::export_user(&st, files, username, out)?;
             println!(
                 "已导出 {}：{} 个块（回收站 {} 个），{} 个附件{} → {}",
                 username,
@@ -149,6 +139,30 @@ fn run_admin(args: &Args, cmd: &AdminCmd) -> Result<(), String> {
     Ok(())
 }
 
+fn prepare_layout(args: &Args) -> std::io::Result<syncnotes_server::paths::DataLayout> {
+    use syncnotes_server::paths::{self, LayoutInput};
+    let data_dir = if args.db.is_none() {
+        paths::pick_data_dir(&paths::DataDirEnv::from_process())
+    } else {
+        PathBuf::new()
+    };
+    let mut legacy = Vec::new();
+    if let Ok(cwd) = std::env::current_dir() {
+        legacy.push(cwd);
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            legacy.push(dir.to_path_buf());
+        }
+    }
+    paths::resolve_layout(LayoutInput {
+        explicit_db: args.db.as_deref(),
+        explicit_files: args.files_dir.as_deref(),
+        data_dir: &data_dir,
+        legacy_dirs: &legacy,
+    })
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
@@ -156,16 +170,37 @@ async fn main() {
         .init();
 
     let args = Args::parse();
+    let layout = match prepare_layout(&args) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("数据目录不可用: {e}");
+            std::process::exit(1);
+        }
+    };
     if let Some(Cmd::Admin(cmd)) = &args.cmd {
-        if let Err(e) = run_admin(&args, cmd) {
+        if let Err(e) = run_admin(&layout.db, &layout.files, cmd) {
             eprintln!("错误: {e}");
             std::process::exit(1);
         }
         return;
     }
-    let storage = Storage::open(&args.db).expect("open db");
-    std::fs::create_dir_all(&args.files_dir).expect("create files dir");
-    let mut seal_path = args.db.as_os_str().to_owned();
+    tracing::info!(
+        "数据目录 {}（和程序分开存放，换版本不会丢）",
+        layout.db.parent().unwrap_or(std::path::Path::new(".")).display()
+    );
+    if let Some(from) = &layout.migrated_from {
+        tracing::info!(
+            "已把 {} 里的旧数据复制到数据目录，原文件还留着，确认没问题后可以自行删除",
+            from.display()
+        );
+    } else if layout.fresh {
+        tracing::info!(
+            "数据目录是空的。如果旧数据库还在之前的版本目录里，把 syncnotes.db、syncnotes.db.seal 和 syncnotes-files 复制到这里，或在那个旧目录里启动一次本程序"
+        );
+    }
+    let storage = Storage::open(&layout.db).expect("open db");
+    std::fs::create_dir_all(&layout.files).expect("create files dir");
+    let mut seal_path = layout.db.as_os_str().to_owned();
     seal_path.push(".seal");
     let seal = SealIdentity::load_or_create(std::path::Path::new(&seal_path)).expect("seal key");
     tracing::info!(
@@ -173,7 +208,7 @@ async fn main() {
         &seal.fingerprint()[..16]
     );
     let state = AppState::new(storage, args.allow_register)
-        .with_files_dir(args.files_dir.clone())
+        .with_files_dir(layout.files.clone())
         .with_trash_days(args.trash_retention_days)
         .with_seal(seal);
 
@@ -200,7 +235,7 @@ async fn main() {
 
     let addr: SocketAddr = args.bind.parse().expect("invalid bind address");
     tracing::info!("SyncNotes server listening on http://{addr}");
-    tracing::info!("WebSocket: ws://{addr}/ws  DB: {}", args.db.display());
+    tracing::info!("WebSocket: ws://{addr}/ws  DB: {}", layout.db.display());
 
     if args.mdns {
         spawn_mdns(&args.mdns_name, addr.port());

@@ -65,6 +65,7 @@ Future<void> _main(List<String> args) async {
   }
 
   final dir = await getApplicationSupportDirectory();
+  settings.localDataDir = dir.path;
   final app = SyncNotesApp(
     settings: settings,
     store: FileStore(File('${dir.path}${Platform.pathSeparator}syncnotes_cache.json')),

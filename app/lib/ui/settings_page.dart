@@ -100,6 +100,13 @@ class _SettingsPageState extends State<SettingsPage> {
                 child: const Text('清除指纹'),
               ),
             ),
+            if (st.localDataDir != null)
+              SettingsRow(
+                key: const Key('localDataDirRow'),
+                icon: CupertinoIcons.folder,
+                title: '本机数据目录',
+                subtitle: '${st.localDataDir}\n登录、缓存和还没同步出去的修改都在这里，不在程序目录里。换版本、覆盖安装都不会清掉。',
+              ),
             SettingsRow(
               key: const Key('settingsRecoveryCode'),
               icon: CupertinoIcons.lock_shield,
@@ -319,7 +326,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 }
 
-const appVersion = '0.6.8';
+const appVersion = '0.6.9';
 
 /// 设置分组标题：12/500 次级色，上 24 下 4（Notion 设置分组）
 class SettingsSection extends StatelessWidget {
