@@ -284,6 +284,16 @@ class _SettingsPageState extends State<SettingsPage> {
                 if (context.mounted) showToast(context, '已清除本地缓存，正在重新同步');
               },
             ),
+            SettingsRow(
+              key: const Key('reuploadLocalRow'),
+              icon: CupertinoIcons.arrow_up_circle,
+              title: '重传本地缓存',
+              subtitle: '把本机已有的笔记再发给服务器。服务器上更新的内容不会被盖掉。',
+              onTap: () {
+                final n = s.sync.reuploadLocal();
+                showToast(context, n == 0 ? '没有可重传的内容' : '正在把 $n 条本地缓存发给服务器');
+              },
+            ),
             if (isDesktop)
               SettingsRow(
                 key: const Key('quitAppRow'),
@@ -326,7 +336,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 }
 
-const appVersion = '0.6.9';
+const appVersion = '0.6.10';
 
 /// 设置分组标题：12/500 次级色，上 24 下 4（Notion 设置分组）
 class SettingsSection extends StatelessWidget {

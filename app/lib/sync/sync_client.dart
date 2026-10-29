@@ -722,6 +722,20 @@ class SyncClient extends ChangeNotifier {
     _notify();
   }
 
+  /// 把本机缓存里的每一条再发给服务器。
+  ///
+  /// 不改时间戳。服务器上没有的会补上；服务器上更新的版本不会被盖掉。
+  int reuploadLocal() {
+    final blocks = _blocks.values.toList();
+    for (final b in blocks) {
+      if (!b.pending) _blocks[b.id] = b.copyWith(pending: true);
+      _enqueue(b.toUpsertMessage());
+    }
+    if (_state != ConnState.online) reconnectNow();
+    _notify();
+    return blocks.length;
+  }
+
   /// 清除本地缓存。keepPending=true 时保留尚未同步的修改（不丢数据）。
   Future<void> clearLocal({bool keepPending = false}) async {
     if (keepPending) {

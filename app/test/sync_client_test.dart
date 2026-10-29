@@ -152,6 +152,23 @@ void main() {
     expect(ups.single['payload'], {'markdown': 'v3'});
   });
 
+  test('reupload sends cached blocks again without moving their timestamp', () async {
+    c.connect('h:1', 't');
+    await pump();
+    await goOnline();
+    ch.serverSend({'type': 'block_update', 'block': serverBlock('r1', seq: 7, updated: 50, title: 'kept')});
+    await pump();
+    expect(c.pendingCount, 0);
+    final before = ch.sent.length;
+    expect(c.reuploadLocal(), 1);
+    final ups = ch.sent.skip(before).where((m) => m['type'] == 'upsert_block').toList();
+    expect(ups, hasLength(1));
+    expect(ups.single['id'], 'r1');
+    expect(ups.single['title'], 'kept');
+    expect(ups.single['client_updated_at'], 50);
+    expect(c.byId('r1')!.updatedAt, 50);
+  });
+
   test('outbox persists across restarts', () async {
     c.create(kind: BlockKind.message, title: 'persist me', payload: {'text': 'x'});
     await pump();

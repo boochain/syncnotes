@@ -1833,7 +1833,7 @@ dependencies = [
 
 [[package]]
 name = "syncnotes-server"
-version = "0.6.9"
+version = "0.6.10"
 dependencies = [
  "argon2",
  "axum",

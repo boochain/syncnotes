@@ -265,7 +265,7 @@ mod tests {
             explicit_db: None,
             explicit_files: None,
             data_dir: &data,
-            legacy_dirs: &[version.clone()],
+            legacy_dirs: std::slice::from_ref(&version),
         })
         .unwrap();
 
@@ -311,7 +311,7 @@ mod tests {
             explicit_db: Some(&db),
             explicit_files: None,
             data_dir: &root.join("data"),
-            legacy_dirs: &[version.clone()],
+            legacy_dirs: std::slice::from_ref(&version),
         })
         .unwrap();
         assert_eq!(layout.db, db);
