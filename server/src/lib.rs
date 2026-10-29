@@ -39,7 +39,7 @@ pub fn build_router(state: AppState) -> axum::Router {
         .route("/ws", get(sync::ws_handler))
         .route("/api/files", axum::routing::put(sealed::reject_plain))
         .route("/api/files/:id", get(sealed::reject_plain))
-        .layer(axum::extract::DefaultBodyLimit::max(files::MAX_FILE_BYTES))
+        .layer(axum::extract::DefaultBodyLimit::max(files::max_http_body()))
         .layer(tower_http::cors::CorsLayer::permissive())
         .with_state(state)
 }

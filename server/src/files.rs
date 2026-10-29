@@ -18,7 +18,14 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use crate::seal::{open_chunk, seal_chunk, OpenedHttp, CHUNK, MAX_CHUNK};
 use crate::state::AppState;
 
-pub const MAX_FILE_BYTES: usize = 100 * 1024 * 1024;
+/// 明文上限 4 GiB。加密后的 HTTP 体还要加上每块的长度和校验，那一层用 [max_http_body]。
+pub const MAX_FILE_BYTES: u64 = 4 * 1024 * 1024 * 1024;
+
+pub fn max_http_body() -> usize {
+    let chunks = MAX_FILE_BYTES.div_ceil(CHUNK as u64);
+    let extra = 4 + 64 * 1024 + chunks * (4 + 16) + 4;
+    (MAX_FILE_BYTES + extra) as usize
+}
 
 fn user_for(state: &AppState, token: Option<String>) -> Result<String, (StatusCode, String)> {
     let t = token.ok_or((StatusCode::UNAUTHORIZED, "缺少令牌".to_string()))?;
@@ -161,7 +168,7 @@ pub async fn blob(State(state): State<AppState>, body: Body) -> axum::response::
     };
     let key = opened.chunk_key();
     if meta.op == "put" {
-        if meta.size > MAX_FILE_BYTES as u64 {
+        if meta.size > MAX_FILE_BYTES {
             discard_chunks(&mut reader).await;
             return sealed_err(&opened, StatusCode::PAYLOAD_TOO_LARGE, "文件过大");
         }
@@ -204,7 +211,7 @@ pub async fn blob(State(state): State<AppState>, body: Body) -> axum::response::
                 Err(()) => break Err("分块校验失败"),
             };
             got += plain.len() as u64;
-            if got > MAX_FILE_BYTES as u64 {
+            if got > MAX_FILE_BYTES {
                 break Err("文件过大");
             }
             hasher.update(&plain);
@@ -324,4 +331,17 @@ pub async fn blob(State(state): State<AppState>, body: Body) -> axum::response::
     }
     discard_chunks(&mut reader).await;
     sealed_err(&opened, StatusCode::BAD_REQUEST, "未知操作")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accepts_four_gib() {
+        assert_eq!(MAX_FILE_BYTES, 4 * 1024 * 1024 * 1024);
+        let body = max_http_body() as u64;
+        assert!(body > MAX_FILE_BYTES);
+        assert!(body < MAX_FILE_BYTES + 8 * 1024 * 1024);
+    }
 }

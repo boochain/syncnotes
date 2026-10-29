@@ -190,6 +190,9 @@ class AuthApi {
     throw AuthException(msg.isEmpty ? '请求失败 ($status)' : msg);
   }
 
+  /// 和服务器一致：单个文件最大 4 GiB。
+  static const maxUploadBytes = 4 * 1024 * 1024 * 1024;
+
   /// 流式上传。大文件按 256KB 分块加密，不把整文件再复制一份。
   /// 知道长度时带上 Content-Length，避免分块传输被中间代理掐断后停在 100%。
   Future<UploadedFile> putFile({
@@ -209,6 +212,7 @@ class AuthApi {
     }
     // 有流时 total 是已经数过的真实长度，0 表示空文件，不是“长度未知”。
     final known = bytes != null ? bytes.length : (source != null || total > 0 ? total : null);
+    if (known != null && known > maxUploadBytes) throw AuthException('文件过大（最大 4 GB）');
     final pub = await WireSeal.serverPublic(server, pins: pins, client: client);
     final meta = utf8.encode(jsonEncode({
       'op': 'put',
