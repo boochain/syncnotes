@@ -129,7 +129,7 @@ class _SettingsPageState extends State<SettingsPage> {
               key: const Key('settingsGlass'),
               icon: CupertinoIcons.drop,
               title: '液态玻璃',
-              subtitle: st.liquidGlass ? '浮层加边和阴影，页面保持不透明，不会把背景再画一层' : '纯色界面',
+              subtitle: st.liquidGlass ? '菜单和浮层使用液态玻璃。页面保持不透明，不会把两页叠在一起。' : '纯色界面',
               trailing: sw(st.liquidGlass, (v) {
                 st.liquidGlass = v;
                 Glass.enabled.value = v;
@@ -208,17 +208,24 @@ class _SettingsPageState extends State<SettingsPage> {
                     ? (Platform.isLinux
                         ? '没有托盘图标，点关闭会退出。Linux 需安装 libayatana-appindicator3-1 后重启。'
                         : '没有托盘图标，点关闭会退出。')
-                    : (st.closeToTray ? '点关闭按钮隐藏到托盘，从托盘菜单「退出」才会结束' : '点关闭按钮直接退出 SyncNotes'),
+                    : (st.closeToTray
+                        ? '点关闭只是把窗口藏进托盘，程序还在。要退出：右键托盘图标选「退出」，或本页的「退出程序」。'
+                        : '点关闭按钮直接退出 SyncNotes'),
                 trailing: sw(st.closeToTray, (v) async {
                   if (v) {
                     final ok = await DesktopShell.instance.ensureTray();
                     if (!ok) {
                       if (context.mounted) showToast(context, '托盘没有起来，点关闭仍会退出');
                       setState(() => st.closeToTray = false);
+                      await DesktopShell.instance.applyClosePolicy();
                       return;
+                    }
+                    if (context.mounted) {
+                      showToast(context, '关闭按钮不会退出。右键托盘图标，选「退出」');
                     }
                   }
                   setState(() => st.closeToTray = v);
+                  await DesktopShell.instance.applyClosePolicy();
                 }, key: const Key('closeToTraySwitch')),
               ),
             if (Platform.isAndroid)
@@ -270,6 +277,15 @@ class _SettingsPageState extends State<SettingsPage> {
                 if (context.mounted) showToast(context, '已清除本地缓存，正在重新同步');
               },
             ),
+            if (isDesktop)
+              SettingsRow(
+                key: const Key('quitAppRow'),
+                icon: CupertinoIcons.clear_circled,
+                title: '退出程序',
+                subtitle: '结束 SyncNotes。打开「关闭窗口时最小化到托盘」后，点窗口的关闭按钮不会退出。',
+                danger: true,
+                onTap: () => DesktopShell.instance.quit(),
+              ),
             SettingsRow(
               key: const Key('logoutRow'),
               icon: CupertinoIcons.square_arrow_right,
@@ -303,7 +319,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 }
 
-const appVersion = '0.6.7';
+const appVersion = '0.6.8';
 
 /// 设置分组标题：12/500 次级色，上 24 下 4（Notion 设置分组）
 class SettingsSection extends StatelessWidget {

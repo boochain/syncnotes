@@ -1,4 +1,7 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import 'ds.dart';
 import 'theme.dart';
@@ -6,12 +9,12 @@ import 'tokens.dart';
 
 /// 浮层材质。只用于菜单、斜杠菜单、快速查找、格式工具栏。
 ///
-/// 不再用折射着色器，也不用 [BackdropFilter]。两者都会把底下的页面再画一遍，
-/// 高分屏上看起来就是两层界面叠在一起。打开时只加边和阴影，颜色始终不透明。
+/// 页面本身保持不透明，这里才采样背后那一层。高分屏上折射着色器会把同一页再画一遍，
+/// 所以 2.5x 及以上只用模糊，不再折射。
 class Glass extends StatelessWidget {
   static bool useShader = true;
 
-  /// 液态玻璃主题。测试里关掉。着色器不再使用：高分屏上会把背景再画一遍。
+  /// 液态玻璃开关。测试里关掉，避免动画停不下来。
   static final enabled = ValueNotifier<bool>(true);
 
   final Widget child;
@@ -23,7 +26,11 @@ class Glass extends StatelessWidget {
   final bool strong;
   const Glass({super.key, required this.child, this.radius = AppRadius.l, this.padding, this.margin, this.strong = true});
 
-  static Color tint(BuildContext context) => AppColors.of(context).elevated;
+  static Color tint(BuildContext context, {required bool frosted}) {
+    final base = AppColors.of(context).elevated;
+    if (!frosted) return base;
+    return base.withValues(alpha: 0.82);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -32,12 +39,44 @@ class Glass extends StatelessWidget {
       builder: (context, on, _) {
         final inner = padding == null ? child : Padding(padding: padding!, child: child);
         final deco = floatingDecoration(context, radius: radius);
-        // 不采样背景。着色器和 BackdropFilter 都会把底下的页面再画一遍，
-        // 3.5x 的屏幕上看起来就是两层界面叠在一起。开着时只多一层边和阴影。
-        final body = DecoratedBox(
-          decoration: BoxDecoration(color: tint(context), borderRadius: BorderRadius.circular(radius)),
-          child: inner,
-        );
+        final dpr = MediaQuery.devicePixelRatioOf(context);
+        // 3.5x 上折射会把背景再画一层。那种屏幕只模糊，不折射。
+        final refract = useShader && on && dpr < 2.5;
+        final Widget body;
+        if (refract) {
+          final dark = Theme.of(context).brightness == Brightness.dark;
+          body = GlassContainer(
+            useOwnLayer: true,
+            quality: GlassQuality.standard,
+            clipBehavior: Clip.antiAlias,
+            shape: LiquidRoundedSuperellipse(borderRadius: radius),
+            settings: LiquidGlassSettings(
+              glassColor: tint(context, frosted: true),
+              blur: 10,
+              thickness: 6,
+              refractiveIndex: 1.04,
+              saturation: 1.05,
+              lightIntensity: dark ? 0.22 : 0.32,
+              glowIntensity: 0.14,
+              chromaticAberration: 0,
+              bodyMode: GlassBodyMode.clear,
+            ),
+            child: inner,
+          );
+        } else if (on) {
+          body = ClipRRect(
+            borderRadius: BorderRadius.circular(radius),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+              child: ColoredBox(color: tint(context, frosted: true), child: inner),
+            ),
+          );
+        } else {
+          body = DecoratedBox(
+            decoration: BoxDecoration(color: tint(context, frosted: false), borderRadius: BorderRadius.circular(radius)),
+            child: inner,
+          );
+        }
         return Padding(
           padding: margin ?? EdgeInsets.zero,
           child: DecoratedBox(

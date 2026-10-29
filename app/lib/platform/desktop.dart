@@ -184,7 +184,7 @@ class DesktopShell with TrayListener, WindowListener {
         _trayListening = true;
       }
       trayAvailable = true;
-      await windowManager.setPreventClose(true);
+      await applyClosePolicy();
       return true;
     } catch (e) {
       debugPrint('tray unavailable: $e');
@@ -251,6 +251,15 @@ class DesktopShell with TrayListener, WindowListener {
     }
   }
 
+  /// 只有「关闭到托盘」开着且托盘真的在，才拦住系统关闭。否则点关闭必须能退出。
+  Future<void> applyClosePolicy() async {
+    try {
+      await windowManager.setPreventClose(closeHides);
+    } catch (e) {
+      debugPrint('close policy: $e');
+    }
+  }
+
   static Future<bool> isAutoStartEnabled() => AutoStart.isEnabled();
   static Future<bool> setAutoStart(bool v) => AutoStart.setEnabled(v);
 
@@ -281,16 +290,32 @@ class DesktopShell with TrayListener, WindowListener {
     exit(0);
   }
 
-  /// 点关闭 → 隐藏到托盘（可在设置里改为直接退出）
+  bool _closing = false;
+
+  /// 点关闭 → 隐藏到托盘（可在设置里改为直接退出）。
+  ///
+  /// 不能在 WM_CLOSE 里面马上 Hide。Windows 会丢掉这次隐藏，关闭又被拦住，
+  /// 窗口就停在原地，看起来像关不掉。
   bool get closeHides => trayAvailable && (_settings?.closeToTray ?? true);
 
   @override
-  void onWindowClose() async {
-    await _saveBounds();
-    if (closeHides) {
-      await windowManager.hide();
-    } else {
-      await quit();
-    }
+  void onWindowClose() {
+    if (_closing) return;
+    _closing = true;
+    final hide = closeHides;
+    Future<void>.delayed(const Duration(milliseconds: 80), () async {
+      try {
+        await _saveBounds();
+        if (!hide) {
+          await quit();
+          return;
+        }
+        await windowManager.hide();
+        await Future<void>.delayed(const Duration(milliseconds: 40));
+        if (await windowManager.isVisible()) await windowManager.minimize();
+      } finally {
+        _closing = false;
+      }
+    });
   }
 }
