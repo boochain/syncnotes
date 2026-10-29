@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
@@ -56,7 +57,7 @@ class AndroidSyncService {
         serviceId: 7700,
         serviceTypes: [ForegroundServiceTypes.remoteMessaging],
         notificationTitle: 'SyncNotes 同步中',
-        notificationText: '保持实时连接以接收新消息',
+        notificationText: '正在连接…',
         notificationIcon: serviceIcon,
         callback: startSyncServiceCallback,
       );
@@ -103,6 +104,7 @@ class _SyncTaskHandler extends TaskHandler {
 
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
+    DartPluginRegistrant.ensureInitialized();
     final prefs = await SharedPreferences.getInstance();
     final server = prefs.getString('server');
     final token = prefs.getString('token');
@@ -115,18 +117,28 @@ class _SyncTaskHandler extends TaskHandler {
     c.onRemoteNew = (b) {
       if (prefs.getBool('notifications') ?? true) Notifier.showBlock(b);
     };
+    c.addListener(() => _note(c));
     c.connect(server, token);
     _client = c;
+    _note(c);
+  }
+
+  void _note(SyncClient c) {
+    final text = switch (c.state) {
+      ConnState.online => '已连接 · 实时同步中',
+      ConnState.connecting => '正在连接…',
+      _ => '网络中断，正在重试',
+    };
+    FlutterForegroundTask.updateService(notificationText: text);
   }
 
   @override
   void onRepeatEvent(DateTime timestamp) {
     final c = _client;
     if (c == null) return;
-    c.reconnectNow();
-    FlutterForegroundTask.updateService(
-      notificationText: c.state == ConnState.online ? '已连接 · 实时同步中' : '正在重连…',
-    );
+    // 在线就别拆连接。每分钟无条件重连会把正在进行的握手掐掉，通知就一直写着重连。
+    if (c.state != ConnState.online) c.reconnectNow();
+    _note(c);
   }
 
   @override

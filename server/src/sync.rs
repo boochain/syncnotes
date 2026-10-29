@@ -144,15 +144,30 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     let (tx, mut rx) = mpsc::unbounded_channel::<ServerMessage>();
 
     // Writer task — every outbound frame is sealed with this socket's key.
+    // A protocol ping keeps NAT/proxy from idle-closing the socket. It is not
+    // an application message and does not change the seal framing.
     let mut send_dir = pair.send;
     let writer = tokio::spawn(async move {
-        while let Some(msg) = rx.recv().await {
-            let Ok(text) = serde_json::to_vec(&msg) else {
-                continue;
-            };
-            let frame = send_dir.seal(&text);
-            if sink.send(Message::Binary(frame)).await.is_err() {
-                break;
+        let mut keepalive = tokio::time::interval(std::time::Duration::from_secs(15));
+        keepalive.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        keepalive.tick().await;
+        loop {
+            tokio::select! {
+                msg = rx.recv() => {
+                    let Some(msg) = msg else { break };
+                    let Ok(text) = serde_json::to_vec(&msg) else {
+                        continue;
+                    };
+                    let frame = send_dir.seal(&text);
+                    if sink.send(Message::Binary(frame)).await.is_err() {
+                        break;
+                    }
+                }
+                _ = keepalive.tick() => {
+                    if sink.send(Message::Ping(Vec::new())).await.is_err() {
+                        break;
+                    }
+                }
             }
         }
         let _ = sink.send(Message::Close(None)).await;
@@ -175,11 +190,17 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
             _ = kill.notified() => break,
             _ = recheck.tick() => {
                 if let Some(t) = &auth_token {
-                    if !matches!(state.storage.validate_token(t), Ok(Some(_))) {
-                        let _ = tx.send(ServerMessage::AuthError {
-                            message: "登录已失效，请重新登录".into(),
-                        });
-                        break;
+                    match state.storage.validate_token(t) {
+                        Ok(Some(_)) => {}
+                        Ok(None) => {
+                            let _ = tx.send(ServerMessage::AuthError {
+                                message: "登录已失效，请重新登录".into(),
+                            });
+                            break;
+                        }
+                        // 数据库忙不是登出。以前把任何错误都当成令牌失效，
+                        // 上传或另一条连接占着锁时，这边每隔十几秒就被拆掉。
+                        Err(e) => tracing::warn!("token recheck skipped: {e}"),
                     }
                 }
                 continue;

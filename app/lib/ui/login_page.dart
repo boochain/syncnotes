@@ -9,6 +9,7 @@ import '../services/auth_api.dart';
 import '../services/discovery.dart';
 import '../services/settings.dart';
 import '../sync/wire_seal.dart';
+import 'motion.dart';
 import 'recovery_ui.dart';
 
 /// 登录 / 注册页面。支持手动输入服务器地址或局域网发现。
@@ -276,8 +277,7 @@ class _LoginPageState extends State<LoginPage> {
                       )
                     : const SizedBox.shrink(),
               ),
-              AnimatedSwitcher(
-                duration: Motion.short4,
+              MotionSwitch(
                 child: _error == null
                     ? const SizedBox(height: Gap.xxl)
                     : Padding(

@@ -129,7 +129,7 @@ class _SettingsPageState extends State<SettingsPage> {
               key: const Key('settingsGlass'),
               icon: CupertinoIcons.drop,
               title: '液态玻璃',
-              subtitle: st.liquidGlass ? '菜单和浮层使用 Liquid Glass，页面保持不透明' : '纯色界面',
+              subtitle: st.liquidGlass ? '浮层加边和阴影，页面保持不透明，不会把背景再画一层' : '纯色界面',
               trailing: sw(st.liquidGlass, (v) {
                 st.liquidGlass = v;
                 Glass.enabled.value = v;
@@ -209,7 +209,17 @@ class _SettingsPageState extends State<SettingsPage> {
                         ? '没有托盘图标，点关闭会退出。Linux 需安装 libayatana-appindicator3-1 后重启。'
                         : '没有托盘图标，点关闭会退出。')
                     : (st.closeToTray ? '点关闭按钮隐藏到托盘，从托盘菜单「退出」才会结束' : '点关闭按钮直接退出 SyncNotes'),
-                trailing: sw(st.closeToTray, (v) => setState(() => st.closeToTray = v), key: const Key('closeToTraySwitch')),
+                trailing: sw(st.closeToTray, (v) async {
+                  if (v) {
+                    final ok = await DesktopShell.instance.ensureTray();
+                    if (!ok) {
+                      if (context.mounted) showToast(context, '托盘没有起来，点关闭仍会退出');
+                      setState(() => st.closeToTray = false);
+                      return;
+                    }
+                  }
+                  setState(() => st.closeToTray = v);
+                }, key: const Key('closeToTraySwitch')),
               ),
             if (Platform.isAndroid)
               SettingsRow(
@@ -293,7 +303,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 }
 
-const appVersion = '0.6.6';
+const appVersion = '0.6.7';
 
 /// 设置分组标题：12/500 次级色，上 24 下 4（Notion 设置分组）
 class SettingsSection extends StatelessWidget {

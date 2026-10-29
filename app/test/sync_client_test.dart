@@ -318,6 +318,16 @@ void main() {
     expect(c.pendingCount, 1);
   });
 
+  test('reconnectNow does not abort a handshake that just started', () async {
+    c.connect('h:1', 't');
+    await pump();
+    final n = channels.length;
+    c.reconnectNow();
+    await pump();
+    expect(channels.length, n);
+    expect(c.state, ConnState.connecting);
+  });
+
   test('heartbeat timeout forces reconnect on half-open connection', () async {
     final hb = SyncClient(
       store: MemoryStore(),

@@ -10,6 +10,7 @@ import '../services/auth_api.dart';
 import '../services/settings.dart';
 import '../sync/wire_seal.dart';
 import 'ds.dart';
+import 'motion.dart';
 import 'tokens.dart';
 
 /// 保存文件：返回保存位置（取消返回 null）。测试中可替换。
@@ -540,8 +541,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                     obscure: true,
                     onSubmitted: (_) => _submit()),
               ]),
-              AnimatedSwitcher(
-                duration: Motion.short4,
+              MotionSwitch(
                 child: _error == null
                     ? const SizedBox(height: Gap.xxl)
                     : Padding(

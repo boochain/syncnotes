@@ -1,7 +1,7 @@
 name: syncnotes
 description: "SyncNotes - 多设备实时同步笔记/消息"
 publish_to: 'none'
-version: 0.6.6+13
+version: 0.6.7+14
 
 environment:
   sdk: ^3.12.2
@@ -28,7 +28,6 @@ dependencies:
   flutter_highlight: ^0.7.0
   highlight: ^0.7.0
   url_launcher: ^6.3.3
-  liquid_glass_widgets: ^1.13.0
   cupertino_icons: ^1.0.9
   archive: ^4.5.2
   desktop_drop: ^0.8.0

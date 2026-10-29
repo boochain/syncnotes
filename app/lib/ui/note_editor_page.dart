@@ -4,6 +4,7 @@ import 'tokens.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
+import 'motion.dart';
 import 'ds.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 
@@ -131,8 +132,7 @@ class _NoteEditorPageState extends State<NoteEditorPage> with SingleTickerProvid
                 hintText: '标题', filled: false, border: InputBorder.none, enabledBorder: InputBorder.none, focusedBorder: InputBorder.none),
           ),
           actions: [
-            AnimatedSwitcher(
-              duration: Motion.short4,
+            MotionSwitch(
               child: _dirty
                   ? const SizedBox.square(
                       key: ValueKey('saving'),

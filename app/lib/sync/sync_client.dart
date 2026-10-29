@@ -30,7 +30,8 @@ class SyncClient extends ChangeNotifier {
   /// 真实套接字走 seal；测试传入 [channelFactory] 时保持明文 JSON。
   final bool sealWire;
 
-  /// 心跳间隔；超过 2.5 倍间隔没有收到任何消息则认为连接已死并重连。
+  /// 心跳间隔。不少移动网络在大约 15 秒没有报文时会拆掉 NAT，
+  /// 所以默认 8 秒一次。连续 2.5 个间隔没有任何入站消息才判定连接已死。
   final Duration pingInterval;
 
   /// 新块（来自其他设备）到达时的回调，用于本地通知。
@@ -42,7 +43,7 @@ class SyncClient extends ChangeNotifier {
     ChannelFactory? channelFactory,
     Settings? settings,
     Duration maxBackoff = const Duration(seconds: 30),
-    Duration pingInterval = const Duration(seconds: 25),
+    Duration pingInterval = const Duration(seconds: 8),
   }) : this._(
           store,
           channelFactory ?? WebSocketChannel.connect,
@@ -73,6 +74,9 @@ class SyncClient extends ChangeNotifier {
   StreamSubscription? _sub;
   Timer? _reconnectTimer;
   Timer? _pingTimer;
+  Timer? _handshakeTimer;
+  Timer? _probeTimer;
+  DateTime? _connectStarted;
   int _attempt = 0;
   bool _disposed = false;
   bool _wantConnected = false;
@@ -268,6 +272,8 @@ class SyncClient extends ChangeNotifier {
 
   void _closeChannel() {
     _pingTimer?.cancel();
+    _handshakeTimer?.cancel();
+    _probeTimer?.cancel();
     _sub?.cancel();
     _sub = null;
     _ws = null;
@@ -277,11 +283,21 @@ class SyncClient extends ChangeNotifier {
     _ch = null;
   }
 
+  void _armHandshake(int epoch) {
+    _handshakeTimer?.cancel();
+    _handshakeTimer = Timer(const Duration(seconds: 12), () {
+      if (epoch != _epoch || _state != ConnState.connecting) return;
+      _onDisconnected('连接超时');
+    });
+  }
+
   void _open() {
     if (_disposed || !_wantConnected || _serverUrl == null || sealBlocked) return;
     final epoch = ++_epoch;
     _closeChannel();
+    _connectStarted = DateTime.now();
     _setState(ConnState.connecting);
+    _armHandshake(epoch);
     if (!sealWire) {
       _openPlain();
       return;
@@ -313,27 +329,23 @@ class SyncClient extends ChangeNotifier {
   }
 
   Future<void> _openSealed(int epoch) async {
-    final Uint8List pub;
-    final KeyPair eph;
+    // 公钥、临时密钥和 TCP 一起做。以前要等密钥算完才开始连接，手机上每次重连都要多等一轮。
+    final pubFut = WireSeal.serverPublic(_serverUrl!, pins: settings);
+    final ephFut = newEph();
+    WebSocketChannel? ch;
     try {
-      pub = await WireSeal.serverPublic(_serverUrl!, pins: settings);
-      if (epoch != _epoch || !_wantConnected) return;
-      eph = await newEph();
-      if (epoch != _epoch || !_wantConnected) return;
+      ch = channelFactory(wsUri(_serverUrl!));
     } catch (e) {
       if (epoch != _epoch) return;
-      if (e is WireException && e.fatal) {
-        _blockSeal('$e');
-      } else {
-        lastError = '$e';
-        _setState(ConnState.offline);
-        _scheduleReconnect();
-      }
+      _handshakeTimer?.cancel();
+      lastError = '$e';
+      _setState(ConnState.offline);
+      _scheduleReconnect();
       return;
     }
-    if (epoch != _epoch || !_wantConnected) return;
     try {
-      final ch = channelFactory(wsUri(_serverUrl!));
+      final pub = await pubFut;
+      final eph = await ephFut;
       if (epoch != _epoch || !_wantConnected) {
         try {
           ch.sink.close();
@@ -362,8 +374,24 @@ class SyncClient extends ChangeNotifier {
       if (epoch != _epoch || _ch != ch) return;
       ch.sink.add(hello);
     } catch (e) {
-      if (epoch != _epoch) return;
+      if (epoch != _epoch) {
+        try {
+          ch.sink.close();
+        } catch (_) {}
+        return;
+      }
+      if (e is WireException && e.fatal) {
+        try {
+          ch.sink.close();
+        } catch (_) {}
+        _blockSeal('$e');
+        return;
+      }
       if (_ch == null) {
+        try {
+          ch.sink.close();
+        } catch (_) {}
+        _handshakeTimer?.cancel();
         lastError = '$e';
         _setState(ConnState.offline);
         _scheduleReconnect();
@@ -428,15 +456,34 @@ class SyncClient extends ChangeNotifier {
     _reconnectTimer = Timer(Duration(milliseconds: ms), _open);
   }
 
-  /// 立即重连（如网络恢复、应用回到前台、用户在设置里重试）。
+  /// 立即重连（网络恢复、回到前台、用户点重试）。
+  ///
+  /// 已经在握手的连接不要拆掉重来：安卓一切到前台就会进 resumed，
+  /// 慢握手会被反复掐断，界面就一直停在「连接中」。
   void reconnectNow() {
     if (_serverUrl == null || _token == null) return;
     if (!_wantConnected && !sealBlocked) return;
     sealBlocked = false;
     _wantConnected = true;
-    _attempt = 0;
     _reconnectTimer?.cancel();
-    if (_state != ConnState.online) _open();
+    if (_state == ConnState.online) {
+      _send({'type': 'ping'});
+      final seen = _lastRx;
+      _probeTimer?.cancel();
+      _probeTimer = Timer(const Duration(seconds: 5), () {
+        if (_disposed || _state != ConnState.online || _lastRx != seen) return;
+        _onDisconnected('连接没有回应');
+      });
+      return;
+    }
+    final started = _connectStarted;
+    if (_state == ConnState.connecting &&
+        started != null &&
+        DateTime.now().difference(started) < const Duration(seconds: 8)) {
+      return;
+    }
+    _attempt = 0;
+    _open();
   }
 
   void _send(Map<String, dynamic> m) {
@@ -468,6 +515,7 @@ class SyncClient extends ChangeNotifier {
     }
     switch (m['type']) {
       case 'auth_ok':
+        _handshakeTimer?.cancel();
         _attempt = 0;
         lastError = null;
         _setState(ConnState.online);

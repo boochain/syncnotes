@@ -26,6 +26,8 @@ class DesktopShell with TrayListener, WindowListener {
   Settings? _settings;
   static const Size minimumSize = Size(340, 420);
   String get _mode => expanded.value ? 'expanded' : 'compact';
+  int _unread = 0;
+  bool _trayListening = false;
 
   /// tray_manager 只会在「可执行文件旁边的 data/flutter_assets」里找图标。
   static String bundledAssetPath(String executable, String asset, {String? separator}) {
@@ -133,10 +135,10 @@ class DesktopShell with TrayListener, WindowListener {
         } catch (e) {
           debugPrint('place window: $e');
         }
-        if (!hidden) {
-          await windowManager.show();
-          await windowManager.focus();
-        }
+        // 先显示一次，让系统把顶层窗口建出来。窗口还藏着的时候注册托盘，
+        // Shell_NotifyIcon 会失败，插件却回报成功，于是开关开着但没有图标。
+        await windowManager.show();
+        if (!hidden) await windowManager.focus();
       });
     } catch (e) {
       debugPrint('window ready: $e');
@@ -145,19 +147,12 @@ class DesktopShell with TrayListener, WindowListener {
         await windowManager.focus();
       } catch (_) {}
     }
-    await windowManager.setPreventClose(true);
     windowManager.addListener(this);
-
-    try {
-      if (!await _ensureTrayIcon()) throw StateError('tray icon file missing');
-      await trayManager.setIcon(_trayAsset);
-      if (!Platform.isLinux) await trayManager.setToolTip('SyncNotes');
-      await _setMenu(unread: 0);
-      trayManager.addListener(this);
-      trayAvailable = true;
-    } catch (e) {
-      debugPrint('tray unavailable: $e');
-      trayAvailable = false;
+    final trayOk = await ensureTray();
+    if (trayOk && Platform.isWindows) {
+      // 第一次添加有时赶在任务栏就绪之前。窗口还可见时拆掉再加一次。
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      await _reinstallTray();
     }
     if (!trayAvailable) {
       // 没有托盘：不能隐藏到托盘，关闭即退出，并且启动时必须显示窗口
@@ -166,6 +161,46 @@ class DesktopShell with TrayListener, WindowListener {
         hidden = false;
         await windowManager.show();
       }
+    } else if (hidden) {
+      await windowManager.hide();
+    }
+    if (Platform.isWindows && (_settings?.autoStart ?? false)) {
+      await AutoStart.repairIfNeeded();
+    }
+  }
+
+  /// 托盘没起来时（例如用户后来才打开「关闭到托盘」）再试一次。
+  Future<bool> ensureTray() async {
+    if (trayAvailable) return true;
+    try {
+      if (!await _ensureTrayIcon()) return false;
+      await trayManager.setIcon(_trayAsset);
+      if (!Platform.isLinux) {
+        await trayManager.setToolTip(_unread > 0 ? 'SyncNotes · $_unread 未读' : 'SyncNotes');
+      }
+      await _setMenu(unread: _unread);
+      if (!_trayListening) {
+        trayManager.addListener(this);
+        _trayListening = true;
+      }
+      trayAvailable = true;
+      await windowManager.setPreventClose(true);
+      return true;
+    } catch (e) {
+      debugPrint('tray unavailable: $e');
+      trayAvailable = false;
+      return false;
+    }
+  }
+
+  Future<void> _reinstallTray() async {
+    if (!Platform.isWindows) return;
+    try {
+      await trayManager.destroy();
+      trayAvailable = false;
+      await ensureTray();
+    } catch (e) {
+      debugPrint('tray reinstall: $e');
     }
   }
 
@@ -178,6 +213,7 @@ class DesktopShell with TrayListener, WindowListener {
   }
 
   Future<void> updateUnread(int unread) async {
+    _unread = unread;
     try {
       await _setMenu(unread: unread);
       if (!Platform.isLinux) await trayManager.setToolTip(unread > 0 ? 'SyncNotes · $unread 未读' : 'SyncNotes');

@@ -3,6 +3,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import 'ds.dart';
+import 'motion.dart';
 import 'tokens.dart';
 
 /// v0.4 主题：所有组件都从 ds.dart 的同一套调色板 / 字阶 / 高度 / 圆角取值。
@@ -261,11 +262,12 @@ ThemeData buildAppTheme(Brightness b, {DesignLanguage? language}) {
     ),
     textSelectionTheme: TextSelectionThemeData(cursorColor: c.accent, selectionColor: c.accent.withValues(alpha: 0.25), selectionHandleColor: c.accent),
     pageTransitionsTheme: const PageTransitionsTheme(builders: {
-      TargetPlatform.android: PredictiveBackPageTransitionsBuilder(),
-      TargetPlatform.linux: CupertinoPageTransitionsBuilder(),
-      TargetPlatform.windows: CupertinoPageTransitionsBuilder(),
-      TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
-      TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+      TargetPlatform.android: OpaqueFadeTransitionsBuilder(),
+      TargetPlatform.iOS: OpaqueFadeTransitionsBuilder(),
+      TargetPlatform.linux: OpaqueFadeTransitionsBuilder(),
+      TargetPlatform.macOS: OpaqueFadeTransitionsBuilder(),
+      TargetPlatform.windows: OpaqueFadeTransitionsBuilder(),
+      TargetPlatform.fuchsia: OpaqueFadeTransitionsBuilder(),
     }),
   );
 }

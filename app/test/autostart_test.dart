@@ -19,4 +19,21 @@ void main() {
     expect(await AutoStart.isEnabled(), isFalse);
     await tmp.delete(recursive: true);
   });
+
+  test('windows autostart quotes a path only when it contains spaces', () {
+    expect(AutoStart.windowsRunCommand(r'C:\SyncNotes\syncnotes.exe'), r'C:\SyncNotes\syncnotes.exe');
+    expect(
+      AutoStart.windowsRunCommand(r'C:\Program Files\SyncNotes\syncnotes.exe'),
+      r'"C:\Program Files\SyncNotes\syncnotes.exe"',
+    );
+    const broken = r'''
+HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run
+    SyncNotes    REG_SZ    "C:\SyncNotes\syncnotes.exe"
+''';
+    expect(AutoStart.windowsRunValueOk(broken, r'C:\SyncNotes\syncnotes.exe'), isFalse);
+    const ok = r'''
+    SyncNotes    REG_SZ    C:\SyncNotes\syncnotes.exe
+''';
+    expect(AutoStart.windowsRunValueOk(ok, r'C:\SyncNotes\syncnotes.exe'), isTrue);
+  });
 }

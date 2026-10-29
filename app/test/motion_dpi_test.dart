@@ -32,6 +32,15 @@ void main() {
     }
   });
 
+  test('page transitions are an opaque fade on every platform', () {
+    for (final b in Brightness.values) {
+      final theme = buildAppTheme(b);
+      for (final platform in TargetPlatform.values) {
+        expect(theme.pageTransitionsTheme.builders[platform], isA<OpaqueFadeTransitionsBuilder>());
+      }
+    }
+  });
+
   test('high dpi window is converted from physical pixels once', () {
     // 3840×2160 at 200%. Dividing twice would shrink 1120×740.
     expect(

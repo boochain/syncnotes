@@ -18,7 +18,6 @@ import 'services/auth_api.dart';
 import 'services/settings.dart';
 import 'sync/local_store.dart';
 import 'sync/sync_client.dart';
-import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import 'ui/app_shell.dart';
 import 'ui/back_handler.dart';
@@ -52,30 +51,16 @@ Future<void> _main(List<String> args) async {
     unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
   }
   unawaited(Notifier.init());
-  Glass.useShader = Platform.environment['SYNCNOTES_GLASS'] != '0';
-  Glass.enabled.value = settings.liquidGlass && Glass.useShader;
-  if (Glass.useShader) {
-    try {
-      await LiquidGlassWidgets.initialize(enablePerformanceMonitor: false);
-    } catch (e, st) {
-      debugPrint('glass init failed: $e\n$st');
-      Glass.useShader = false;
-      Glass.enabled.value = false;
-    }
-  }
+  // 折射着色器会把当前页面再画一层（3.5x 上特别明显）。浮层只用实色。
+  Glass.useShader = false;
+  Glass.enabled.value = settings.liquidGlass;
 
   final dir = await getApplicationSupportDirectory();
   final app = SyncNotesApp(
     settings: settings,
     store: FileStore(File('${dir.path}${Platform.pathSeparator}syncnotes_cache.json')),
   );
-  runApp(Glass.useShader
-      ? LiquidGlassWidgets.wrap(
-          brightnessResolver: Theme.maybeBrightnessOf,
-          adaptiveQuality: false,
-          child: app,
-        )
-      : app);
+  runApp(app);
 }
 
 ThemeData buildTheme(Brightness b) => buildAppTheme(b);
