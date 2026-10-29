@@ -17,6 +17,12 @@ class Glass extends StatelessWidget {
   /// 液态玻璃开关。测试里关掉，避免动画停不下来。
   static final enabled = ValueNotifier<bool>(true);
 
+  /// 浮层不透明度。页面本身始终不透明。
+  static final opacity = ValueNotifier<double>(0.55);
+
+  /// default / sea / dusk / paper / ink
+  static final preset = ValueNotifier<String>('default');
+
   final Widget child;
   final double radius;
   final EdgeInsetsGeometry? padding;
@@ -26,17 +32,19 @@ class Glass extends StatelessWidget {
   final bool strong;
   const Glass({super.key, required this.child, this.radius = AppRadius.l, this.padding, this.margin, this.strong = true});
 
-  static Color tint(BuildContext context, {required bool frosted}) {
+  static Color tint(BuildContext context, {required bool frosted, double alpha = 0.55}) {
     final base = AppColors.of(context).elevated;
     if (!frosted) return base;
-    return base.withValues(alpha: 0.82);
+    return base.withValues(alpha: alpha);
   }
 
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<bool>(
       valueListenable: enabled,
-      builder: (context, on, _) {
+      builder: (context, on, _) => ValueListenableBuilder<double>(
+        valueListenable: opacity,
+        builder: (context, alpha, _) {
         final inner = padding == null ? child : Padding(padding: padding!, child: child);
         final deco = floatingDecoration(context, radius: radius);
         final dpr = MediaQuery.devicePixelRatioOf(context);
@@ -51,7 +59,7 @@ class Glass extends StatelessWidget {
             clipBehavior: Clip.antiAlias,
             shape: LiquidRoundedSuperellipse(borderRadius: radius),
             settings: LiquidGlassSettings(
-              glassColor: tint(context, frosted: true),
+              glassColor: tint(context, frosted: true, alpha: alpha),
               blur: 10,
               thickness: 6,
               refractiveIndex: 1.04,
@@ -68,7 +76,7 @@ class Glass extends StatelessWidget {
             borderRadius: BorderRadius.circular(radius),
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-              child: ColoredBox(color: tint(context, frosted: true), child: inner),
+              child: ColoredBox(color: tint(context, frosted: true, alpha: alpha), child: inner),
             ),
           );
         } else {
@@ -89,6 +97,7 @@ class Glass extends StatelessWidget {
           ),
         );
       },
+      ),
     );
   }
 }

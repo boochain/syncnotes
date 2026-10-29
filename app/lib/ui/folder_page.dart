@@ -20,7 +20,7 @@ class FolderPage extends StatelessWidget {
         return Scaffold(
           appBar: AppBar(
             title: Row(children: [
-              Icon(CupertinoIcons.folder, size: Sizes.iconMd, color: AppColors.of(context).text2),
+              Emoji((f?.payload['icon'] as String?)?.isNotEmpty == true ? f!.payload['icon'] as String : '📁', size: Sizes.iconMd),
               const SizedBox(width: Gap.m),
               Expanded(child: Text(f?.title ?? '文件夹', maxLines: 1, overflow: TextOverflow.ellipsis)),
             ]),

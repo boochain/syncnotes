@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import '../ui/ds.dart';
 import '../ui/motion.dart';
@@ -320,49 +321,56 @@ class FileType_ extends BlockType {
       return ok == true;
     }
     final res = await FilePicker.pickFiles();
-    if (res.isEmpty) return false;
-    final pf = res.first;
-    if (!context.mounted) return false;
-    final len = await pf.xFile.length();
-    if (!context.mounted) return false;
-    // 桌面的 path 是真文件，读两遍也稳。Android 的 path 经常是读不了的 content URI，必须用 XFile 的流。
-    final disk = pf.path;
-    if (isDesktopPlatform && disk != null) {
-      return uploadFileBlock(context, pf.name, null, path: disk, size: len, parentId: parentId);
+    if (res.isEmpty || !context.mounted) return false;
+    var n = 0;
+    for (final pf in res) {
+      final len = await pf.xFile.length();
+      if (!context.mounted) return n > 0;
+      final disk = pf.path;
+      final queued = isDesktopPlatform && disk != null
+          ? await uploadFileBlock(context, pf.name, null, path: disk, size: len, parentId: parentId, wait: false)
+          : await uploadFileBlock(context, pf.name, null, open: () => pf.xFile.openRead(), size: len, parentId: parentId, wait: false);
+      if (queued) n++;
     }
-    return uploadFileBlock(context, pf.name, null, open: () => pf.xFile.openRead(), size: len, parentId: parentId);
+    if (context.mounted) _toast(context, n <= 1 ? '已加入上传队列' : '已加入 $n 个，排队上传');
+    return n > 0;
   }
 }
 
 /// 上传一个文件并创建文件块（选择文件 / 拖放 / 分享进来共用）。
 /// [bytes] 只给已经在内存里的小内容；有路径或可读流时不要再整文件读进来。
 Future<bool> uploadFileBlock(BuildContext context, String name, List<int>? bytes,
-    {String? parentId, String? path, Stream<List<int>> Function()? open, int? size}) async {
+    {String? parentId, String? path, Stream<List<int>> Function()? open, int? size, bool wait = true}) async {
   final s = AppScope.of(context);
   if (s.settings.server == null || s.settings.token == null) return false;
   if (bytes == null && path == null && open == null) return false;
   final mode = defaultViewedMode(context);
   final total = size ?? bytes?.length ?? 0;
   var created = false;
+  final fut = s.transfers.upload(
+    name: name,
+    bytes: bytes,
+    path: path,
+    open: open,
+    total: total,
+    onSuccess: (id, sha, size) {
+      if (created) return;
+      created = true;
+      s.sync.create(
+        kind: BlockKind.file,
+        title: name,
+        payload: {'name': name, 'size': size, 'file_id': id, if (sha.isNotEmpty) 'sha256': sha},
+        parentId: parentId,
+        viewedMode: mode,
+      );
+    },
+  );
+  if (!wait) {
+    unawaited(fut.then((_) {}, onError: (Object _) {}));
+    return true;
+  }
   try {
-    await s.transfers.upload(
-      name: name,
-      bytes: bytes,
-      path: path,
-      open: open,
-      total: total,
-      onSuccess: (id, sha, size) {
-        if (created) return;
-        created = true;
-        s.sync.create(
-          kind: BlockKind.file,
-          title: name,
-          payload: {'name': name, 'size': size, 'file_id': id, if (sha.isNotEmpty) 'sha256': sha},
-          parentId: parentId,
-          viewedMode: mode,
-        );
-      },
-    );
+    await fut;
     if (context.mounted) _toast(context, '上传完成');
     return true;
   } catch (e) {
@@ -408,32 +416,58 @@ class FolderType extends BlockType {
 
   @override
   Future<bool> edit(BuildContext context, Block? block, {String? parentId}) async {
+    final sync = AppScope.of(context).sync;
+    var icon = (block?.payload['icon'] as String?) ?? '📁';
     final ctrl = TextEditingController(text: block?.title ?? '');
+    const choices = ['📁', '🗂️', '📚', '💼', '🏠', '⭐', '🔒', '📎', '💡', '🎯', '📌', '🌱'];
     final ok = await showDialog<bool>(
       context: context,
-      builder: (c) => AlertDialog(
-        title: Text(block == null ? '新建文件夹' : '重命名文件夹'),
-        content: TextField(
-            controller: ctrl,
-            autofocus: true,
-            onSubmitted: (_) => Navigator.pop(c, true),
-            decoration: const InputDecoration(hintText: '文件夹名称')),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('取消')),
-          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('确定')),
-        ],
+      builder: (c) => StatefulBuilder(
+        builder: (c, setLocal) => AlertDialog(
+          title: Text(block == null ? '新建文件夹' : '重命名文件夹'),
+          content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            TextField(
+              controller: ctrl,
+              autofocus: true,
+              onSubmitted: (_) => Navigator.pop(c, true),
+              decoration: const InputDecoration(hintText: '名称，用来给笔记和文件分组'),
+            ),
+            const SizedBox(height: Gap.m),
+            Wrap(spacing: Gap.xs, runSpacing: Gap.xs, children: [
+              for (final e in choices)
+                InkWell(
+                  onTap: () => setLocal(() => icon = e),
+                  child: Container(
+                    width: 36,
+                    height: 36,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: icon == e ? AppColors.of(c).selected : null,
+                      borderRadius: BorderRadius.circular(AppRadius.s),
+                    ),
+                    child: Emoji(e, size: 22),
+                  ),
+                ),
+            ]),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('取消')),
+            FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('确定')),
+          ],
+        ),
       ),
     );
     if (ok != true || ctrl.text.trim().isEmpty || !context.mounted) return false;
-    final sync = AppScope.of(context).sync;
     if (block == null) {
       sync.create(
-          kind: BlockKind.folder,
-          title: ctrl.text.trim(),
-          parentId: parentId,
-          viewedMode: ViewedMode.global);
+        kind: BlockKind.folder,
+        title: ctrl.text.trim(),
+        payload: {'icon': icon},
+        parentId: parentId,
+        viewedMode: ViewedMode.global,
+      );
     } else {
-      sync.update(block.id, title: ctrl.text.trim());
+      sync.update(block.id, title: ctrl.text.trim(), payload: {...block.payload, 'icon': icon});
     }
     return true;
   }

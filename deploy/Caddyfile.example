@@ -1,4 +1,11 @@
-# 用 Caddy 自动申请 HTTPS 证书并反向代理（WebSocket 自动支持）
+# 用 Caddy 自动申请 HTTPS 证书并反向代理。
+# WebSocket 不用额外配置。flush_interval -1 让大文件边传边转发，不被代理攒住。
 notes.example.com {
-    reverse_proxy 127.0.0.1:7700
+	reverse_proxy 127.0.0.1:7700 {
+		flush_interval -1
+		transport http {
+			read_timeout 0
+			write_timeout 0
+		}
+	}
 }

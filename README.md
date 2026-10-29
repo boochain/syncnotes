@@ -172,17 +172,17 @@ docker compose up -d --build
 
 ### 公网部署建议：加 HTTPS
 
-在服务器前面放一个反向代理（以 Caddy 为例，自动申请免费证书），参考 `deploy/Caddyfile.example`：
+在服务器前面放一个反向代理。Caddy 见 `deploy/Caddyfile.example`，Nginx 见 `deploy/nginx.conf.example`。也可以只打印配置、不改系统：
 
-```
-notes.example.com {
-    reverse_proxy 127.0.0.1:7700
-}
+```bash
+sudo ./syncnotes-server.sh proxy notes.example.com
 ```
 
-客户端服务器地址填写 `https://notes.example.com` 即可（会自动使用 `wss://`）。
+代理必须转发 `Upgrade` / `Connection`（同步用 WebSocket），并且不要限制请求体、不要把整个文件缓冲完再转发（单文件最大 4 GB）。Caddy 默认就会转发 WebSocket。
 
-传输使用应用层加密（syncnotes-seal-v1）：即使走普通 HTTP，密码、令牌、笔记和文件在线路上也是密文。明文只出现在发送端进程、服务器进程和接收端进程。第一次连接会记住服务器公钥指纹，之后指纹对不上就拒绝连接，可以在设置里清除指纹后重连。HTTPS 仍然有用，它挡住第一次连接时的中间人。
+客户端填域名时可以不写 `https://`，会自动补上。IP、localhost、`.local` 自动用 `http://`。已经写了 `http://` 或 `https://` 的保持原样。
+
+传输使用应用层加密（syncnotes-seal-v1）：即使走普通 HTTP，密码、令牌、笔记和文件在线路上也是密文。明文只出现在发送端进程、服务器进程和接收端进程。`/health` 是明文，里面只有公钥。第一次连接会记住服务器公钥指纹，之后指纹对不上就拒绝连接。指纹用来确认还是同一台服务器，不表示硬盘上的笔记是密文。可以在设置里看加密经过哪些路径，也可以清除指纹后重连。HTTPS 仍然有用，它挡住第一次连接时的中间人。
 
 上传和下载在侧边栏「传输」里看速度和进度，底部也会有一条细的状态。文件按 256KB 分块边读边传，同时最多两个任务。
 

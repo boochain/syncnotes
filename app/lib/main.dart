@@ -54,13 +54,14 @@ Future<void> _main(List<String> args) async {
   unawaited(Notifier.init());
   Glass.useShader = Platform.environment['SYNCNOTES_GLASS'] != '0';
   Glass.enabled.value = settings.liquidGlass && Glass.useShader;
+  Glass.opacity.value = settings.glassOpacity;
+  Glass.preset.value = settings.bgPreset;
   if (Glass.useShader) {
     try {
       await LiquidGlassWidgets.initialize(enablePerformanceMonitor: false);
     } catch (e, st) {
       debugPrint('glass init failed: $e\n$st');
       Glass.useShader = false;
-      Glass.enabled.value = false;
     }
   }
 
@@ -79,7 +80,7 @@ Future<void> _main(List<String> args) async {
       : app);
 }
 
-ThemeData buildTheme(Brightness b) => buildAppTheme(b);
+ThemeData buildTheme(Brightness b) => buildAppTheme(b, preset: Glass.preset.value);
 
 /// 透明状态栏 / 导航栏；浅色主题用深色图标，深色主题用浅色图标。
 SystemUiOverlayStyle systemBarsStyle(Brightness b) {
@@ -198,14 +199,16 @@ class _SyncNotesAppState extends State<SyncNotesApp> with WidgetsBindingObserver
   Widget build(BuildContext context) {
     return AppScope(
       services: _services,
-      child: ValueListenableBuilder<ThemeMode>(
+      child: ValueListenableBuilder<String>(
+        valueListenable: Glass.preset,
+        builder: (context, preset, _) => ValueListenableBuilder<ThemeMode>(
         valueListenable: _themeMode,
         builder: (context, mode, _) => MaterialApp(
         themeMode: mode,
         title: 'SyncNotes',
         debugShowCheckedModeBanner: false,
-        theme: buildTheme(Brightness.light),
-        darkTheme: buildTheme(Brightness.dark),
+        theme: buildAppTheme(Brightness.light, preset: preset),
+        darkTheme: buildAppTheme(Brightness.dark, preset: preset),
         locale: const Locale('zh', 'CN'),
         supportedLocales: const [Locale('zh', 'CN'), Locale('en')],
         localizationsDelegates: GlobalMaterialLocalizations.delegates,
@@ -238,6 +241,7 @@ class _SyncNotesAppState extends State<SyncNotesApp> with WidgetsBindingObserver
                   },
                 ))),
         ),
+      ),
       ),
       ),
     );

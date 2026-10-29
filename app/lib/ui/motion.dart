@@ -19,7 +19,10 @@ class MotionSwitch extends StatelessWidget {
       switchInCurve: Curves.easeOutCubic,
       switchOutCurve: Curves.easeInCubic,
       layoutBuilder: (current, _) => ColoredBox(color: bg, child: current ?? const SizedBox.shrink()),
-      transitionBuilder: (child, animation) => FadeTransition(opacity: animation, child: child),
+      transitionBuilder: (child, animation) {
+        final slide = Tween<Offset>(begin: const Offset(0, 0.03), end: Offset.zero).animate(animation);
+        return FadeTransition(opacity: animation, child: SlideTransition(position: slide, child: child));
+      },
       child: child,
     );
   }
@@ -39,11 +42,15 @@ class OpaqueFadeTransitionsBuilder extends PageTransitionsBuilder {
     Widget child,
   ) {
     final bg = Theme.of(context).colorScheme.surface;
+    final curved = animation.drive(CurveTween(curve: Curves.easeOutCubic));
     return ColoredBox(
       color: bg,
       child: FadeTransition(
-        opacity: animation.drive(CurveTween(curve: Curves.easeOutCubic)),
-        child: child,
+        opacity: curved,
+        child: SlideTransition(
+          position: Tween<Offset>(begin: const Offset(0, 0.04), end: Offset.zero).animate(curved),
+          child: child,
+        ),
       ),
     );
   }

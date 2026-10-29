@@ -19,6 +19,7 @@
 #                    登录后强制修改；先自动备份数据库，所有设备退出，数据不变
 #   export <用户名> [输出.zip]  导出用户全部数据（含回收站和附件）
 #   backup           在线备份数据库（服务运行中也安全）
+#   proxy [域名]     打印 Caddy / Nginx 反代配置（不安装、不改防火墙）
 # 选项：
 #   -y, --yes        全部使用默认值 / 上次保存的配置，不再提问（适合脚本调用）
 #   --open-firewall  防火墙已启用时放行端口（默认从不修改防火墙；防火墙未启用时什么也不做）
@@ -834,6 +835,62 @@ MENU
   done
 }
 
+cmd_proxy() {
+  load_config
+  local domain="${1:-}"
+  if [ -z "$domain" ]; then
+    [ "$ASSUME_YES" = 1 ] && die "proxy 需要域名，例如：$SCRIPT_PATH proxy notes.example.com"
+    ask domain "对外域名" "notes.example.com"
+  fi
+  case "$domain" in
+    *[!A-Za-z0-9.-]*|"") die "域名无效" ;;
+  esac
+  local port="${CFG_PORT:-7700}"
+  title "Caddy"
+  cat <<EOF
+$domain {
+	reverse_proxy 127.0.0.1:$port {
+		flush_interval -1
+		transport http {
+			read_timeout 0
+			write_timeout 0
+		}
+	}
+}
+EOF
+  title "Nginx（放进 http {}）"
+  cat <<EOF
+map \$http_upgrade \$connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen 443 ssl;
+    server_name $domain;
+    # ssl_certificate     /path/fullchain.pem;
+    # ssl_certificate_key /path/privkey.pem;
+    client_max_body_size 0;
+    proxy_request_buffering off;
+    proxy_buffering off;
+    proxy_http_version 1.1;
+    proxy_read_timeout 1h;
+    proxy_send_timeout 1h;
+    location / {
+        proxy_pass http://127.0.0.1:$port;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection \$connection_upgrade;
+    }
+}
+EOF
+  echo "只打印配置，不安装、不改防火墙。"
+  echo "必须转发 WebSocket 的 Upgrade，并且不要把整个上传缓冲完再交给 127.0.0.1:$port。"
+  echo "客户端地址填 https://$domain （不写协议时域名也会自动用 https）。"
+}
+
 print_summary() {
   local ip; ip=$(hostname -I 2>/dev/null | awk '{print $1}')
   title "完成"
@@ -856,9 +913,10 @@ menu() {
   7) 更新 / 替换为新版
   8) 卸载
   9) 忘记密码 / 数据救援
+  p) 打印 Caddy / Nginx 反代配置（不安装）
   0) 退出
 MENU
-    local c=""; read -r -p "请选择 [0-9]: " c || exit 0
+    local c=""; read -r -p "请选择 [0-9/p]: " c || exit 0
     case "$c" in
       1) cmd_run ;;
       2) cmd_start ;;
@@ -869,6 +927,7 @@ MENU
       7) local p=""; read -r -p "新版程序或 .tar.gz 的路径（回车使用脚本旁边的 $BIN_NAME）: " p || true; cmd_update "$p" ;;
       8) cmd_uninstall ;;
       9) rescue_menu ;;
+      p|P) cmd_proxy ;;
       0|q) exit 0 ;;
       *) echo "无效选项" ;;
     esac
@@ -902,6 +961,7 @@ main() {
     reset-password|reset) cmd_reset_password "$@" ;;
     export) cmd_export "$@" ;;
     backup) cmd_backup ;;
+    proxy) cmd_proxy "$@" ;;
     *) err "未知命令：$cmd"; sed -n '2,27p' "$SCRIPT_PATH" | sed 's/^# \{0,1\}//'; exit 1 ;;
   esac
 }

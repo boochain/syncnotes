@@ -24,7 +24,7 @@ class FileDropZoneState extends State<FileDropZone> {
 
   /// 处理拖进来的文件（测试也直接调用）。返回成功上传的数量。
   Future<int> handleFiles(List<XFile> files) async {
-    var n = 0;
+    final pending = <Future<bool>>[];
     for (final f in files) {
       int len;
       try {
@@ -33,15 +33,15 @@ class FileDropZoneState extends State<FileDropZone> {
         if (mounted) showToast(context, '无法读取 ${f.name}（文件夹暂不支持拖放）');
         continue;
       }
-      if (!mounted) return n;
+      if (!mounted) return pending.length;
       final disk = f.path;
       final local = disk.isNotEmpty && !disk.startsWith('content:') && File(disk).existsSync();
-      if (await uploadFileBlock(context, f.name, null,
-          path: local ? disk : null, open: local ? null : () => f.openRead(), size: len)) {
-        n++;
-      }
+      pending.add(uploadFileBlock(context, f.name, null,
+          path: local ? disk : null, open: local ? null : () => f.openRead(), size: len));
     }
-    return n;
+    if (pending.isEmpty) return 0;
+    final results = await Future.wait(pending);
+    return results.where((ok) => ok).length;
   }
 
   @override

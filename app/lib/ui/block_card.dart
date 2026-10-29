@@ -37,7 +37,11 @@ class _BlockCardState extends State<BlockCard> {
     final tt = Theme.of(context).textTheme;
     final type = BlockTypes.of(block.kind);
     final unread = !block.isViewed && block.kind != BlockKind.folder;
-    final emoji = block.kind == BlockKind.page ? (block.payload['icon'] ?? '') as String : '';
+    final emoji = block.kind == BlockKind.page
+        ? (block.payload['icon'] ?? '') as String
+        : block.kind == BlockKind.folder
+            ? (block.payload['icon'] ?? '📁') as String
+            : '';
     var preview = type.previewText(context, block);
     if (preview.isEmpty) preview = type.label;
     return Semantics(
@@ -227,7 +231,11 @@ Future<void> showBlockMenu(BuildContext context, Block block) async {
                   children: [
                     MenuRow(icon: CupertinoIcons.tray, label: '收件箱（根目录）', onTap: () => Navigator.pop(d, '__root__')),
                     for (final f in folders)
-                      MenuRow(icon: CupertinoIcons.folder, label: f.title.isEmpty ? '无标题' : f.title, onTap: () => Navigator.pop(d, f.id)),
+                      MenuRow(
+                        icon: CupertinoIcons.folder,
+                        label: '${(f.payload['icon'] ?? '📁') as String} ${f.title.isEmpty ? '无标题' : f.title}',
+                        onTap: () => Navigator.pop(d, f.id),
+                      ),
                   ],
                 ),
               );

@@ -53,18 +53,20 @@ class TransferJob {
   double get fraction => total <= 0 ? 0 : (done / total).clamp(0.0, 1.0);
 }
 
-/// 内存里的上传/下载队列。同时最多 2 个，进度按明文字节计。
+/// 内存里的上传/下载队列。一次只跑一个，避免两路加密把界面卡住。进度不刷新整棵侧边栏。
 class TransferQueue extends ChangeNotifier {
   TransferQueue({required this.api, required this.settings});
 
   final AuthApi api;
   final Settings settings;
-  static const maxConcurrent = 2;
+  static const maxConcurrent = 1;
+
+  /// 字节进度。侧边栏不听这个，只听任务状态。
+  final ValueNotifier<int> progress = ValueNotifier<int>(0);
 
   final List<TransferJob> jobs = [];
   int _seq = 0;
   int _running = 0;
-  DateTime _lastUi = DateTime.fromMillisecondsSinceEpoch(0);
 
   int get activeCount =>
       jobs.where((j) => j.status == TransferStatus.queued || j.status == TransferStatus.running).length;
@@ -222,11 +224,8 @@ class TransferQueue extends ChangeNotifier {
       j.sampleAt = now;
       j.sampleDone = done;
     }
-    if (dt >= 200 || (j.total > 0 && done >= j.total)) {
-      if (now.difference(_lastUi).inMilliseconds >= 200 || done >= j.total && j.total > 0) {
-        _lastUi = now;
-        notifyListeners();
-      }
+    if (dt >= 400 || (j.total > 0 && done >= j.total)) {
+      progress.value++;
     }
   }
 
@@ -242,8 +241,8 @@ class TransferQueue extends ChangeNotifier {
       if (j.dir == TransferDir.up) {
         if (j.bytes != null) {
           j.total = j.bytes!.length;
-        } else if (j.open != null || j.path != null) {
-          // 声明长度和实际流经常对不上（尤其是 Android 的 content URI）。先数一遍，再按真实长度上传。
+        } else if (j.total <= 0 && (j.open != null || j.path != null)) {
+          // 长度未知时才整文件数一遍。已知长度直接传，避免大文件先读两遍把界面卡住。
           final probe = j.open?.call() ?? File(j.path!).openRead();
           var n = 0;
           await for (final part in probe) {

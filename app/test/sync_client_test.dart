@@ -70,6 +70,8 @@ void main() {
     expect(SyncClient.wsUri('192.168.1.5:7700').toString(), 'ws://192.168.1.5:7700/ws');
     expect(SyncClient.wsUri('http://h:1').toString(), 'ws://h:1/ws');
     expect(SyncClient.wsUri('https://notes.example.com').toString(), 'wss://notes.example.com/ws');
+    expect(SyncClient.wsUri('notes.example.com').toString(), 'wss://notes.example.com/ws');
+    expect(SyncClient.wsUri('localhost:7700').toString(), 'ws://localhost:7700/ws');
     expect(SyncClient.wsUri('ws://h:1/ws').toString(), 'ws://h:1/ws');
   });
 

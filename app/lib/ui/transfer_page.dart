@@ -40,7 +40,7 @@ class TransferPage extends StatelessWidget {
         title: const Text('传输'),
         actions: [
           ListenableBuilder(
-            listenable: q,
+            listenable: Listenable.merge([q, q.progress]),
             builder: (context, _) => TextButton(
               onPressed: q.jobs.any((j) =>
                       j.status == TransferStatus.done ||
@@ -54,7 +54,7 @@ class TransferPage extends StatelessWidget {
         ],
       ),
       body: ListenableBuilder(
-        listenable: q,
+        listenable: Listenable.merge([q, q.progress]),
         builder: (context, _) {
           if (q.jobs.isEmpty) {
             return Center(
@@ -142,7 +142,7 @@ class TransferStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     final q = AppScope.of(context).transfers;
     return ListenableBuilder(
-      listenable: q,
+      listenable: Listenable.merge([q, q.progress]),
       builder: (context, _) {
         final j = q.current;
         if (j == null) return const SizedBox.shrink();

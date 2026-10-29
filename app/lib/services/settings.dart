@@ -23,7 +23,42 @@ class Settings {
   }
 
   String? get server => prefs.getString('server');
-  set server(String? v) => v == null ? prefs.remove('server') : prefs.setString('server', v);
+  set server(String? v) => v == null ? prefs.remove('server') : prefs.setString('server', normalizeServer(v));
+
+  /// 登录过的地址，最多 8 个。当前地址始终算在里面。
+  List<String> get knownServers {
+    final list = prefs.getStringList('known_servers') ?? const <String>[];
+    final cur = prefs.getString('server');
+    if (cur != null && cur.isNotEmpty && !list.contains(cur)) return [cur, ...list];
+    return list;
+  }
+
+  void rememberServer(String raw) {
+    final s = normalizeServer(raw);
+    if (s.isEmpty) return;
+    final next = [s, ...knownServers.where((e) => e != s)].take(8).toList();
+    prefs.setStringList('known_servers', next);
+  }
+
+  void forgetServer(String raw) {
+    final s = normalizeServer(raw);
+    prefs.setStringList('known_servers', knownServers.where((e) => e != s).toList());
+  }
+
+  /// default / sea / dusk / paper / ink
+  String get bgPreset => prefs.getString('bg_preset') ?? 'default';
+  set bgPreset(String v) => prefs.setString('bg_preset', v);
+
+  /// 浮层玻璃的不透明度。越小越透。
+  double get glassOpacity {
+    final v = prefs.getDouble('glass_opacity');
+    if (v == null) return 0.55;
+    if (v < 0.35) return 0.35;
+    if (v > 0.92) return 0.92;
+    return v;
+  }
+
+  set glassOpacity(double v) => prefs.setDouble('glass_opacity', v < 0.35 ? 0.35 : (v > 0.92 ? 0.92 : v));
 
   String? get token => prefs.getString('token');
   set token(String? v) => v == null ? prefs.remove('token') : prefs.setString('token', v);
@@ -107,4 +142,24 @@ class Settings {
       prefs.remove(k);
     }
   }
+}
+
+/// 没写协议时：域名用 https，IP / localhost / .local 用 http（这些通常没有证书）。
+String normalizeServer(String raw) {
+  var s = raw.trim();
+  if (s.isEmpty) return s;
+  while (s.endsWith('/')) {
+    s = s.substring(0, s.length - 1);
+  }
+  if (s.startsWith('ws://')) s = 'http://${s.substring(5)}';
+  if (s.startsWith('wss://')) s = 'https://${s.substring(6)}';
+  if (s.contains('://')) return s;
+  final hostport = s.split('/').first;
+  final host = hostport.startsWith('[') ? hostport : hostport.split(':').first;
+  final local = host == 'localhost' ||
+      host.endsWith('.local') ||
+      host.endsWith('.lan') ||
+      RegExp(r'^\d{1,3}(\.\d{1,3}){3}$').hasMatch(host) ||
+      host.startsWith('[');
+  return '${local ? 'http' : 'https'}://$s';
 }

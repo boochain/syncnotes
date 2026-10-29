@@ -46,7 +46,7 @@ class Sidebar extends StatelessWidget {
       child: SafeArea(
         right: false,
         child: ListenableBuilder(
-          listenable: Listenable.merge([s.sync, s.transfers]),
+          listenable: s.sync,
           builder: (context, _) {
             final roots = rootPages(s.sync);
             final name = s.settings.username ?? '';
@@ -112,7 +112,10 @@ class Sidebar extends StatelessWidget {
                   leading: const Icon(CupertinoIcons.arrow_up_arrow_down),
                   label: '传输',
                   selected: transfersSelected,
-                  trailing: s.transfers.activeCount > 0 ? CountBadge(s.transfers.activeCount) : null,
+                  trailing: ListenableBuilder(
+                    listenable: s.transfers,
+                    builder: (context, _) => s.transfers.activeCount > 0 ? CountBadge(s.transfers.activeCount) : const SizedBox.shrink(),
+                  ),
                   onTap: onTransfers!,
                 ),
               const SizedBox(height: Gap.l),

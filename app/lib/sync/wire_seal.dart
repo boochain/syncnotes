@@ -24,7 +24,11 @@ class SealPinMismatch extends WireException {
   final String saved;
   final String current;
   SealPinMismatch({required this.saved, required this.current})
-      : super('服务器指纹和上次不一致（${_fpShort(saved)} → ${_fpShort(current)}）。', fatal: true);
+      : super(
+          '服务器指纹和上次不一致（${_fpShort(saved)} → ${_fpShort(current)}）。'
+          '指纹是这台服务器的长期公钥，用来确认还是同一台。它变了通常是重装、换了数据目录，或地址被指到别处。不确定原因不要继续。',
+          fatal: true,
+        );
 }
 
 String _fpShort(String h) => h.length <= 16 ? h : '${h.substring(0, 8)}…${h.substring(h.length - 4)}';
@@ -38,8 +42,7 @@ class WireSeal {
   static final _memPin = <String, String>{};
 
   static Uri _base(String server) {
-    var s = server.trim();
-    if (!s.contains('://')) s = 'http://$s';
+    var s = normalizeServer(server);
     s = s.replaceFirst(RegExp(r'^ws'), 'http');
     final u = Uri.parse(s);
     var path = u.path.endsWith('/') ? u.path.substring(0, u.path.length - 1) : u.path;

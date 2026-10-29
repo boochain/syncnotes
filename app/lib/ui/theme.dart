@@ -8,13 +8,13 @@ import 'tokens.dart';
 
 /// v0.4 主题：所有组件都从 ds.dart 的同一套调色板 / 字阶 / 高度 / 圆角取值。
 /// [language] 仅为兼容旧测试保留；所有平台使用同一套设计。
-ThemeData buildAppTheme(Brightness b, {DesignLanguage? language}) {
+ThemeData buildAppTheme(Brightness b, {DesignLanguage? language, String preset = 'default'}) {
   final dark = b == Brightness.dark;
   // 触屏平台（Android / iOS）：按下水波纹反馈（Material 3）；桌面用悬停高亮，不要水波纹
   final touch = defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS;
   // 触屏：可点区域至少 48dp（Material 无障碍要求）；按钮视觉尺寸不变，只扩大点击区。桌面保持紧凑。
   final tapTarget = touch ? MaterialTapTargetSize.padded : MaterialTapTargetSize.shrinkWrap;
-  final c = dark ? AppColors.dark : AppColors.light;
+  final c = tintBackground(dark ? AppColors.dark : AppColors.light, preset);
 
   final cs = ColorScheme(
     brightness: b,
@@ -269,6 +269,35 @@ ThemeData buildAppTheme(Brightness b, {DesignLanguage? language}) {
       TargetPlatform.windows: OpaqueFadeTransitionsBuilder(),
       TargetPlatform.fuchsia: OpaqueFadeTransitionsBuilder(),
     }),
+  );
+}
+
+/// 只染内容区和侧边栏，文字色不动。页面仍然不透明。
+AppColors tintBackground(AppColors c, String preset) {
+  const washes = {
+    'sea': Color(0xFF2F6FDB),
+    'dusk': Color(0xFF6B4C9A),
+    'paper': Color(0xFFC4A574),
+    'ink': Color(0xFF111111),
+  };
+  final wash = washes[preset];
+  if (wash == null) return c;
+  Color mix(Color base) => Color.lerp(base, wash, 0.22)!;
+  return AppColors(
+    bg: mix(c.bg),
+    sidebar: mix(c.sidebar),
+    elevated: c.elevated,
+    fill: mix(c.fill),
+    hover: c.hover,
+    selected: c.selected,
+    separator: c.separator,
+    text: c.text,
+    text2: c.text2,
+    text3: c.text3,
+    accent: c.accent,
+    danger: c.danger,
+    success: c.success,
+    warning: c.warning,
   );
 }
 

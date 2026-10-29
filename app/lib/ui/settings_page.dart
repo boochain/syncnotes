@@ -83,9 +83,11 @@ class _SettingsPageState extends State<SettingsPage> {
               title: '传输加密',
               subtitle: () {
                 final pin = st.server == null ? null : st.sealPin(st.server!);
-                if (pin == null || pin.isEmpty) return '笔记、密码和文件在传输中加密。第一次连接时记住服务器指纹。';
+                if (pin == null || pin.isEmpty) {
+                  return '指纹是服务器的长期公钥。第一次连上就记住。之后对不上就拒绝登录和同步，避免连到另一台。它不加密硬盘：服务器进程里笔记仍是明文。';
+                }
                 final short = pin.length > 16 ? '${pin.substring(0, 16)}…' : pin;
-                return '已记住服务器指纹 $short。指纹变化会拒绝连接。';
+                return '已记住 $short。对不上就会停。重装、换数据目录或删了 .seal 都会变。不确定原因不要清除。';
               }(),
               trailing: TextButton(
                 onPressed: () {
@@ -100,6 +102,18 @@ class _SettingsPageState extends State<SettingsPage> {
                 child: const Text('清除指纹'),
               ),
             ),
+            const _WireMap(),
+            if (st.knownServers.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(Gap.xl, Gap.s, Gap.xl, Gap.m),
+                child: Wrap(spacing: Gap.s, runSpacing: Gap.s, children: [
+                  for (final host in st.knownServers)
+                    InputChip(
+                      label: Text(host, overflow: TextOverflow.ellipsis),
+                      onDeleted: host == st.server ? null : () => setState(() => st.forgetServer(host)),
+                    ),
+                ]),
+              ),
             if (st.localDataDir != null)
               SettingsRow(
                 key: const Key('localDataDirRow'),
@@ -136,12 +150,46 @@ class _SettingsPageState extends State<SettingsPage> {
               key: const Key('settingsGlass'),
               icon: CupertinoIcons.drop,
               title: '液态玻璃',
-              subtitle: st.liquidGlass ? '菜单和浮层使用液态玻璃。页面保持不透明，不会把两页叠在一起。' : '纯色界面',
+              subtitle: st.liquidGlass ? '菜单和浮层会透出背景。页面保持不透明，切换时不会叠两层。' : '纯色界面',
               trailing: sw(st.liquidGlass, (v) {
                 st.liquidGlass = v;
                 Glass.enabled.value = v;
                 setState(() {});
               }),
+            ),
+            if (st.liquidGlass)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(Gap.xl, 0, Gap.xl, Gap.s),
+                child: Row(children: [
+                  Text('玻璃透明度', style: Theme.of(context).textTheme.bodySmall),
+                  Expanded(
+                    child: Slider(
+                      value: st.glassOpacity,
+                      min: 0.35,
+                      max: 0.92,
+                      onChanged: (v) {
+                        st.glassOpacity = v;
+                        Glass.opacity.value = v;
+                        setState(() {});
+                      },
+                    ),
+                  ),
+                ]),
+              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(Gap.xl, Gap.s, Gap.xl, Gap.s),
+              child: Wrap(spacing: Gap.s, runSpacing: Gap.s, children: [
+                for (final (id, label) in const [('default', '默认'), ('sea', '海蓝'), ('dusk', '暮色'), ('paper', '纸色'), ('ink', '墨色')])
+                  ChoiceChip(
+                    label: Text(label),
+                    selected: st.bgPreset == id,
+                    onSelected: (_) {
+                      st.bgPreset = id;
+                      Glass.preset.value = id;
+                      setState(() {});
+                    },
+                  ),
+              ]),
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: Gap.xl, vertical: Gap.s),
@@ -336,7 +384,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 }
 
-const appVersion = '0.6.11';
+const appVersion = '0.6.12';
 
 /// 设置分组标题：12/500 次级色，上 24 下 4（Notion 设置分组）
 class SettingsSection extends StatelessWidget {
@@ -380,7 +428,7 @@ class SettingsRow extends StatelessWidget {
                 Text(title, style: tt.bodyMedium?.copyWith(color: fg)),
                 if (hasSub) ...[
                   const SizedBox(height: 2),
-                  Text(subtitle!, maxLines: 2, overflow: TextOverflow.ellipsis, style: tt.bodySmall?.copyWith(color: c.text2)),
+                  Text(subtitle!, maxLines: 6, overflow: TextOverflow.ellipsis, style: tt.bodySmall?.copyWith(color: c.text2)),
                 ],
               ]),
             ),
@@ -389,6 +437,36 @@ class SettingsRow extends StatelessWidget {
           ]),
         ),
       ),
+    );
+  }
+}
+
+class _WireMap extends StatelessWidget {
+  const _WireMap();
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    final tt = Theme.of(context).textTheme;
+    Widget row(String where, String how, bool sealed) => Padding(
+          padding: const EdgeInsets.only(bottom: Gap.xs),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Icon(sealed ? CupertinoIcons.lock_fill : CupertinoIcons.lock_open, size: Sizes.iconSm, color: sealed ? c.success : c.warning),
+            const SizedBox(width: Gap.s),
+            Expanded(child: Text('$where：$how', style: tt.bodySmall?.copyWith(color: c.text2))),
+          ]),
+        );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(Gap.xl, Gap.s, Gap.xl, Gap.m),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('哪些地方是密文', style: tt.bodySmall?.copyWith(color: c.text)),
+        const SizedBox(height: Gap.s),
+        row('你的设备内存', '明文，否则你看不到笔记', false),
+        row('线路上的笔记、密码、文件、同步', 'syncnotes-seal 密文，HTTP 也一样', true),
+        row('地址是 https 时', '外面再包一层 TLS', true),
+        row('/health', '明文，只有公钥，没有笔记', false),
+        row('服务器硬盘', '明文。管服务器的人看得到', false),
+      ]),
     );
   }
 }

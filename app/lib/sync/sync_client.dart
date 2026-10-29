@@ -243,8 +243,7 @@ class SyncClient extends ChangeNotifier {
   // ------------------------------------------------------------- connection
 
   static Uri wsUri(String server) {
-    var s = server.trim();
-    if (!s.contains('://')) s = 'ws://$s';
+    var s = normalizeServer(server);
     s = s.replaceFirst(RegExp(r'^http'), 'ws');
     final u = Uri.parse(s);
     // 保留反向代理的路径前缀，例如 https://host/notes → wss://host/notes/ws

@@ -53,11 +53,12 @@ class _LoginPageState extends State<LoginPage> {
   List<DiscoveredServer> _found = [];
 
   Future<void> _submit() async {
-    final server = _server.text.trim();
+    final server = normalizeServer(_server.text);
     if (server.isEmpty || _user.text.trim().isEmpty || _pw.text.isEmpty) {
       setState(() => _error = '请填写服务器地址、用户名和密码');
       return;
     }
+    if (_server.text != server) _server.text = server;
     setState(() {
       _busy = true;
       _error = null;
@@ -106,7 +107,8 @@ class _LoginPageState extends State<LoginPage> {
       ..username = r.username
       ..token = r.token
       ..rememberPassword = _remember
-      ..savedPassword = _remember ? _pw.text : null;
+      ..savedPassword = _remember ? _pw.text : null
+      ..rememberServer(server);
     widget.onLoggedIn();
   }
 
@@ -221,7 +223,7 @@ class _LoginPageState extends State<LoginPage> {
                       key: const Key('serverField'),
                       c: _server,
                       icon: CupertinoIcons.globe,
-                      hint: '服务器地址，如 192.168.1.10:7700',
+                      hint: '域名自动加 https，IP 自动加 http',
                       label: '服务器地址',
                       suffix: _discovering
                           ? const SizedBox.square(
@@ -285,6 +287,27 @@ class _LoginPageState extends State<LoginPage> {
                         child: Text(_error!, key: const Key('loginError'), textAlign: TextAlign.center, style: tt.bodySmall?.copyWith(color: pal.danger)),
                       ),
               ),
+              if (_pinMismatch)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: Gap.s),
+                  child: Text(
+                    '指纹只用来认出是不是同一台服务器。它不管笔记在服务器硬盘上是不是密文。确定是你自己换过服务器，再点下面。',
+                    textAlign: TextAlign.center,
+                    style: tt.bodySmall?.copyWith(color: pal.text2),
+                  ),
+                ),
+              if (widget.settings.knownServers.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: Gap.m),
+                  child: Wrap(spacing: Gap.s, runSpacing: Gap.s, children: [
+                    for (final s in widget.settings.knownServers)
+                      InputChip(
+                        label: Text(s, overflow: TextOverflow.ellipsis),
+                        onPressed: () => setState(() => _server.text = s),
+                        onDeleted: () => setState(() => widget.settings.forgetServer(s)),
+                      ),
+                  ]),
+                ),
               if (_pinMismatch)
                 Padding(
                   padding: const EdgeInsets.only(bottom: Gap.s),
