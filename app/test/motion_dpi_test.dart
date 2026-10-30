@@ -41,6 +41,32 @@ void main() {
     }
   });
 
+  test('refraction is off at phone scale so the page is not drawn twice', () {
+    expect(Glass.refractsAt(1), isTrue);
+    expect(Glass.refractsAt(2), isTrue);
+    expect(Glass.refractsAt(2.5), isFalse);
+    expect(Glass.refractsAt(3.5), isFalse);
+  });
+
+  testWidgets('high dpi still frosts the glass instead of a flat fill', (tester) async {
+    final wasShader = Glass.useShader;
+    final wasOn = Glass.enabled.value;
+    Glass.useShader = false;
+    Glass.enabled.value = true;
+    addTearDown(() {
+      Glass.useShader = wasShader;
+      Glass.enabled.value = wasOn;
+    });
+    await tester.pumpWidget(MaterialApp(
+      home: MediaQuery(
+        data: const MediaQueryData(devicePixelRatio: 3.5),
+        child: const Glass(child: Text('glass')),
+      ),
+    ));
+    expect(find.byType(BackdropFilter), findsOneWidget);
+    expect(find.text('glass'), findsOneWidget);
+  });
+
   test('high dpi window is converted from physical pixels once', () {
     // 3840×2160 at 200%. Dividing twice would shrink 1120×740.
     expect(

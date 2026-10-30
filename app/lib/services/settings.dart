@@ -25,24 +25,39 @@ class Settings {
   String? get server => prefs.getString('server');
   set server(String? v) => v == null ? prefs.remove('server') : prefs.setString('server', normalizeServer(v));
 
-  /// 登录过的地址，最多 8 个。当前地址始终算在里面。
+  /// 登录过的地址，最多 8 个。当前地址会显示出来，直到用户删掉。
   List<String> get knownServers {
-    final list = prefs.getStringList('known_servers') ?? const <String>[];
+    final list = List<String>.of(prefs.getStringList('known_servers') ?? const []);
     final cur = prefs.getString('server');
-    if (cur != null && cur.isNotEmpty && !list.contains(cur)) return [cur, ...list];
+    if (cur != null && cur.isNotEmpty && !list.any((e) => _sameServer(e, cur)) && !_isForgotten(cur)) {
+      list.insert(0, cur);
+    }
     return list;
   }
 
   void rememberServer(String raw) {
     final s = normalizeServer(raw);
     if (s.isEmpty) return;
-    final next = [s, ...knownServers.where((e) => e != s)].take(8).toList();
+    final forgotten = (prefs.getStringList('forgotten_servers') ?? const <String>[]).where((e) => !_sameServer(e, s)).toList();
+    prefs.setStringList('forgotten_servers', forgotten);
+    final stored = prefs.getStringList('known_servers') ?? const <String>[];
+    final next = [s, ...stored.where((e) => !_sameServer(e, s))].take(8).toList();
     prefs.setStringList('known_servers', next);
   }
 
+  /// 从记住的列表里去掉。正在用的服务器连接不受影响，只是不再出现在候选里。
   void forgetServer(String raw) {
     final s = normalizeServer(raw);
-    prefs.setStringList('known_servers', knownServers.where((e) => e != s).toList());
+    if (s.isEmpty) return;
+    final stored = prefs.getStringList('known_servers') ?? const <String>[];
+    prefs.setStringList('known_servers', stored.where((e) => !_sameServer(e, s)).toList());
+    final forgotten = <String>{...(prefs.getStringList('forgotten_servers') ?? const []), s}.toList();
+    prefs.setStringList('forgotten_servers', forgotten);
+  }
+
+  bool _isForgotten(String raw) {
+    final forgotten = prefs.getStringList('forgotten_servers') ?? const <String>[];
+    return forgotten.any((e) => _sameServer(e, raw));
   }
 
   /// default / sea / dusk / paper / ink
@@ -163,3 +178,5 @@ String normalizeServer(String raw) {
       host.startsWith('[');
   return '${local ? 'http' : 'https'}://$s';
 }
+
+bool _sameServer(String a, String b) => a == b || normalizeServer(a) == normalizeServer(b);

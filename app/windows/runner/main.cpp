@@ -1,5 +1,6 @@
 #include <flutter/dart_project.h>
 #include <flutter/flutter_view_controller.h>
+#include <shlobj.h>
 #include <windows.h>
 
 #include "flutter_window.h"
@@ -16,6 +17,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // Initialize COM, so that it is available for use in the library and/or
   // plugins.
   ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+  // 没有这个 ID，通知区域会把图标归到别的程序上，或者直接不显示。
+  ::SetCurrentProcessExplicitAppUserModelID(L"online.one86.SyncNotes");
 
   flutter::DartProject project(L"data");
 

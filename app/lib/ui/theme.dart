@@ -282,7 +282,7 @@ AppColors tintBackground(AppColors c, String preset) {
   };
   final wash = washes[preset];
   if (wash == null) return c;
-  Color mix(Color base) => Color.lerp(base, wash, 0.22)!;
+  Color mix(Color base) => Color.lerp(base, wash, 0.42)!;
   return AppColors(
     bg: mix(c.bg),
     sidebar: mix(c.sidebar),

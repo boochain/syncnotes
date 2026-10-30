@@ -138,7 +138,7 @@ class _SettingsPageState extends State<SettingsPage> {
               key: const Key('settingsGlass'),
               icon: CupertinoIcons.drop,
               title: '液态玻璃',
-              subtitle: st.liquidGlass ? '菜单和浮层会透出背景。页面保持不透明，切换时不会叠两层。' : '纯色界面',
+              subtitle: st.liquidGlass ? '侧边栏和菜单透出背后的颜色。页面内容保持清楚，切换时不会叠两层。' : '纯色界面',
               trailing: sw(st.liquidGlass, (v) {
                 st.liquidGlass = v;
                 Glass.enabled.value = v;
@@ -311,8 +311,11 @@ class _SettingsPageState extends State<SettingsPage> {
                 child: Wrap(spacing: Gap.s, runSpacing: Gap.s, children: [
                   for (final host in st.knownServers)
                     InputChip(
+                      key: ValueKey('knownServer:$host'),
                       label: Text(host, overflow: TextOverflow.ellipsis),
-                      onDeleted: host == st.server ? null : () => setState(() => st.forgetServer(host)),
+                      deleteButtonTooltipMessage: '删除这个地址',
+                      deleteIcon: Icon(CupertinoIcons.xmark_circle_fill, key: ValueKey('forgetServer:$host'), size: 18),
+                      onDeleted: () => setState(() => st.forgetServer(host)),
                     ),
                 ]),
               ),
@@ -384,7 +387,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 }
 
-const appVersion = '0.6.12';
+const appVersion = '0.6.13';
 
 /// 设置分组标题：12/500 次级色，上 24 下 4（Notion 设置分组）
 class SettingsSection extends StatelessWidget {

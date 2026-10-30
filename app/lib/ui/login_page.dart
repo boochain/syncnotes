@@ -189,6 +189,7 @@ class _LoginPageState extends State<LoginPage> {
     final tt = Theme.of(context).textTheme;
     final divider = Divider(height: 1, thickness: 1, indent: Gap.l + Sizes.iconMd + Gap.l, color: pal.separator);
     return Scaffold(
+      backgroundColor: Colors.transparent,
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(Gap.x3),
@@ -302,9 +303,17 @@ class _LoginPageState extends State<LoginPage> {
                   child: Wrap(spacing: Gap.s, runSpacing: Gap.s, children: [
                     for (final s in widget.settings.knownServers)
                       InputChip(
+                        key: ValueKey('knownServer:$s'),
                         label: Text(s, overflow: TextOverflow.ellipsis),
+                        deleteButtonTooltipMessage: '删除这个地址',
+                        deleteIcon: Icon(CupertinoIcons.xmark_circle_fill, key: ValueKey('forgetServer:$s'), size: 18),
                         onPressed: () => setState(() => _server.text = s),
-                        onDeleted: () => setState(() => widget.settings.forgetServer(s)),
+                        onDeleted: () => setState(() {
+                          widget.settings.forgetServer(s);
+                          if (_server.text.trim() == s || normalizeServer(_server.text) == normalizeServer(s)) {
+                            _server.text = '';
+                          }
+                        }),
                       ),
                   ]),
                 ),

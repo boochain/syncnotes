@@ -28,6 +28,7 @@ class DesktopShell with TrayListener, WindowListener {
   String get _mode => expanded.value ? 'expanded' : 'compact';
   int _unread = 0;
   bool _trayListening = false;
+  static const _winShell = MethodChannel('syncnotes/win_shell');
 
   /// tray_manager 只会在「可执行文件旁边的 data/flutter_assets」里找图标。
   static String bundledAssetPath(String executable, String asset, {String? separator}) {
@@ -149,10 +150,9 @@ class DesktopShell with TrayListener, WindowListener {
     }
     windowManager.addListener(this);
     final trayOk = await ensureTray();
-    if (trayOk && Platform.isWindows) {
-      // 第一次添加有时赶在任务栏就绪之前。窗口还可见时拆掉再加一次。
-      await Future<void>.delayed(const Duration(milliseconds: 200));
-      await _reinstallTray();
+    if (!trayOk && Platform.isWindows) {
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      await ensureTray();
     }
     if (!trayAvailable) {
       // 没有托盘：不能隐藏到托盘，关闭即退出，并且启动时必须显示窗口
@@ -172,6 +172,7 @@ class DesktopShell with TrayListener, WindowListener {
   /// 托盘没起来时（例如用户后来才打开「关闭到托盘」）再试一次。
   Future<bool> ensureTray() async {
     if (trayAvailable) return true;
+    if (Platform.isWindows) return _ensureWindowsTray();
     try {
       if (!await _ensureTrayIcon()) return false;
       await trayManager.setIcon(_trayAsset);
@@ -193,14 +194,20 @@ class DesktopShell with TrayListener, WindowListener {
     }
   }
 
-  Future<void> _reinstallTray() async {
-    if (!Platform.isWindows) return;
+  /// Windows 不用 tray_manager。那个插件不管 Shell_NotifyIcon 成不成功都回报成功，
+  /// 于是开关开着、图标没有、关闭又被拦住。这里用程序自己的图标，并核对系统是否收下。
+  Future<bool> _ensureWindowsTray() async {
     try {
-      await trayManager.destroy();
-      trayAvailable = false;
-      await ensureTray();
+      final ok = await _winShell.invokeMethod<bool>('startTray') ?? false;
+      trayAvailable = ok;
+      await applyClosePolicy();
+      if (ok) await updateUnread(_unread);
+      return ok;
     } catch (e) {
-      debugPrint('tray reinstall: $e');
+      debugPrint('windows tray: $e');
+      trayAvailable = false;
+      await applyClosePolicy();
+      return false;
     }
   }
 
@@ -214,9 +221,16 @@ class DesktopShell with TrayListener, WindowListener {
 
   Future<void> updateUnread(int unread) async {
     _unread = unread;
+    final tip = unread > 0 ? 'SyncNotes · $unread 未读' : 'SyncNotes';
+    if (Platform.isWindows) {
+      try {
+        await _winShell.invokeMethod<void>('setTip', {'text': tip});
+      } catch (_) {}
+      return;
+    }
     try {
       await _setMenu(unread: unread);
-      if (!Platform.isLinux) await trayManager.setToolTip(unread > 0 ? 'SyncNotes · $unread 未读' : 'SyncNotes');
+      if (!Platform.isLinux) await trayManager.setToolTip(tip);
     } catch (_) {}
   }
 
@@ -251,9 +265,15 @@ class DesktopShell with TrayListener, WindowListener {
     }
   }
 
-  /// 只有「关闭到托盘」开着且托盘真的在，才拦住系统关闭。否则点关闭必须能退出。
+  /// Windows 的关闭在原生代码里处理：托盘在，就藏窗口；托盘不在，就真的退出。
+  /// 不再用 window_manager 拦住 WM_CLOSE，那个拦住之后隐藏经常不生效。
   Future<void> applyClosePolicy() async {
     try {
+      if (Platform.isWindows) {
+        await windowManager.setPreventClose(false);
+        await _winShell.invokeMethod<void>('setCloseToTray', {'value': closeHides});
+        return;
+      }
       await windowManager.setPreventClose(closeHides);
     } catch (e) {
       debugPrint('close policy: $e');
@@ -284,9 +304,16 @@ class DesktopShell with TrayListener, WindowListener {
     try {
       await onQuit?.call().timeout(const Duration(seconds: 3));
     } catch (_) {}
-    await windowManager.setPreventClose(false);
-    if (trayAvailable) await trayManager.destroy();
-    await windowManager.destroy();
+    if (Platform.isWindows) {
+      try {
+        await _winShell.invokeMethod<void>('quit');
+      } catch (_) {}
+    }
+    try {
+      await windowManager.setPreventClose(false);
+      if (!Platform.isWindows && trayAvailable) await trayManager.destroy();
+      await windowManager.destroy();
+    } catch (_) {}
     exit(0);
   }
 
@@ -294,16 +321,16 @@ class DesktopShell with TrayListener, WindowListener {
 
   /// 点关闭 → 隐藏到托盘（可在设置里改为直接退出）。
   ///
-  /// 不能在 WM_CLOSE 里面马上 Hide。Windows 会丢掉这次隐藏，关闭又被拦住，
-  /// 窗口就停在原地，看起来像关不掉。
+  /// Windows 不走这里：原生窗口过程在插件之前处理 WM_CLOSE。
+  /// 其它系统如果藏不住，就退出，不能把窗口留在原地。
   bool get closeHides => trayAvailable && (_settings?.closeToTray ?? true);
 
   @override
   void onWindowClose() {
-    if (_closing) return;
+    if (Platform.isWindows || _closing) return;
     _closing = true;
     final hide = closeHides;
-    Future<void>.delayed(const Duration(milliseconds: 80), () async {
+    Future<void>(() async {
       try {
         await _saveBounds();
         if (!hide) {
@@ -311,8 +338,7 @@ class DesktopShell with TrayListener, WindowListener {
           return;
         }
         await windowManager.hide();
-        await Future<void>.delayed(const Duration(milliseconds: 40));
-        if (await windowManager.isVisible()) await windowManager.minimize();
+        if (await windowManager.isVisible()) await quit();
       } finally {
         _closing = false;
       }

@@ -253,30 +253,48 @@ class AppShellState extends State<AppShell> implements PageHost {
             ),
           ));
           final pal = AppColors.of(context);
+          return ValueListenableBuilder<bool>(
+            valueListenable: Glass.enabled,
+            builder: (context, glassOn, _) {
           final shell = Scaffold(
             key: _scaffold,
-            backgroundColor: pal.bg,
-            drawer: _wide ? null : Drawer(child: SafeArea(child: sidebar)),
+            backgroundColor: glassOn ? Colors.transparent : pal.bg,
+            drawer: _wide
+                ? null
+                : Drawer(
+                    backgroundColor: glassOn ? Colors.transparent : pal.sidebar,
+                    child: Frosted(color: pal.sidebar, child: sidebar),
+                  ),
             body: Column(children: [
               Expanded(
                 child: _wide
                     ? Row(children: [
-                        Container(
+                        SizedBox(
                           width: Sizes.sidebarWidth,
-                          decoration: BoxDecoration(
+                          child: Frosted(
                             color: pal.sidebar,
                             border: Border(right: BorderSide(color: pal.separator)),
+                            child: sidebar,
                           ),
-                          child: sidebar,
                         ),
-                        Expanded(child: _RebuildingHome(home: home, navKey: _navKey, child: content)),
+                        Expanded(
+                          child: ColoredBox(
+                            color: glassOn ? pal.bg.withValues(alpha: 0.9) : pal.bg,
+                            child: _RebuildingHome(home: home, navKey: _navKey, child: content),
+                          ),
+                        ),
                       ])
-                    : _RebuildingHome(home: home, navKey: _navKey, child: content),
+                    : ColoredBox(
+                        color: glassOn ? pal.bg.withValues(alpha: 0.92) : pal.bg,
+                        child: _RebuildingHome(home: home, navKey: _navKey, child: content),
+                      ),
               ),
               TransferStrip(onOpen: _transfers),
             ]),
           );
           return GlassBackdrop(child: shell);
+            },
+          );
         }),
       ),
     ),

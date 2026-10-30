@@ -53,7 +53,7 @@ Future<void> _main(List<String> args) async {
   }
   unawaited(Notifier.init());
   Glass.useShader = Platform.environment['SYNCNOTES_GLASS'] != '0';
-  Glass.enabled.value = settings.liquidGlass && Glass.useShader;
+  Glass.enabled.value = settings.liquidGlass;
   Glass.opacity.value = settings.glassOpacity;
   Glass.preset.value = settings.bgPreset;
   if (Glass.useShader) {

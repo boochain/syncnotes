@@ -3,10 +3,14 @@
 
 #include <flutter/dart_project.h>
 #include <flutter/flutter_view_controller.h>
+#include <flutter/method_channel.h>
+#include <flutter/standard_method_codec.h>
 
 #include <memory>
 
 #include "win32_window.h"
+
+#include <shellapi.h>
 
 // A window that does nothing but host a Flutter view.
 class FlutterWindow : public Win32Window {
@@ -23,11 +27,23 @@ class FlutterWindow : public Win32Window {
                          LPARAM const lparam) noexcept override;
 
  private:
-  // The project to run.
-  flutter::DartProject project_;
+  bool AddTray(HWND window);
+  void RemoveTray();
+  void ShowFromTray(HWND window);
+  void ShowTrayMenu(HWND window);
 
-  // The Flutter instance hosted by this window.
+  flutter::DartProject project_;
   std::unique_ptr<flutter::FlutterViewController> flutter_controller_;
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> shell_channel_;
+
+  NOTIFYICONDATAW tray_{};
+  UINT taskbar_created_ = 0;
+  bool tray_ok_ = false;
+  bool icon_owned_ = false;
+  bool told_user_ = false;
+  bool close_to_tray_ = true;
+  bool force_quit_ = false;
+  int tray_tries_ = 0;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_
