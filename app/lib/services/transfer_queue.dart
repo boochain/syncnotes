@@ -45,6 +45,8 @@ class TransferJob {
   TransferStatus status = TransferStatus.queued;
   String? error;
   bool cancelRequested = false;
+  /// 字节已经交给网络，在等服务器确认。这时候不能显示 100%。
+  bool confirming = false;
   Uint8List? mem;
   DateTime sampleAt = DateTime.now();
   int sampleDone = 0;
@@ -77,6 +79,9 @@ class TransferQueue extends ChangeNotifier {
     }
     for (final j in jobs) {
       if (j.status == TransferStatus.queued) return j;
+    }
+    for (var i = jobs.length - 1; i >= 0; i--) {
+      if (jobs[i].status == TransferStatus.failed) return jobs[i];
     }
     return null;
   }
@@ -173,11 +178,20 @@ class TransferQueue extends ChangeNotifier {
     j.speed = 0;
     j.error = null;
     j.cancelRequested = false;
+    j.confirming = false;
     j.sampleDone = 0;
     j.completer = Completer<String>();
     unawaited(j.completer.future.catchError((Object _) => ''));
     notifyListeners();
     _pump();
+  }
+
+  void dismiss(String id) {
+    final j = _byId(id);
+    if (j == null) return;
+    if (j.status == TransferStatus.running || j.status == TransferStatus.queued) return;
+    jobs.remove(j);
+    notifyListeners();
   }
 
   void clearFinished() {
@@ -259,12 +273,17 @@ class TransferQueue extends ChangeNotifier {
           source: j.bytes != null ? null : (j.open?.call() ?? (j.path == null ? null : File(j.path!).openRead())),
           total: j.total,
           onProgress: (d, t) => _progress(j, d, t),
+          onWaiting: () {
+            j.confirming = true;
+            progress.value++;
+          },
           isCanceled: () => j.cancelRequested,
         );
         j.fileId = up.id;
         j.sha256 = up.sha256;
         j.done = up.size;
         j.total = up.size;
+        j.confirming = false;
         j.status = TransferStatus.done;
         j.speed = 0;
         try {
@@ -304,6 +323,7 @@ class TransferQueue extends ChangeNotifier {
     } catch (e) {
       final canceled = j.cancelRequested || '$e'.contains('已取消');
       j.status = canceled ? TransferStatus.canceled : TransferStatus.failed;
+      j.confirming = false;
       j.error = canceled ? '已取消' : '$e';
       j.speed = 0;
       if (j.dir == TransferDir.down && j.dest != null) {

@@ -24,8 +24,11 @@ String? formatEta(TransferJob j) {
 }
 
 String formatPct(TransferJob j) {
+  if (j.confirming) return '确认中';
+  if (j.status == TransferStatus.failed) return '失败';
   if (j.total <= 0) return formatBytes(j.done);
-  final p = (100 * j.done / j.total).clamp(0, 100);
+  final p = (100 * j.done / j.total).clamp(0, 99);
+  if (j.status == TransferStatus.done) return '100%';
   return '${p.toStringAsFixed(0)}%';
 }
 
@@ -85,8 +88,8 @@ class _Tile extends StatelessWidget {
     final eta = formatEta(job);
     final sub = switch (job.status) {
       TransferStatus.queued => '等待中',
-      TransferStatus.running => job.total > 0 && job.done >= job.total
-          ? '正在确认 · ${formatPct(job)}'
+      TransferStatus.running => job.confirming
+          ? '正在等服务器确认'
           : [formatPct(job), formatSpeed(job.speed), ?eta].join(' · '),
       TransferStatus.done => '完成 · ${formatBytes(job.done == 0 ? job.total : job.done)}',
       TransferStatus.failed => job.error ?? '失败',
@@ -101,14 +104,14 @@ class _Tile extends StatelessWidget {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(job.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: tt.bodyMedium),
             const SizedBox(height: 2),
-            Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: tt.bodySmall?.copyWith(color: job.status == TransferStatus.failed ? c.danger : c.text2)),
+            Text(sub, maxLines: job.status == TransferStatus.failed ? 3 : 1, overflow: TextOverflow.ellipsis, style: tt.bodySmall?.copyWith(color: job.status == TransferStatus.failed ? c.danger : c.text2)),
             if (job.status == TransferStatus.running || job.status == TransferStatus.queued) ...[
               const SizedBox(height: Gap.s),
               ClipRRect(
                 borderRadius: BorderRadius.circular(2),
                 child: LinearProgressIndicator(
                   minHeight: 3,
-                  value: job.total <= 0 || job.status == TransferStatus.queued ? null : job.fraction,
+                  value: job.confirming || job.total <= 0 || job.status == TransferStatus.queued ? null : job.fraction,
                   backgroundColor: c.fill,
                   color: c.accent,
                 ),
@@ -147,6 +150,37 @@ class TransferStrip extends StatelessWidget {
         final j = q.current;
         if (j == null) return const SizedBox.shrink();
         final c = AppColors.of(context);
+        if (j.status == TransferStatus.failed) {
+          return Material(
+            color: c.sidebar,
+            child: InkWell(
+              onTap: onOpen,
+              child: Container(
+                key: const Key('transferStrip'),
+                constraints: const BoxConstraints(minHeight: Sizes.bar),
+                padding: const EdgeInsets.symmetric(horizontal: Gap.l, vertical: Gap.s),
+                decoration: BoxDecoration(border: Border(top: BorderSide(color: c.separator))),
+                child: Row(children: [
+                  Icon(CupertinoIcons.exclamationmark_circle, size: Sizes.iconSm, color: c.danger),
+                  const SizedBox(width: Gap.m),
+                  Expanded(
+                    child: Text(
+                      '${j.name}：${j.error ?? '失败'}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(color: c.danger),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: '关闭',
+                    onPressed: () => q.dismiss(j.id),
+                    icon: Icon(CupertinoIcons.xmark, size: Sizes.iconSm, color: c.text2),
+                  ),
+                ]),
+              ),
+            ),
+          );
+        }
         final extra = q.activeCount > 1 ? '  +${q.activeCount - 1}' : '';
         return Material(
           color: c.sidebar,
@@ -183,7 +217,7 @@ class TransferStrip extends StatelessWidget {
                     borderRadius: BorderRadius.circular(2),
                     child: LinearProgressIndicator(
                       minHeight: 3,
-                      value: j.total <= 0 ? null : j.fraction,
+                      value: j.confirming || j.total <= 0 ? null : j.fraction,
                       backgroundColor: c.fill,
                       color: c.accent,
                     ),

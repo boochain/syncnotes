@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
@@ -203,6 +204,7 @@ class AuthApi {
     Stream<List<int>>? source,
     int total = 0,
     void Function(int done, int total)? onProgress,
+    void Function()? onWaiting,
     bool Function()? isCanceled,
   }) async {
     if (!wireSeal) {
@@ -221,14 +223,13 @@ class AuthApi {
       'token': token,
     }));
     final pending = await HttpPending.seal(serverPub: pub, method: 3, path: '/api/blob', headersJson: utf8.encode('{}'), body: meta);
-    final req = http.StreamedRequest('POST', endpoint(server, '/api/blob'));
-    req.headers['content-type'] = 'application/octet-stream';
-    if (known != null) req.contentLength = 4 + pending.envelope.length + _framedBytes(known);
-    final sent = client.send(req);
     final hash = Sha256().toSync().newHashSink();
+    final io = HttpClient()..connectionTimeout = const Duration(seconds: 20);
     try {
-      req.sink.add(_u32(pending.envelope.length));
-      req.sink.add(pending.envelope);
+      final req = await io.postUrl(endpoint(server, '/api/blob'));
+      req.headers.contentType = ContentType('application', 'octet-stream');
+      req.persistentConnection = false;
+      if (known != null) req.contentLength = 4 + pending.envelope.length + _framedBytes(known);
       final key = await pending.chunkKey();
       var idx = 0;
       var done = 0;
@@ -240,13 +241,20 @@ class AuthApi {
         }
         hash.add(plain);
         final ct = await sealChunk(key, idx++, plain);
-        req.sink.add(_u32(ct.length));
-        req.sink.add(ct);
+        final frame = BytesBuilder(copy: false)
+          ..add(_u32(ct.length))
+          ..add(ct);
+        // flush 要等套接字收下，进度才是真的发出去了，而不是堆在内存里。
+        req.add(frame.takeBytes());
+        await req.flush();
         done += plain.length;
         final shown = known != null && known > 0 && done >= known ? known - 1 : done;
         onProgress?.call(shown < 0 ? 0 : shown, known == null || known == 0 ? done : known);
       }
 
+      req.add(_u32(pending.envelope.length));
+      req.add(pending.envelope);
+      await req.flush();
       if (bytes != null) {
         final src = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
         for (var i = 0; i < src.length; i += WireSeal.chunkSize) {
@@ -267,13 +275,26 @@ class AuthApi {
       if (known != null && done != known) {
         throw AuthException('文件长度和声明不一致（$done / $known）');
       }
-      req.sink.add(_u32(0));
-      await req.sink.close();
-      // 字节已经交出去。界面显示“正在确认”，超时就失败，而不是停在 100%。
-      if (known != null && known > 0) onProgress?.call(known, known);
-      final res = await sent.timeout(const Duration(seconds: 90));
-      final raw = await res.stream.toBytes().timeout(const Duration(seconds: 30));
-      if (res.statusCode != 200) throw AuthException(_netText(utf8.decode(raw, allowMalformed: true)));
+      req.add(_u32(0));
+      await req.flush();
+      onWaiting?.call();
+      final pendingClose = req.close();
+      final HttpClientResponse res;
+      try {
+        res = await pendingClose.timeout(const Duration(seconds: 60));
+      } on TimeoutException {
+        io.close(force: true);
+        unawaited(pendingClose.then((_) {}, onError: (Object _) {}));
+        throw AuthException('数据已经发出，服务器没有回复。请确认服务在运行；用了 Nginx 或 Caddy 的话，要允许大文件。');
+      }
+      final raw = await res.fold<BytesBuilder>(BytesBuilder(copy: false), (b, c) {
+        b.add(c);
+        return b;
+      }).timeout(const Duration(seconds: 30)).then((b) => b.takeBytes());
+      if (res.statusCode == 413) {
+        throw AuthException('上传被拒绝：请求太大。Nginx 要设 client_max_body_size，Caddy 要设 request_body。');
+      }
+      if (res.statusCode != 200) throw AuthException(_netText(utf8.decode(raw, allowMalformed: true), upload: true, status: res.statusCode));
       final (status, body) = await pending.openResponse(raw);
       if (status != 200) throw AuthException(utf8.decode(body));
       final j = jsonDecode(utf8.decode(body)) as Map;
@@ -285,14 +306,12 @@ class AuthApi {
       onProgress?.call(size, size);
       return UploadedFile(id: j['file_id'] as String, sha256: sha, size: size);
     } catch (e) {
-      try {
-        await req.sink.close();
-      } catch (_) {}
-      // 长度不符时可能还没等响应。把发送的 Future 接住，避免连接错误变成未处理异常。
-      unawaited(sent.then((r) => r.stream.drain<void>(), onError: (Object _) {}));
+      io.close(force: true);
       if (e is AuthException) rethrow;
       if (e is WireException) throw AuthException('$e');
       throw AuthException(_netText('$e', upload: true));
+    } finally {
+      io.close(force: false);
     }
   }
 
@@ -465,19 +484,23 @@ String _sha256(List<int> b) {
   return _hex(s.hashSync().bytes);
 }
 
-String _netText(String raw, {bool upload = false}) {
+String _netText(String raw, {bool upload = false, int? status}) {
+  if (status == 413 || raw.contains('413') || raw.toLowerCase().contains('request entity too large') || raw.contains('Payload Too Large')) {
+    return '上传被拒绝：请求太大。Nginx 要设 client_max_body_size，Caddy 要设 request_body。';
+  }
   final s = raw.toLowerCase();
   if (s.contains('connection closed') ||
       s.contains('connection reset') ||
       s.contains('connection abort') ||
       s.contains('broken pipe') ||
       raw.contains('连接中断')) {
-    return upload ? '上传失败：服务器关闭了连接。请确认服务器已升级到同一版本后重试。' : '下载失败：服务器关闭了连接。请确认服务器已升级到同一版本后重试。';
+    return upload ? '连接被关掉了，上传没有完成。如果前面有反代，先把上传大小限制放开。' : '下载失败：连接被关掉了。';
   }
   if (s.contains('timeout') || raw.contains('Timeout')) {
-    return upload ? '上传失败：服务器没有确认，连接已中断。' : '下载失败：服务器没有确认，连接已中断。';
+    return upload ? '数据已经发出，服务器没有回复。请确认服务在运行；用了 Nginx 或 Caddy 的话，要允许大文件。' : '下载失败：服务器没有回复。';
   }
   if (raw.startsWith('上传失败') || raw.startsWith('下载失败')) return raw;
+  if (upload && status != null && raw.trim().isEmpty) return '上传失败（HTTP $status）';
   return upload ? '上传失败：$raw' : raw;
 }
 

@@ -26,6 +26,7 @@ class _FakeApi extends AuthApi {
     Stream<List<int>>? source,
     int total = 0,
     void Function(int done, int total)? onProgress,
+    void Function()? onWaiting,
     bool Function()? isCanceled,
   }) async {
     uploads.add(name);

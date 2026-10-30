@@ -41,6 +41,22 @@ void main() {
     }
   });
 
+  test('expand and collapse never restore the same window size', () {
+    const wide = Size(1120, 740);
+    expect(
+      DesktopShell.sizeForToggle(expand: false, current: wide, saved: wide),
+      DesktopShell.windowSize,
+    );
+    expect(
+      DesktopShell.sizeForToggle(expand: true, current: DesktopShell.windowSize, saved: DesktopShell.windowSize),
+      DesktopShell.expandedSize,
+    );
+    expect(
+      DesktopShell.sizeForToggle(expand: false, current: wide, saved: const Size(420, 640)).width,
+      420,
+    );
+  });
+
   test('refraction is off at phone scale so the page is not drawn twice', () {
     expect(Glass.refractsAt(1), isTrue);
     expect(Glass.refractsAt(2), isTrue);

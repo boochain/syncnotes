@@ -28,6 +28,7 @@ class DesktopShell with TrayListener, WindowListener {
   String get _mode => expanded.value ? 'expanded' : 'compact';
   int _unread = 0;
   bool _trayListening = false;
+  bool _sizing = false;
   static const _winShell = MethodChannel('syncnotes/win_shell');
 
   /// tray_manager 只会在「可执行文件旁边的 data/flutter_assets」里找图标。
@@ -109,10 +110,26 @@ class DesktopShell with TrayListener, WindowListener {
     } catch (_) {}
   }
 
+  /// 展开必须比现在大，收起必须比现在小。两边存成同一个尺寸时，按钮看起来就像坏了。
+  static Size sizeForToggle({required bool expand, required Size current, Size? saved}) {
+    if (saved != null && saved.width >= minimumSize.width && saved.height >= minimumSize.height) {
+      final distinct = expand ? saved.width >= current.width + 48 : saved.width <= current.width - 48;
+      if (distinct) return saved;
+    }
+    return expand ? expandedSize : windowSize;
+  }
+
   @override
-  void onWindowResized() => _saveBounds();
+  void onWindowResized() {
+    if (_sizing) return;
+    _saveBounds();
+  }
+
   @override
-  void onWindowMoved() => _saveBounds();
+  void onWindowMoved() {
+    if (_sizing) return;
+    _saveBounds();
+  }
 
   Future<void> init({required bool startHidden, Settings? settings}) async {
     _settings = settings;
@@ -252,16 +269,34 @@ class DesktopShell with TrayListener, WindowListener {
   final expanded = ValueNotifier<bool>(false);
   static const Size expandedSize = Size(1120, 740);
   Future<void> toggleExpanded() async {
-    expanded.value = !expanded.value;
-    _settings?.windowExpanded = expanded.value;
-    if (await _restoreBounds()) return;
-    final next = fitToDisplay(expanded.value ? expandedSize : windowSize);
-    if (expanded.value) {
-      await windowManager.setSize(next);
-      await windowManager.center();
-    } else {
-      await windowManager.setSize(next);
-      await windowManager.setAlignment(Alignment.bottomRight);
+    if (_sizing) return;
+    _sizing = true;
+    final want = !expanded.value;
+    expanded.value = want;
+    _settings?.windowExpanded = want;
+    try {
+      if (await windowManager.isFullScreen()) await windowManager.setFullScreen(false);
+      if (await windowManager.isMaximized()) await windowManager.unmaximize();
+      final current = await windowManager.getSize();
+      final saved = _settings?.windowBounds(want ? 'expanded' : 'compact');
+      final target = fitToDisplay(sizeForToggle(
+        expand: want,
+        current: current,
+        saved: saved == null ? null : Size(saved.width, saved.height),
+      ));
+      await windowManager.setSize(target);
+      if (saved != null && (saved.width - target.width).abs() < 2 && (saved.height - target.height).abs() < 2) {
+        await windowManager.setPosition(Offset(saved.left, saved.top));
+      } else if (want) {
+        await windowManager.center();
+      } else {
+        await windowManager.setAlignment(Alignment.bottomRight);
+      }
+    } catch (e) {
+      debugPrint('resize window: $e');
+    } finally {
+      _sizing = false;
+      await _saveBounds();
     }
   }
 
