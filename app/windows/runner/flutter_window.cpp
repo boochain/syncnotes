@@ -13,6 +13,7 @@ constexpr UINT kWmTray = WM_APP + 21;
 constexpr UINT_PTR kTrayTimer = 1;
 constexpr UINT kCmdShow = 1;
 constexpr UINT kCmdQuit = 2;
+constexpr UINT kCmdNew = 3;
 
 std::wstring TipFor(const std::string& text) {
   if (text.empty()) return L"SyncNotes";
@@ -97,6 +98,7 @@ void FlutterWindow::ShowFromTray(HWND window) {
 void FlutterWindow::ShowTrayMenu(HWND window) {
   HMENU menu = CreatePopupMenu();
   if (menu == nullptr) return;
+  AppendMenuW(menu, MF_STRING, kCmdNew, L"新建笔记");
   AppendMenuW(menu, MF_STRING, kCmdShow, L"显示窗口");
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
   AppendMenuW(menu, MF_STRING, kCmdQuit, L"退出");
@@ -229,6 +231,10 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
     switch (LOWORD(wparam)) {
       case kCmdShow:
         ShowFromTray(hwnd);
+        return 0;
+      case kCmdNew:
+        ShowFromTray(hwnd);
+        if (shell_channel_) shell_channel_->InvokeMethod("trayNew", nullptr);
         return 0;
       case kCmdQuit:
         force_quit_ = true;

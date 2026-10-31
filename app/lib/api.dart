@@ -103,6 +103,36 @@ class SyncApi {
     if (res.statusCode != 204 && res.statusCode != 200) _ok(res);
   }
 
+  Future<void> changePassword(String server, String token, String password, String newPassword) async {
+    final res = await client
+        .post(
+          endpoint(server, '/v1/password'),
+          headers: {'authorization': 'Bearer $token', 'content-type': 'application/json'},
+          body: jsonEncode({'password': password, 'new_password': newPassword}),
+        )
+        .timeout(const Duration(seconds: 30));
+    _ok(res);
+  }
+
+  Future<void> putShare(String server, String token, {required String id, required String nonce, required String ciphertext}) async {
+    final res = await client
+        .post(
+          endpoint(server, '/v1/shares'),
+          headers: {'authorization': 'Bearer $token', 'content-type': 'application/json'},
+          body: jsonEncode({'id': id, 'nonce': nonce, 'ciphertext': ciphertext}),
+        )
+        .timeout(const Duration(seconds: 30));
+    if (res.statusCode == 404) throw SyncException('这台服务器还不能分享，请先升级服务端');
+    _ok(res);
+  }
+
+  Future<SealedNote> getShare(String server, String id) async {
+    final res = await client.get(endpoint(server, '/v1/shares/$id')).timeout(const Duration(seconds: 20));
+    if (res.statusCode == 404) throw SyncException('找不到这份分享。确认编号，并确认服务器已升级。');
+    final map = _json(res);
+    return SealedNote(nonce: map['nonce'] as String, ciphertext: map['ciphertext'] as String);
+  }
+
   /// 上传已经加密好的文件。进度是套接字收下的字节，不到服务器回复不报完成。
   Future<Uploaded> uploadFile(
     String server,

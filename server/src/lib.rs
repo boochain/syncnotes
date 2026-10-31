@@ -121,6 +121,13 @@ impl AppState {
               name TEXT NOT NULL,
               size INTEGER NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS shares (
+              id TEXT PRIMARY KEY,
+              user_id TEXT NOT NULL,
+              nonce TEXT NOT NULL,
+              ciphertext TEXT NOT NULL,
+              created_at INTEGER NOT NULL
+            );
             ",
         )
         .map_err(|e| e.to_string())?;
@@ -147,6 +154,9 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/sync", get(sync_ws))
         .route("/v1/files", post(upload_file).layer(DefaultBodyLimit::disable()))
         .route("/v1/files/:id", get(download_file))
+        .route("/v1/password", post(change_password))
+        .route("/v1/shares", post(create_share))
+        .route("/v1/shares/:id", get(get_share).delete(delete_share))
         .with_state(state)
 }
 
@@ -266,6 +276,112 @@ async fn login(State(st): State<AppState>, Json(body): Json<Creds>) -> axum::res
         return err(StatusCode::INTERNAL_SERVER_ERROR, "服务器内部错误");
     }
     (StatusCode::OK, Json(Session { token, user_id: id, username })).into_response()
+}
+
+#[derive(Deserialize)]
+struct PasswordChange {
+    password: String,
+    new_password: String,
+}
+
+async fn change_password(State(st): State<AppState>, headers: HeaderMap, Json(body): Json<PasswordChange>) -> axum::response::Response {
+    let Some(user) = user_for(&st, &headers) else {
+        return err(StatusCode::UNAUTHORIZED, "无效令牌");
+    };
+    if let Err(m) = check_password(&body.new_password) {
+        return err(StatusCode::BAD_REQUEST, m);
+    }
+    let hash: String = {
+        let db = st.lock();
+        match db.query_row("SELECT password_hash FROM users WHERE id = ?1", params![user], |r| r.get(0)) {
+            Ok(h) => h,
+            Err(_) => return err(StatusCode::UNAUTHORIZED, "无效令牌"),
+        }
+    };
+    if !verify_password(&body.password, &hash) {
+        return err(StatusCode::UNAUTHORIZED, "现在的密码不对");
+    }
+    let next = match hash_password(&body.new_password) {
+        Ok(h) => h,
+        Err(_) => return err(StatusCode::INTERNAL_SERVER_ERROR, "服务器内部错误"),
+    };
+    if st.lock().execute("UPDATE users SET password_hash = ?1 WHERE id = ?2", params![next, user]).is_err() {
+        return err(StatusCode::INTERNAL_SERVER_ERROR, "服务器内部错误");
+    }
+    (StatusCode::OK, Json(json!({"ok": true}))).into_response()
+}
+
+#[derive(Deserialize)]
+struct ShareIn {
+    id: String,
+    nonce: String,
+    ciphertext: String,
+}
+
+fn share_id_ok(id: &str) -> bool {
+    let n = id.len();
+    (16..=80).contains(&n) && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+}
+
+async fn create_share(State(st): State<AppState>, headers: HeaderMap, Json(body): Json<ShareIn>) -> axum::response::Response {
+    let Some(user) = user_for(&st, &headers) else {
+        return err(StatusCode::UNAUTHORIZED, "无效令牌");
+    };
+    if !share_id_ok(&body.id) || body.nonce.is_empty() || body.ciphertext.is_empty() {
+        return err(StatusCode::BAD_REQUEST, "分享内容不完整");
+    }
+    if body.ciphertext.len() > 2_000_000 {
+        return err(StatusCode::PAYLOAD_TOO_LARGE, "分享内容过大");
+    }
+    let now = chrono_now();
+    let owner: Option<String> = st.lock().query_row("SELECT user_id FROM shares WHERE id = ?1", params![body.id], |r| r.get(0)).ok();
+    if let Some(owner) = owner {
+        if owner != user {
+            return err(StatusCode::CONFLICT, "这个分享编号已经有人用了");
+        }
+        if st.lock().execute("UPDATE shares SET nonce = ?1, ciphertext = ?2, created_at = ?3 WHERE id = ?4", params![body.nonce, body.ciphertext, now, body.id]).is_err() {
+            return err(StatusCode::INTERNAL_SERVER_ERROR, "服务器内部错误");
+        }
+        return (StatusCode::OK, Json(json!({"id": body.id}))).into_response();
+    }
+    let result = st.lock().execute(
+        "INSERT INTO shares (id, user_id, nonce, ciphertext, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![body.id, user, body.nonce, body.ciphertext, now],
+    );
+    match result {
+        Ok(_) => (StatusCode::OK, Json(json!({"id": body.id}))).into_response(),
+        Err(_) => err(StatusCode::INTERNAL_SERVER_ERROR, "服务器内部错误"),
+    }
+}
+
+async fn get_share(State(st): State<AppState>, UrlPath(id): UrlPath<String>) -> axum::response::Response {
+    if !share_id_ok(&id) {
+        return err(StatusCode::BAD_REQUEST, "分享编号不对");
+    }
+    let row = st.lock().query_row(
+        "SELECT nonce, ciphertext FROM shares WHERE id = ?1",
+        params![id],
+        |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+    );
+    match row {
+        Ok((nonce, ciphertext)) => (StatusCode::OK, Json(json!({"id": id, "nonce": nonce, "ciphertext": ciphertext}))).into_response(),
+        Err(_) => err(StatusCode::NOT_FOUND, "找不到这份分享"),
+    }
+}
+
+async fn delete_share(State(st): State<AppState>, headers: HeaderMap, UrlPath(id): UrlPath<String>) -> axum::response::Response {
+    let Some(user) = user_for(&st, &headers) else {
+        return err(StatusCode::UNAUTHORIZED, "无效令牌");
+    };
+    let n = st.lock().execute("DELETE FROM shares WHERE id = ?1 AND user_id = ?2", params![id, user]).unwrap_or(0);
+    if n == 0 {
+        return err(StatusCode::NOT_FOUND, "找不到这份分享");
+    }
+    StatusCode::NO_CONTENT.into_response()
+}
+
+fn chrono_now() -> i64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
 }
 
 fn user_for(st: &AppState, headers: &HeaderMap) -> Option<String> {

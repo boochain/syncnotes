@@ -3,10 +3,11 @@ import 'package:flutter/material.dart';
 import 'library.dart';
 
 class MarkdownBody extends StatelessWidget {
-  const MarkdownBody({super.key, required this.text, this.onWiki, this.onToggleTask});
+  const MarkdownBody({super.key, required this.text, this.onWiki, this.onToggleTask, this.onFile});
   final String text;
   final void Function(String title)? onWiki;
   final void Function(int line)? onToggleTask;
+  final void Function(String id)? onFile;
 
   @override
   Widget build(BuildContext context) {
@@ -29,6 +30,35 @@ class MarkdownBody extends StatelessWidget {
           color: Theme.of(context).colorScheme.surfaceContainerHighest,
           child: Text(buf.join('\n'), style: const TextStyle(fontFamily: 'monospace')),
         ));
+        continue;
+      }
+      if (lines[i].startsWith('|')) {
+        final rows = <List<String>>[];
+        while (i < lines.length && lines[i].startsWith('|')) {
+          final cells = lines[i].split('|').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+          if (cells.isNotEmpty && !cells.every((c) => RegExp(r'^:?-+:?$').hasMatch(c))) rows.add(cells);
+          i++;
+        }
+        if (rows.isNotEmpty) {
+          children.add(SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Table(
+              defaultColumnWidth: const IntrinsicColumnWidth(),
+              border: TableBorder.all(color: Theme.of(context).colorScheme.outlineVariant),
+              children: [
+                for (final row in rows) TableRow(children: [for (final cell in row) Padding(padding: const EdgeInsets.all(6), child: Text(cell))]),
+              ],
+            ),
+          ));
+        }
+        continue;
+      }
+      final image = RegExp(r'^!\[([^\]]*)\]\(snfile:([^)]+)\)$').firstMatch(lines[i].trim());
+      if (image != null) {
+        final name = image.group(1)!.isEmpty ? '图片' : image.group(1)!;
+        final id = image.group(2)!;
+        children.add(ActionChip(label: Text('图片 · $name'), onPressed: onFile == null ? null : () => onFile!(id)));
+        i++;
         continue;
       }
       children.add(_line(context, lines[i], i));

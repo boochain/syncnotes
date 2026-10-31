@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="new_note"
+        android:enabled="true"
+        android:shortcutShortLabel="@string/new_note"
+        android:shortcutLongLabel="@string/new_note">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.frec86.syncnotes"
+            android:targetClass="com.frec86.syncnotes.MainActivity"
+            android:data="syncnotes://new" />
+    </shortcut>
+</shortcuts>

@@ -107,6 +107,10 @@ List<Note> selectNotes(
         return a.heading.toLowerCase().compareTo(b.heading.toLowerCase());
       case 'created':
         return b.createdAt.compareTo(a.createdAt);
+      case 'order':
+        final byOrder = a.order.compareTo(b.order);
+        if (byOrder != 0) return byOrder;
+        return b.updatedAt.compareTo(a.updatedAt);
       default:
         return b.updatedAt.compareTo(a.updatedAt);
     }
@@ -243,3 +247,102 @@ int nextMatch(String text, String query, int from) {
 }
 
 const folderIcons = ['', '📁', '📝', '✅', '💡', '🏠', '💼', '📚', '🔒', '⭐'];
+
+const noteColors = <String, String>{'': '无', 'red': '红', 'amber': '黄', 'green': '绿', 'blue': '蓝', 'purple': '紫'};
+
+String markdownTable() => '| 列1 | 列2 | 列3 |\n| --- | --- | --- |\n|  |  |  |\n|  |  |  |\n';
+
+({String text, int count}) replaceMatches(String text, String find, String replace, {required bool all, int from = 0}) {
+  if (find.isEmpty) return (text: text, count: 0);
+  if (!all) {
+    final at = text.indexOf(find, from.clamp(0, text.length));
+    final start = at < 0 ? text.indexOf(find) : at;
+    if (start < 0) return (text: text, count: 0);
+    return (text: text.replaceRange(start, start + find.length, replace), count: 1);
+  }
+  final count = find.allMatches(text).length;
+  return (text: text.replaceAll(find, replace), count: count);
+}
+
+String readableText(String html) {
+  final noScript = html.replaceAll(RegExp(r'<script[\s\S]*?</script>', caseSensitive: false), ' ');
+  final noStyle = noScript.replaceAll(RegExp(r'<style[\s\S]*?</style>', caseSensitive: false), ' ');
+  final titled = RegExp(r'<title>([\s\S]*?)</title>', caseSensitive: false).firstMatch(noStyle);
+  final text = noStyle.replaceAll(RegExp(r'<[^>]+>'), ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+  final title = titled == null ? '' : titled.group(1)!.replaceAll(RegExp(r'\s+'), ' ').trim();
+  if (title.isEmpty) return text;
+  return '$title\n\n$text';
+}
+
+String clipMarkdown({required String url, String title = '', String text = ''}) {
+  final head = title.trim().isEmpty ? url : title.trim();
+  final body = text.trim();
+  return '# $head\n\n来源：$url\n\n$body\n';
+}
+
+const bookmarklet = "javascript:(function(){var t=document.title||'';var s=window.getSelection?String(window.getSelection()):'';prompt('复制到 SyncNotes','# '+t+'\\n\\n来源：'+location.href+'\\n\\n'+s);})();";
+
+class GraphEdge {
+  const GraphEdge(this.fromId, this.toId);
+  final String fromId;
+  final String toId;
+}
+
+List<GraphEdge> wikiEdges(List<Note> notes) {
+  final out = <GraphEdge>[];
+  for (final n in notes) {
+    if (n.folder || n.trashed || n.title.trim().isEmpty) continue;
+    for (final other in backlinksOf(notes, n)) {
+      out.add(GraphEdge(other.id, n.id));
+    }
+  }
+  return out;
+}
+
+List<Note> smartMatches(List<Note> notes, String query) {
+  final q = query.trim();
+  if (q.startsWith('tag:')) return selectNotes(notes, view: 'tag', tag: q.substring(4).trim());
+  if (q.startsWith('color:')) {
+    final color = q.substring(6).trim();
+    return notes.where((n) => !n.folder && !n.trashed && n.color == color).toList();
+  }
+  if (q == 'todo') {
+    return notes.where((n) {
+      if (n.folder || n.trashed) return false;
+      final p = taskProgress(n.body);
+      return p.total > 0 && p.done < p.total;
+    }).toList();
+  }
+  return selectNotes(notes, view: 'all', query: q);
+}
+
+List<Note> dueNotes(List<Note> notes, int now) => notes.where((n) => !n.trashed && !n.folder && n.remindAt != null && n.remindAt! <= now).toList();
+
+void applyManualOrder(List<Note> visible, int oldIndex, int newIndex) {
+  if (oldIndex < 0 || oldIndex >= visible.length) return;
+  var target = newIndex;
+  if (target > oldIndex) target -= 1;
+  target = target.clamp(0, visible.length - 1);
+  final item = visible.removeAt(oldIndex);
+  visible.insert(target, item);
+  for (var i = 0; i < visible.length; i++) {
+    visible[i].order = i;
+  }
+}
+
+bool folderContains(List<Note> notes, String folderId, String noteId) {
+  var id = noteId;
+  final seen = <String>{};
+  while (seen.add(id)) {
+    if (id == folderId) return true;
+    Note? n;
+    for (final e in notes) {
+      if (e.id == id) n = e;
+    }
+    final parent = n?.folderId;
+    if (parent == null) return false;
+    id = parent;
+  }
+  return true;
+}
+

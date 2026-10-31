@@ -52,4 +52,31 @@ void main() {
     notes.single.icon = '📁';
     expect(Note.decode('a', notes.single.encode(), 1).icon, '📁');
   });
+
+  test('table, replace, smart folders, graph, reminders and history', () {
+    expect(markdownTable(), contains('| --- |'));
+    final replaced = replaceMatches('牛奶 牛奶', '牛奶', '面包', all: false, from: 0);
+    expect(replaced.count, 1);
+    expect(replaced.text, '面包 牛奶');
+    expect(readableText('<title>菜谱</title><p>牛奶</p>'), contains('菜谱'));
+    final notes = [
+      _n('a', title: '买菜', body: 'see [[周报]]'),
+      _n('b', title: '周报', body: '- [ ] 写'),
+      _n('c', title: '旧', body: '红'),
+    ];
+    notes[2].color = 'red';
+    expect(wikiEdges(notes).single.toId, 'b');
+    expect(smartMatches(notes, 'todo').single.id, 'b');
+    expect(smartMatches(notes, 'color:red').single.id, 'c');
+    notes[1].remindAt = 10;
+    expect(dueNotes(notes, 11).single.id, 'b');
+    final history = rememberRevision(const [], at: 1, title: 'a', body: 'b');
+    expect(rememberRevision(history, at: 2, title: 'a', body: 'b'), history);
+    expect(pinDigest('1234'), pinDigest('1234'));
+    expect(pinDigest('1234') == pinDigest('9999'), isFalse);
+    final ordered = [_n('a'), _n('b'), _n('c')];
+    applyManualOrder(ordered, 0, 3);
+    expect(ordered.map((n) => n.id).toList(), ['b', 'c', 'a']);
+    expect(ordered.map((n) => n.order).toList(), [0, 1, 2]);
+  });
 }

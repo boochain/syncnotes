@@ -63,6 +63,64 @@ async fn register_login_and_notes_roundtrip() {
 }
 
 #[tokio::test]
+async fn password_change_and_share_roundtrip() {
+    let base = boot().await;
+    let client = reqwest::Client::new();
+    let reg = client
+        .post(format!("{base}/v1/register"))
+        .json(&serde_json::json!({"username": "cara", "password": "secret1"}))
+        .send()
+        .await
+        .unwrap();
+    let session: serde_json::Value = reg.json().await.unwrap();
+    let token = session["token"].as_str().unwrap();
+
+    let bad = client
+        .post(format!("{base}/v1/password"))
+        .bearer_auth(token)
+        .json(&serde_json::json!({"password": "nope", "new_password": "secret2"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(bad.status(), 401);
+
+    let ok = client
+        .post(format!("{base}/v1/password"))
+        .bearer_auth(token)
+        .json(&serde_json::json!({"password": "secret1", "new_password": "secret2"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(ok.status(), 200);
+
+    let again = client
+        .post(format!("{base}/v1/login"))
+        .json(&serde_json::json!({"username": "cara", "password": "secret2"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(again.status(), 200);
+
+    let share = client
+        .post(format!("{base}/v1/shares"))
+        .bearer_auth(token)
+        .json(&serde_json::json!({"id": "11111111-1111-1111-1111-111111111111", "nonce": "bg==", "ciphertext": "aabb"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(share.status(), 200);
+
+    let got = client
+        .get(format!("{base}/v1/shares/11111111-1111-1111-1111-111111111111"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(got.status(), 200);
+    let body: serde_json::Value = got.json().await.unwrap();
+    assert_eq!(body["ciphertext"], "aabb");
+}
+
+#[tokio::test]
 async fn file_upload_is_not_acked_until_stored() {
     let base = boot().await;
     let client = reqwest::Client::new();

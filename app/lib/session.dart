@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'settings_store.dart';
@@ -10,11 +11,51 @@ import 'package:web_socket_channel/io.dart';
 import 'api.dart';
 import 'crypto.dart';
 
+class Revision {
+  final int at;
+  final String title;
+  final String body;
+  const Revision({required this.at, required this.title, required this.body});
+}
+
+class NoteComment {
+  final String id;
+  final String text;
+  final int at;
+  const NoteComment({required this.id, required this.text, required this.at});
+}
+
 class Attachment {
   final String id;
   final String name;
   final int size;
   const Attachment({required this.id, required this.name, required this.size});
+}
+
+class NoteConflict {
+  final String id;
+  final String localTitle;
+  final String localBody;
+  final String remoteTitle;
+  final String remoteBody;
+  const NoteConflict({required this.id, required this.localTitle, required this.localBody, required this.remoteTitle, required this.remoteBody});
+}
+
+List<Revision> rememberRevision(List<Revision> history, {required int at, required String title, required String body, int gapMs = 60000, int cap = 15}) {
+  if (history.isNotEmpty && history.last.title == title && history.last.body == body) return history;
+  if (history.isNotEmpty && at - history.last.at < gapMs) return history;
+  final next = [...history, Revision(at: at, title: title, body: body)];
+  if (next.length <= cap) return next;
+  return next.sublist(next.length - cap);
+}
+
+String pinDigest(String pin) {
+  var h = 2166136261;
+  for (final c in utf8.encode('syncnotes-pin:$pin')) {
+    h ^= c;
+    h = (h * 16777619) & 0x7fffffff;
+  }
+  return h.toRadixString(16);
 }
 
 class Note {
@@ -32,8 +73,17 @@ class Note {
     this.folder = false,
     this.folderId,
     this.icon = '',
+    this.order = 0,
+    this.color = '',
+    this.remindAt,
+    this.smart = false,
+    this.smartQuery = '',
+    List<Revision>? history,
+    List<NoteComment>? comments,
   })  : files = files ?? [],
         tags = tags ?? [],
+        history = history ?? [],
+        comments = comments ?? [],
         createdAt = createdAt ?? updatedAt;
 
   final String id;
@@ -49,6 +99,13 @@ class Note {
   bool folder;
   String? folderId;
   String icon;
+  int order;
+  String color;
+  int? remindAt;
+  bool smart;
+  String smartQuery;
+  List<Revision> history;
+  final List<NoteComment> comments;
 
   String get heading => title.trim().isEmpty ? (folder ? '未命名文件夹' : '无标题') : title.trim();
 
@@ -68,6 +125,15 @@ class Note {
     folder = next.folder;
     folderId = next.folderId;
     icon = next.icon;
+    order = next.order;
+    color = next.color;
+    remindAt = next.remindAt;
+    smart = next.smart;
+    smartQuery = next.smartQuery;
+    history = [...next.history];
+    comments
+      ..clear()
+      ..addAll(next.comments);
     dirty = false;
   }
 
@@ -81,6 +147,13 @@ class Note {
         'folder': folder,
         'folderId': folderId,
         'icon': icon,
+        'order': order,
+        'color': color,
+        'remindAt': remindAt,
+        'smart': smart,
+        'smartQuery': smartQuery,
+        'history': [for (final h in history) {'at': h.at, 'title': h.title, 'body': h.body}],
+        'comments': [for (final c in comments) {'id': c.id, 'text': c.text, 'at': c.at}],
         'createdAt': createdAt,
       };
 
@@ -100,6 +173,22 @@ class Note {
 
   static List<String> _tags(Object? raw) => raw is List ? [for (final e in raw) '$e'] : <String>[];
 
+  static List<Revision> _history(Object? raw) {
+    if (raw is! List) return [];
+    return [
+      for (final e in raw)
+        if (e is Map) Revision(at: (e['at'] as num?)?.toInt() ?? 0, title: '${e['title'] ?? ''}', body: '${e['body'] ?? ''}'),
+    ];
+  }
+
+  static List<NoteComment> _comments(Object? raw) {
+    if (raw is! List) return [];
+    return [
+      for (final e in raw)
+        if (e is Map && e['id'] is String) NoteComment(id: e['id'] as String, text: '${e['text'] ?? ''}', at: (e['at'] as num?)?.toInt() ?? 0),
+    ];
+  }
+
   static Note decode(String id, String plain, int updatedAt) {
     final j = jsonDecode(plain);
     if (j is! Map) return Note(id: id, body: plain, updatedAt: updatedAt);
@@ -116,6 +205,13 @@ class Note {
       folder: j['folder'] == true,
       folderId: j['folderId'] as String?,
       icon: '${j['icon'] ?? ''}',
+      order: (j['order'] as num?)?.toInt() ?? 0,
+      color: '${j['color'] ?? ''}',
+      remindAt: (j['remindAt'] as num?)?.toInt(),
+      smart: j['smart'] == true,
+      smartQuery: '${j['smartQuery'] ?? ''}',
+      history: _history(j['history']),
+      comments: _comments(j['comments']),
     );
   }
 
@@ -145,6 +241,7 @@ class Session extends ChangeNotifier {
   final SyncApi api;
   final Directory supportDir;
   final notes = <Note>[];
+  final conflicts = <NoteConflict>[];
   final transfer = ValueNotifier<Transfer?>(null);
   NoteCipher? cipher;
   String? token;
@@ -282,6 +379,10 @@ class Session extends ChangeNotifier {
   }
 
   void edit(Note n, {String? title, String? body}) {
+    final changed = (body != null && body != n.body) || (title != null && title != n.title);
+    if (changed) {
+      n.history = rememberRevision(n.history, at: n.updatedAt, title: n.title, body: n.body);
+    }
     if (title != null) n.title = title;
     if (body != null) n.body = body;
     n.updatedAt = DateTime.now().millisecondsSinceEpoch;
@@ -326,11 +427,11 @@ class Session extends ChangeNotifier {
     }
   }
 
-  Future<void> attach(Note n, String name, Stream<List<int>> Function() open, int size) async {
+  Future<Attachment?> attach(Note n, String name, Stream<List<int>> Function() open, int size) async {
     final box = cipher;
     final tok = token;
     final host = server;
-    if (box == null || tok == null || host == null) return;
+    if (box == null || tok == null || host == null) return null;
     final job = Transfer(name: name, total: size);
     transfer.value = job;
     final tmp = File('${supportDir.path}${Platform.pathSeparator}upload-$name.bin');
@@ -361,6 +462,7 @@ class Session extends ChangeNotifier {
       n.dirty = true;
       await push(n);
       transfer.value = null;
+      return n.files.last;
     } on SyncException catch (e) {
       job.error = e.message;
       transfer.value = job;
@@ -370,6 +472,7 @@ class Session extends ChangeNotifier {
     } finally {
       if (await tmp.exists()) await tmp.delete();
     }
+    return null;
   }
 
   Future<File> download(Attachment a) async {
@@ -417,6 +520,181 @@ class Session extends ChangeNotifier {
 
   void removeFile(Note n, String fileId) {
     n.files.removeWhere((f) => f.id == fileId);
+    touch(n);
+  }
+
+  bool get hasPin => (prefs.getString('pin_hash') ?? '').isNotEmpty;
+  bool locked = false;
+
+  Future<void> setPin(String pin) async {
+    await prefs.setString('pin_hash', pinDigest(pin));
+    locked = false;
+    notifyListeners();
+  }
+
+  Future<void> clearPin(String pin) async {
+    if (pinDigest(pin) != prefs.getString('pin_hash')) throw SyncException('应用锁密码不对');
+    await prefs.remove('pin_hash');
+    locked = false;
+    notifyListeners();
+  }
+
+  bool tryUnlock(String pin) {
+    if (pinDigest(pin) != prefs.getString('pin_hash')) return false;
+    locked = false;
+    notifyListeners();
+    return true;
+  }
+
+  void lockIfNeeded() {
+    if (hasPin && signedIn && !locked) {
+      locked = true;
+      notifyListeners();
+    }
+  }
+
+  void resolveConflict(String id, String choice) {
+    Note? local;
+    for (final n in notes) {
+      if (n.id == id) local = n;
+    }
+    final hit = conflicts.where((c) => c.id == id).toList();
+    if (local == null || hit.isEmpty) {
+      conflicts.removeWhere((c) => c.id == id);
+      notifyListeners();
+      return;
+    }
+    final c = hit.first;
+    if (choice == 'remote') {
+      local.title = c.remoteTitle;
+      local.body = c.remoteBody;
+      touch(local);
+    } else if (choice == 'both') {
+      create(title: '${c.localTitle}（这台设备）', body: c.localBody, folderId: local.folderId);
+      local.title = c.remoteTitle;
+      local.body = c.remoteBody;
+      touch(local);
+    } else {
+      touch(local);
+    }
+    conflicts.removeWhere((e) => e.id == id);
+    notifyListeners();
+  }
+
+  Future<String> shareNote(Note n, String passphrase) async {
+    final host = server;
+    final tok = token;
+    if (host == null || tok == null) throw SyncException('未登录');
+    if (passphrase.length < 6) throw SyncException('分享密码至少 6 位，告诉对方时不要用你的登录密码');
+    final box = await NoteCipher.fromPassword(passphrase);
+    final plain = jsonEncode({
+      'title': n.title,
+      'body': n.body,
+      'comments': [for (final c in n.comments) {'id': c.id, 'text': c.text, 'at': c.at}],
+    });
+    final sealed = await box.sealText(plain);
+    final id = const Uuid().v4();
+    await api.putShare(host, tok, id: id, nonce: sealed.nonce, ciphertext: sealed.ciphertext);
+    return id;
+  }
+
+  Future<Note> importShare(String id, String passphrase) async {
+    final host = server;
+    if (host == null) throw SyncException('未登录');
+    final sealed = await api.getShare(host, id.trim());
+    final box = await NoteCipher.fromPassword(passphrase);
+    final plain = await box.openText(sealed.nonce, sealed.ciphertext);
+    final j = jsonDecode(plain);
+    if (j is! Map) throw SyncException('分享内容打不开');
+    final note = create(title: '${j['title'] ?? ''}', body: '${j['body'] ?? ''}');
+    final comments = Note._comments(j['comments']);
+    note.comments.addAll(comments);
+    touch(note);
+    return note;
+  }
+
+  Future<void> changePassword(String current, String next) async {
+    final box = cipher;
+    final tok = token;
+    final host = server;
+    if (box == null || tok == null || host == null) throw SyncException('未登录');
+    if (next.length < 8) throw SyncException('新密码至少 8 位');
+    final oldBox = await NoteCipher.fromPassword(current);
+    final oldBytes = await oldBox.extract();
+    final curBytes = await box.extract();
+    if (oldBytes.length != curBytes.length) throw SyncException('现在的密码不对');
+    for (var i = 0; i < oldBytes.length; i++) {
+      if (oldBytes[i] != curBytes[i]) throw SyncException('现在的密码不对');
+    }
+    final fresh = await NoteCipher.fromPassword(next);
+    final previous = [for (final n in notes) (n.id, n.encode(), [...n.files])];
+    try {
+      for (final n in notes) {
+        final replaced = <Attachment>[];
+        for (final file in n.files) {
+          final plain = await _downloadPlain(oldBox, host, tok, file);
+          final sealed = await fresh.sealBytes(plain);
+          final tmp = File('${supportDir.path}${Platform.pathSeparator}rekey-${file.id}.bin');
+          await tmp.writeAsBytes(sealed, flush: true);
+          final up = await api.uploadFile(host, tok, tmp, name: file.name);
+          if (await tmp.exists()) await tmp.delete();
+          replaced.add(Attachment(id: up.id, name: up.name, size: up.size));
+        }
+        n.files
+          ..clear()
+          ..addAll(replaced);
+        n.updatedAt = DateTime.now().millisecondsSinceEpoch;
+        final sealedNote = await fresh.sealText(n.encode());
+        await api.putNote(host, tok, RemoteNote(id: n.id, updatedAt: n.updatedAt, nonce: sealedNote.nonce, ciphertext: sealedNote.ciphertext));
+        n.dirty = false;
+      }
+      await api.changePassword(host, tok, current, next);
+      cipher = fresh;
+      await prefs.setString('key', base64Encode(await fresh.extract()));
+      await _saveCache();
+      notifyListeners();
+    } catch (e) {
+      for (final snap in previous) {
+        Note? n;
+        for (final item in notes) {
+          if (item.id == snap.$1) n = item;
+        }
+        if (n == null) continue;
+        final restored = Note.decode(n.id, snap.$2, n.updatedAt);
+        n.copyContent(restored);
+        n.dirty = true;
+        n.files
+          ..clear()
+          ..addAll(snap.$3);
+        await push(n);
+      }
+      throw SyncException('密码没有改成。笔记已尽量恢复成旧密码。$e');
+    }
+  }
+
+  Future<List<int>> _downloadPlain(NoteCipher box, String host, String tok, Attachment file) async {
+    final sealed = File('${supportDir.path}${Platform.pathSeparator}rekey-dl-${file.id}.bin');
+    try {
+      await api.downloadTo(host, tok, file.id, sealed);
+      final out = BytesBuilder(copy: false);
+      await box.openTo(sealed.openRead(), out.add);
+      return out.toBytes();
+    } finally {
+      if (await sealed.exists()) await sealed.delete();
+    }
+  }
+
+  void addComment(Note n, String text) {
+    final t = text.trim();
+    if (t.isEmpty) return;
+    n.comments.add(NoteComment(id: const Uuid().v4(), text: t, at: DateTime.now().millisecondsSinceEpoch));
+    touch(n);
+  }
+
+  void restoreRevision(Note n, Revision revision) {
+    n.history = rememberRevision(n.history, at: n.updatedAt, title: n.title, body: n.body, gapMs: 0);
+    n.title = revision.title;
+    n.body = revision.body;
     touch(n);
   }
 
@@ -469,6 +747,19 @@ class Session extends ChangeNotifier {
       if (local != null && local.dirty && local.updatedAt >= r.updatedAt) {
         await push(local);
         continue;
+      }
+      if (local != null && local.dirty && local.updatedAt < r.updatedAt) {
+        try {
+          final plain = await box.openText(r.nonce, r.ciphertext);
+          final remoteNote = Note.decode(r.id, plain, r.updatedAt);
+          if (remoteNote.title != local.title || remoteNote.body != local.body) {
+            conflicts.removeWhere((c) => c.id == local!.id);
+            conflicts.add(NoteConflict(id: local.id, localTitle: local.title, localBody: local.body, remoteTitle: remoteNote.title, remoteBody: remoteNote.body));
+            continue;
+          }
+        } on SyncException {
+          continue;
+        }
       }
       if (local != null && local.updatedAt > r.updatedAt) continue;
       try {

@@ -5,6 +5,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'device.dart';
+import 'draw_page.dart';
 import 'library.dart';
 import 'markdown_view.dart';
 import 'scope.dart';
@@ -28,6 +30,7 @@ class EditorPageState extends State<EditorPage> {
   var _finding = false;
   List<SlashCommand> _slash = const [];
   final _find = TextEditingController();
+  final _replace = TextEditingController();
 
   Note? _note(BuildContext context) {
     for (final n in Scope.of(context).notes) {
@@ -53,6 +56,7 @@ class EditorPageState extends State<EditorPage> {
     _title.dispose();
     _body.dispose();
     _find.dispose();
+    _replace.dispose();
     super.dispose();
   }
 
@@ -209,6 +213,26 @@ class EditorPageState extends State<EditorPage> {
               IconButton(tooltip: '在这篇里查找', onPressed: () => setState(() => _finding = !_finding), icon: const Icon(Icons.search)),
               IconButton(tooltip: '添加文件', onPressed: () => _attach(context, s, n), icon: const Icon(Icons.attach_file)),
             ]),
+            Wrap(spacing: 6, children: [
+              ActionChip(label: const Text('表格'), onPressed: () => _insert(s, n, markdownTable())),
+              ActionChip(label: const Text('图片'), onPressed: () => _image(context, s, n)),
+              ActionChip(label: const Text('手写'), onPressed: () => _ink(context, s, n)),
+              ActionChip(label: const Text('扫描'), onPressed: () => _scan(context, s, n)),
+              ActionChip(label: const Text('语音'), onPressed: () => _voice(context, s, n)),
+              ActionChip(label: const Text('提醒'), onPressed: () => _remind(context, s, n)),
+              ActionChip(label: const Text('历史'), onPressed: () => _history(context, s, n)),
+              ActionChip(label: const Text('分享给别人'), onPressed: () => _share(context, s, n)),
+              for (final e in noteColors.entries)
+                if (e.key.isNotEmpty)
+                  ChoiceChip(
+                    label: Text(e.value),
+                    selected: n.color == e.key,
+                    onSelected: (_) {
+                      n.color = n.color == e.key ? '' : e.key;
+                      s.touch(n);
+                    },
+                  ),
+            ]),
           ],
           TextField(
             key: const Key('noteTitle'),
@@ -217,11 +241,17 @@ class EditorPageState extends State<EditorPage> {
             decoration: const InputDecoration(hintText: '标题', border: InputBorder.none),
             onChanged: (_) => _schedule(s, n),
           ),
-          if (_finding)
+          if (_finding) ...[
             Row(children: [
-              Expanded(child: TextField(controller: _find, decoration: const InputDecoration(hintText: '在这篇笔记里找'), onSubmitted: (_) => _findNext())),
+              Expanded(child: TextField(controller: _find, decoration: const InputDecoration(hintText: '查找'), onSubmitted: (_) => _findNext())),
               TextButton(onPressed: _findNext, child: const Text('下一个')),
             ]),
+            Row(children: [
+              Expanded(child: TextField(controller: _replace, decoration: const InputDecoration(hintText: '替换成'))),
+              TextButton(onPressed: () => _swap(s, n, all: false), child: const Text('替换')),
+              TextButton(onPressed: () => _swap(s, n, all: true), child: const Text('全部')),
+            ]),
+          ],
           if (_slash.isNotEmpty)
             Card(
               child: Column(children: [
@@ -255,6 +285,10 @@ class EditorPageState extends State<EditorPage> {
                 _body.text = next;
                 _schedule(s, n);
                 setState(() {});
+              },
+              onFile: (id) {
+                final hit = n.files.where((f) => f.id == id);
+                if (hit.isNotEmpty) _save(context, s, hit.first);
               },
             )
           else
@@ -292,6 +326,18 @@ class EditorPageState extends State<EditorPage> {
               ),
               onTap: () => _save(context, s, f),
             ),
+          if (!_focus) ...[
+            const Divider(),
+            Text('评论', style: Theme.of(context).textTheme.titleSmall),
+            for (final c in n.comments) ListTile(contentPadding: EdgeInsets.zero, title: Text(c.text), subtitle: Text(relativeTime(c.at, DateTime.now()))),
+            TextField(
+              decoration: const InputDecoration(hintText: '写一条评论，只在你的设备之间同步'),
+              onSubmitted: (v) {
+                s.addComment(n, v);
+                setState(() {});
+              },
+            ),
+          ],
           if (!_focus)
             Padding(
               padding: const EdgeInsets.only(top: 16),
@@ -310,6 +356,157 @@ class EditorPageState extends State<EditorPage> {
         ],
       ),
     );
+  }
+
+  void _insert(Session s, Note n, String chunk) {
+    final cursor = _body.selection.start < 0 ? _body.text.length : _body.selection.start;
+    final next = _body.text.replaceRange(cursor, cursor, chunk);
+    _apply(s, n, next, cursor + chunk.length);
+  }
+
+  void _swap(Session s, Note n, {required bool all}) {
+    final from = _body.selection.end < 0 ? 0 : _body.selection.end;
+    final result = replaceMatches(_body.text, _find.text, _replace.text, all: all, from: from);
+    if (result.count == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('没有找到')));
+      return;
+    }
+    _apply(s, n, result.text, 0);
+  }
+
+  Future<void> _putFile(Session s, Note n, String name, Stream<List<int>> Function() open, int size, {bool image = false}) async {
+    final att = await s.attach(n, name, open, size);
+    if (att != null && image) _insert(s, n, '![${att.name}](snfile:${att.id})\n');
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _image(BuildContext context, Session s, Note n) async {
+    final picked = await FilePicker.pickFiles(type: FileType.image);
+    if (picked.isEmpty) return;
+    final f = picked.first;
+    final path = f.path;
+    final len = f.lengthSync() ?? await f.length() ?? 0;
+    await _putFile(s, n, f.name, () => path != null ? File(path).openRead() : f.readAsByteStream(), len, image: true);
+  }
+
+  Future<void> _ink(BuildContext context, Session s, Note n) async {
+    final bytes = await Navigator.of(context).push<Uint8List>(MaterialPageRoute(builder: (_) => const DrawPage()));
+    if (bytes == null) return;
+    await _putFile(s, n, '手写.png', () => Stream.value(bytes), bytes.length, image: true);
+  }
+
+  Future<void> _scan(BuildContext context, Session s, Note n) async {
+    if (Platform.isAndroid) {
+      try {
+        final shot = await Device.capture();
+        final path = shot?['path'] as String?;
+        if (path != null) {
+          final file = File(path);
+          await _putFile(s, n, '${shot?['name'] ?? '扫描.jpg'}', file.openRead, await file.length(), image: true);
+          return;
+        }
+      } catch (e) {
+        if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('拍照没成功：$e')));
+      }
+    }
+    if (!context.mounted) return;
+    await _image(context, s, n);
+  }
+
+  Future<void> _voice(BuildContext context, Session s, Note n) async {
+    if (!Platform.isAndroid) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('语音转文字用的是手机系统识别。这台电脑请用手写，或直接打字。')));
+      }
+      return;
+    }
+    try {
+      final text = await Device.listen();
+      if (text == null || text.trim().isEmpty) return;
+      _insert(s, n, text.trim());
+    } catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('没听清：$e')));
+    }
+  }
+
+  Future<void> _remind(BuildContext context, Session s, Note n) async {
+    final date = await showDatePicker(context: context, firstDate: DateTime.now().subtract(const Duration(days: 1)), lastDate: DateTime.now().add(const Duration(days: 3650)), initialDate: DateTime.now());
+    if (date == null || !context.mounted) return;
+    final time = await showTimePicker(context: context, initialTime: TimeOfDay.now());
+    if (time == null) return;
+    final when = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+    n.remindAt = when.millisecondsSinceEpoch;
+    s.touch(n);
+    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('会在 ${when.month}月${when.day}日 ${time.format(context)} 提醒。软件开着时会响，手机会出通知。')));
+  }
+
+  Future<void> _history(BuildContext context, Session s, Note n) async {
+    if (n.history.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('还没有更早的版本。改过一会儿之后会留下。')));
+      return;
+    }
+    final picked = await showModalBottomSheet<Revision>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: ListView(children: [
+          for (final h in n.history.reversed)
+            ListTile(
+              title: Text(h.title.isEmpty ? '无标题' : h.title),
+              subtitle: Text(relativeTime(h.at, DateTime.now())),
+              onTap: () => Navigator.pop(context, h),
+            ),
+        ]),
+      ),
+    );
+    if (picked == null) return;
+    s.restoreRevision(n, picked);
+    _title.text = n.title;
+    _body.text = n.body;
+    setState(() {});
+  }
+
+  Future<void> _share(BuildContext context, Session s, Note n) async {
+    final pass = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('分享给别人'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Text('对方需要这台服务器的地址、分享编号，以及你现在设的分享密码。不要用登录密码。对方拿到的是当时的一份副本。'),
+          const SizedBox(height: 8),
+          TextField(controller: pass, obscureText: true, decoration: const InputDecoration(labelText: '分享密码')),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('生成')),
+        ],
+      ),
+    );
+    final secret = pass.text;
+    pass.dispose();
+    if (ok != true || !context.mounted) return;
+    try {
+      final id = await s.shareNote(n, secret);
+      if (!context.mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('把这两样告诉对方'),
+          content: SelectableText('分享编号：$id\n服务器：${s.server}'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: '服务器：${s.server}\n分享编号：$id'));
+                Navigator.pop(context);
+              },
+              child: const Text('复制'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    }
   }
 
   Future<void> _attach(BuildContext context, Session s, Note n) async {

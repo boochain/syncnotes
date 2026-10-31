@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'desktop.dart';
+import 'device.dart';
 import 'editor_page.dart';
+import 'graph_page.dart';
 import 'library.dart';
 import 'scope.dart';
 import 'session.dart';
@@ -25,9 +29,30 @@ class HomePageState extends State<HomePage> {
   String? _folderId;
   String? _tag;
   String _sort = 'updated';
+  Timer? _tick;
+
+  @override
+  void initState() {
+    super.initState();
+    _tick = Timer.periodic(const Duration(seconds: 20), (_) => _ping());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _ping());
+  }
+
+  void _ping() {
+    if (!mounted) return;
+    final s = Scope.of(context);
+    final due = dueNotes(s.notes, DateTime.now().millisecondsSinceEpoch);
+    for (final n in due) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('提醒：${n.heading}')));
+      unawaited(Device.notify(n.heading, n.body.split('\n').first));
+      n.remindAt = null;
+      s.touch(n);
+    }
+  }
 
   @override
   void dispose() {
+    _tick?.cancel();
     _search.dispose();
     _searchFocus.dispose();
     super.dispose();
@@ -147,7 +172,13 @@ class HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     final s = Scope.of(context);
-    final shown = selectNotes(s.notes, view: _view, folderId: _folderId, tag: _tag, query: _search.text, sort: _sort);
+    Note? openFolder;
+    for (final n in s.notes) {
+      if (n.id == _folderId) openFolder = n;
+    }
+    final shown = openFolder != null && openFolder.smart
+        ? smartMatches(s.notes, openFolder.smartQuery)
+        : selectNotes(s.notes, view: _view, folderId: _folderId, tag: _tag, query: _search.text, sort: _sort);
     final wide = MediaQuery.sizeOf(context).width >= 800;
     final sidebar = _Sidebar(
       view: _view,
@@ -159,6 +190,14 @@ class HomePageState extends State<HomePage> {
         _tag = tag;
       }),
       onFolder: (folder) => _renameFolder(s, folder),
+      onDrop: (noteId, folderId) {
+        if (folderContains(s.notes, noteId, folderId)) return;
+        final hit = s.notes.where((n) => n.id == noteId);
+        if (hit.isEmpty) return;
+        hit.first.folderId = folderId;
+        s.touch(hit.first);
+      },
+      onGraph: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const GraphPage())),
     );
     final body = Column(children: [
       if (s.error != null)
@@ -179,6 +218,15 @@ class HomePageState extends State<HomePage> {
           title: Text(s.syncing ? '正在同步' : (s.live ? '已连上' : '还没连上')),
           subtitle: Text(s.lastSyncAt == null ? '下拉可以再同步一次' : '上次同步 ${relativeTime(s.lastSyncAt!, DateTime.now())}'),
           trailing: s.syncing ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : null,
+        ),
+      if (s.conflicts.isNotEmpty)
+        Material(
+          color: Theme.of(context).colorScheme.tertiaryContainer,
+          child: ListTile(
+            title: Text('${s.conflicts.length} 篇笔记在两台设备上都被改过'),
+            subtitle: const Text('选留哪一边，或两边都留'),
+            onTap: () => _conflicts(s),
+          ),
         ),
       ValueListenableBuilder<Transfer?>(
         valueListenable: s.transfer,
@@ -250,8 +298,10 @@ class HomePageState extends State<HomePage> {
                             onTap: () => _open(context, n),
                             onLongPress: () => _menu(s, n),
                           );
-                          if (_view == 'trash') return tile;
-                          return Dismissible(
+                          return Draggable<String>(
+                            data: n.id,
+                            feedback: Material(child: Padding(padding: const EdgeInsets.all(8), child: Text(n.heading))),
+                            child: _view == 'trash' ? tile : Dismissible(
                             key: ValueKey(n.id),
                             direction: DismissDirection.endToStart,
                             background: Container(
@@ -265,6 +315,7 @@ class HomePageState extends State<HomePage> {
                               return true;
                             },
                             child: tile,
+                          ),
                           );
                         },
                       ),
@@ -322,6 +373,7 @@ class HomePageState extends State<HomePage> {
                 PopupMenuItem(value: 'updated', child: Text('最近修改')),
                 PopupMenuItem(value: 'created', child: Text('最近创建')),
                 PopupMenuItem(value: 'title', child: Text('标题')),
+                PopupMenuItem(value: 'order', child: Text('手动顺序')),
               ],
             ),
             if (isDesktop)
@@ -346,12 +398,14 @@ class HomePageState extends State<HomePage> {
                 if (v == 'note') _newNote(s);
                 if (v == 'folder') _newFolder(s);
                 if (v == 'daily') _daily(s);
+                if (v == 'smart') _smart(s);
                 if (noteTemplates.containsKey(v)) _newNote(s, body: noteTemplates[v]!);
               },
               itemBuilder: (_) => [
                 const PopupMenuItem(value: 'note', child: Text('新建笔记')),
                 const PopupMenuItem(value: 'folder', child: Text('新建文件夹')),
                 const PopupMenuItem(value: 'daily', child: Text('今日笔记')),
+                const PopupMenuItem(value: 'smart', child: Text('智能文件夹')),
                 const PopupMenuDivider(),
                 for (final name in noteTemplates.keys) PopupMenuItem(value: name, child: Text('模板：$name')),
               ],
@@ -403,6 +457,7 @@ class HomePageState extends State<HomePage> {
           ListTile(title: Text(n.pinned ? '取消置顶' : '置顶'), onTap: () => Navigator.pop(context, 'pin')),
           ListTile(title: const Text('移动到文件夹'), onTap: () => Navigator.pop(context, 'move')),
           ListTile(title: const Text('再复制一篇'), onTap: () => Navigator.pop(context, 'dup')),
+          ListTile(title: const Text('排到最前'), onTap: () => Navigator.pop(context, 'top')),
           ListTile(title: const Text('移到回收站'), onTap: () => Navigator.pop(context, 'trash')),
         ]),
       ),
@@ -414,6 +469,11 @@ class HomePageState extends State<HomePage> {
     }
     if (action == 'dup') s.duplicate(n);
     if (action == 'trash') _trashWithUndo(s, n);
+    if (action == 'top') {
+      n.order = -1;
+      setState(() => _sort = 'order');
+      s.touch(n);
+    }
     if (action == 'move') {
       final folders = folderNotes(s.notes);
       if (!mounted) return;
@@ -432,15 +492,62 @@ class HomePageState extends State<HomePage> {
       s.touch(n);
     }
   }
+
+  Future<void> _conflicts(Session s) async {
+    final items = [...s.conflicts];
+    for (final c in items) {
+      if (!mounted) return;
+      final choice = await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(c.localTitle.isEmpty ? '无标题' : c.localTitle),
+          content: const Text('这台设备和另一台都改过这篇。留哪边？'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, 'local'), child: const Text('留这台')),
+            TextButton(onPressed: () => Navigator.pop(context, 'remote'), child: const Text('留另一台')),
+            FilledButton(onPressed: () => Navigator.pop(context, 'both'), child: const Text('两边都留')),
+          ],
+        ),
+      );
+      if (choice != null) s.resolveConflict(c.id, choice);
+    }
+  }
+
+  Future<void> _smart(Session s) async {
+    final q = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('智能文件夹'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Text('会跟着条件变。可以写普通搜索，或 tag:生活、color:blue、todo。'),
+          TextField(controller: q, decoration: const InputDecoration(labelText: '条件')),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('建立')),
+        ],
+      ),
+    );
+    final query = q.text.trim();
+    q.dispose();
+    if (ok != true || query.isEmpty) return;
+    final n = s.create(title: query, folder: true);
+    n.smart = true;
+    n.smartQuery = query;
+    s.touch(n);
+  }
 }
 
 class _Sidebar extends StatelessWidget {
-  const _Sidebar({required this.view, required this.folderId, required this.tag, required this.onSelect, required this.onFolder});
+  const _Sidebar({required this.view, required this.folderId, required this.tag, required this.onSelect, required this.onFolder, required this.onDrop, required this.onGraph});
   final String view;
   final String? folderId;
   final String? tag;
   final void Function(String view, {String? folder, String? tag}) onSelect;
   final void Function(Note folder) onFolder;
+  final void Function(String noteId, String folderId) onDrop;
+  final VoidCallback onGraph;
 
   @override
   Widget build(BuildContext context) {
@@ -450,19 +557,25 @@ class _Sidebar extends StatelessWidget {
     final todo = openTasks(notes).length;
     return ListView(children: [
       ListTile(selected: view == 'all', leading: const Icon(Icons.inbox), title: const Text('全部'), onTap: () => onSelect('all')),
+      ListTile(leading: const Icon(Icons.hub_outlined), title: const Text('图谱'), onTap: onGraph),
       ListTile(selected: view == 'pinned', leading: const Icon(Icons.push_pin), title: const Text('置顶'), onTap: () => onSelect('pinned')),
       ListTile(selected: view == 'tasks', leading: const Icon(Icons.check_box_outlined), title: Text('待办${todo == 0 ? '' : ' $todo'}'), onTap: () => onSelect('tasks')),
       const Divider(),
       const ListTile(dense: true, title: Text('文件夹  长按可以改名')),
       for (final f in folders)
-        ListTile(
-          selected: view == 'folder' && folderId == f.id,
-          contentPadding: EdgeInsets.only(left: f.folderId == null ? 16 : 32, right: 16),
-          leading: Text(f.icon.isEmpty ? '📁' : f.icon, style: const TextStyle(fontSize: 18)),
-          title: Text(f.heading),
-          trailing: Text('${folderCount(notes, f.id)}'),
-          onTap: () => onSelect('folder', folder: f.id),
-          onLongPress: () => onFolder(f),
+        DragTarget<String>(
+          onWillAcceptWithDetails: (d) => d.data != f.id && !folderContains(notes, d.data, f.id),
+          onAcceptWithDetails: (d) => onDrop(d.data, f.id),
+          builder: (context, candidate, _) => ListTile(
+            selected: view == 'folder' && folderId == f.id,
+            tileColor: candidate.isEmpty ? null : Theme.of(context).colorScheme.secondaryContainer,
+            contentPadding: EdgeInsets.only(left: f.folderId == null ? 16 : 32, right: 16),
+            leading: Text(f.icon.isEmpty ? (f.smart ? '✨' : '📁') : f.icon, style: const TextStyle(fontSize: 18)),
+            title: Text(f.smart ? '智能 · ${f.heading}' : f.heading),
+            trailing: Text(f.smart ? '' : '${folderCount(notes, f.id)}'),
+            onTap: () => onSelect('folder', folder: f.id),
+            onLongPress: () => onFolder(f),
+          ),
         ),
       const Divider(),
       const ListTile(dense: true, title: Text('标签')),
