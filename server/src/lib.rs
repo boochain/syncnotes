@@ -39,6 +39,7 @@ pub struct AppState {
     files_dir: PathBuf,
     allow_register: bool,
     hub: Arc<Hub>,
+    server_id: String,
 }
 
 struct Hub {
@@ -128,15 +129,25 @@ impl AppState {
               ciphertext TEXT NOT NULL,
               created_at INTEGER NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS meta (
+              key TEXT PRIMARY KEY,
+              value TEXT NOT NULL
+            );
             ",
         )
         .map_err(|e| e.to_string())?;
+        let server_id = load_server_id(&conn)?;
         Ok(Self {
             db: Arc::new(Mutex::new(conn)),
             files_dir: files_dir.to_path_buf(),
             allow_register,
             hub: Arc::new(Hub::new()),
+            server_id,
         })
+    }
+
+    pub fn server_id(&self) -> &str {
+        &self.server_id
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Connection> {
@@ -167,8 +178,19 @@ pub async fn serve(state: AppState, addr: &str) -> Result<(), String> {
     axum::serve(listener, router(state)).await.map_err(|e| e.to_string())
 }
 
-async fn health() -> Json<Value> {
-    Json(json!({"ok": true, "protocol": 1, "version": env!("CARGO_PKG_VERSION")}))
+async fn health(State(st): State<AppState>) -> Json<Value> {
+    Json(json!({"ok": true, "protocol": 1, "version": env!("CARGO_PKG_VERSION"), "id": st.server_id()}))
+}
+
+fn load_server_id(conn: &Connection) -> Result<String, String> {
+    if let Ok(id) = conn.query_row("SELECT value FROM meta WHERE key = 'server_id'", [], |r| r.get::<_, String>(0)) {
+        if !id.is_empty() {
+            return Ok(id);
+        }
+    }
+    let id = Uuid::new_v4().to_string();
+    conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('server_id', ?1)", params![id]).map_err(|e| e.to_string())?;
+    Ok(id)
 }
 
 #[derive(Deserialize)]

@@ -22,7 +22,7 @@ class Desk {
     return expand ? expandedSize : compact;
   }
 
-  static Future<void> init({required bool expanded}) async {
+  static Future<void> init({required bool expanded, bool closeToTray = true}) async {
     await windowManager.ensureInitialized();
     const opts = WindowOptions(minimumSize: minimum, title: 'SyncNotes');
     await windowManager.waitUntilReadyToShow(opts, () async {
@@ -38,10 +38,19 @@ class Desk {
     if (Platform.isWindows) {
       try {
         await _channel.invokeMethod<bool>('startTray');
-        await _channel.invokeMethod<void>('setCloseToTray', {'value': true});
+        await _channel.invokeMethod<void>('setCloseToTray', {'value': closeToTray});
       } catch (e) {
         debugPrint('tray: $e');
       }
+    }
+  }
+
+  static Future<void> setCloseToTray(bool value) async {
+    if (!Platform.isWindows) return;
+    try {
+      await _channel.invokeMethod<void>('setCloseToTray', {'value': value});
+    } catch (e) {
+      debugPrint('tray: $e');
     }
   }
 

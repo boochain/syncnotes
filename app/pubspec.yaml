@@ -1,7 +1,7 @@
 name: syncnotes
 description: "SyncNotes - 多设备同步笔记"
 publish_to: 'none'
-version: 1.4.0+5
+version: 1.5.0+6
 
 environment:
   sdk: ^3.12.2

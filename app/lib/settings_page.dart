@@ -8,7 +8,7 @@ import 'desktop.dart';
 import 'library.dart';
 import 'scope.dart';
 
-const appVersion = '1.4.0';
+const appVersion = '1.5.0';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -42,6 +42,50 @@ class SettingsPage extends StatelessWidget {
               onSelectionChanged: (v) => s.themeMode = v.first,
             ),
           ),
+          const ListTile(title: Text('背景'), subtitle: Text('铺在界面后面。透明度只作用在卡片上，窗口本身不透明，避免页面叠在一起。')),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Wrap(spacing: 8, children: [
+              for (final item in const [('default', '默认'), ('ocean', '海蓝'), ('dusk', '暮色'), ('paper', '纸色'), ('ink', '墨色')])
+                ChoiceChip(
+                  label: Text(item.$2),
+                  selected: s.backdrop == item.$1,
+                  onSelected: (_) => s.backdrop = item.$1,
+                ),
+            ]),
+          ),
+          ListTile(
+            title: const Text('卡片透明度'),
+            subtitle: Slider(
+              value: s.surfaceOpacity,
+              min: 0.72,
+              max: 1,
+              onChanged: (v) => s.surfaceOpacity = v,
+            ),
+          ),
+          const ListTile(title: Text('字号')),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: SegmentedButton<double>(
+              segments: const [
+                ButtonSegment(value: 1, label: Text('标准')),
+                ButtonSegment(value: 1.15, label: Text('大')),
+                ButtonSegment(value: 1.3, label: Text('更大')),
+              ],
+              selected: {s.textScale},
+              onSelectionChanged: (v) => s.textScale = v.first,
+            ),
+          ),
+          if (Platform.isWindows)
+            SwitchListTile(
+              title: const Text('关闭窗口时收到托盘'),
+              subtitle: const Text('关掉后程序还在。托盘菜单可以打开或退出。'),
+              value: s.closeToTray,
+              onChanged: (v) async {
+                s.closeToTray = v;
+                await Desk.setCloseToTray(v);
+              },
+            ),
           const SizedBox(height: 12),
           if (isDesktop)
             ListTile(
@@ -75,6 +119,14 @@ class SettingsPage extends StatelessWidget {
           ListTile(
             title: const Text('浏览器剪藏书签'),
             subtitle: const SelectableText(bookmarklet),
+          ),
+          ListTile(
+            title: const Text('重传本地缓存'),
+            subtitle: const Text('把这台设备上的笔记再发给服务器。时间不改。服务器上更新的不会被盖掉，缺的会补上。'),
+            onTap: () async {
+              final n = await s.resendLocal();
+              if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('已重传 $n 篇')));
+            },
           ),
           ListTile(
             title: const Text('导出全部笔记'),
@@ -119,9 +171,19 @@ class SettingsPage extends StatelessWidget {
             },
           ),
           const ListTile(title: Text('版本'), subtitle: Text(appVersion)),
+          ListTile(
+            title: const Text('服务器指纹'),
+            subtitle: Text(s.server == null
+                ? '还没连接'
+                : '当前 ${s.fingerprintFor(s.server!) ?? '这台服务器还没有指纹（多半是旧版）'}'),
+          ),
           const ListTile(
-            title: Text('加密'),
-            subtitle: Text('笔记和文件用你的密码加密后才发出去。文件夹、标签、置顶和回收站都在这篇密文里，换设备登录同一个账号就能看到。'),
+            title: Text('指纹是干什么的'),
+            subtitle: Text('它是这台服务器数据库的编号，存在服务器自己的库里。用来发现你是不是连上了另一台同地址的机器。它不是密码，解不开笔记，也不参与加密。编号变了，只说明数据库被换过或重装过。确认是你自己的之后，点记住即可。'),
+          ),
+          const ListTile(
+            title: Text('哪些是加密的'),
+            subtitle: Text('加密后才离开设备：笔记标题、正文、标签、文件夹、颜色、评论、历史、附件内容。\n明文：用户名、服务器地址、同步时间、文件在服务器上的编号。登录和传输需要这些。\nhttps / wss 再加一层传输加密。用 http 时传输层是明文，笔记本身仍是密文。\n分享给别人时，用另一把分享密码再封一次，服务器看不到正文。'),
           ),
         ],
       ),

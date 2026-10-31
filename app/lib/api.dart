@@ -79,6 +79,16 @@ class SyncApi {
 
   Future<SessionInfo> login(String server, String username, String password) => _auth(server, '/v1/login', username, password);
 
+  Future<String?> serverFingerprint(String server) async {
+    final res = await client.get(endpoint(server, '/health')).timeout(const Duration(seconds: 8));
+    if (res.statusCode != 200) return null;
+    final decoded = jsonDecode(res.body);
+    if (decoded is! Map) return null;
+    final id = decoded['id'];
+    if (id is String && id.isNotEmpty) return id;
+    return null;
+  }
+
   Future<List<RemoteNote>> notes(String server, String token) async {
     final res = await client.get(endpoint(server, '/v1/notes'), headers: {'authorization': 'Bearer $token'}).timeout(const Duration(seconds: 20));
     final raw = _ok(res);

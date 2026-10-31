@@ -53,6 +53,13 @@ void main() {
     expect(Note.decode('a', notes.single.encode(), 1).icon, '📁');
   });
 
+  test('fingerprint tells a new server from a replaced one', () {
+    expect(fingerprintStatus(known: null, current: null), 'none');
+    expect(fingerprintStatus(known: null, current: 'abc'), 'new');
+    expect(fingerprintStatus(known: 'abc', current: 'abc'), 'same');
+    expect(fingerprintStatus(known: 'abc', current: 'xyz'), 'changed');
+  });
+
   test('table, replace, smart folders, graph, reminders and history', () {
     expect(markdownTable(), contains('| --- |'));
     final replaced = replaceMatches('牛奶 牛奶', '牛奶', '面包', all: false, from: 0);

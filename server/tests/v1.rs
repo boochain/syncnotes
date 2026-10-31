@@ -18,6 +18,20 @@ async fn boot() -> String {
 }
 
 #[tokio::test]
+async fn server_fingerprint_stays_with_the_database() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.keep();
+    let db = path.join("t.db");
+    let files = path.join("files");
+    let first = AppState::open(&db, &files, true).unwrap();
+    let id = first.server_id().to_string();
+    drop(first);
+    let second = AppState::open(&db, &files, true).unwrap();
+    assert_eq!(second.server_id(), id);
+    assert!(!id.is_empty());
+}
+
+#[tokio::test]
 async fn register_login_and_notes_roundtrip() {
     let base = boot().await;
     let client = reqwest::Client::new();

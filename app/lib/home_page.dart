@@ -169,6 +169,42 @@ class HomePageState extends State<HomePage> {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => EditorPage(noteId: n.id)));
   }
 
+  Future<void> _switcher(Session s) async {
+    final box = TextEditingController();
+    final picked = await showDialog<Note>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('跳到笔记'),
+        content: SizedBox(
+          width: 420,
+          child: StatefulBuilder(
+            builder: (context, setLocal) {
+              final hits = selectNotes(s.notes, view: 'all', query: box.text).take(12).toList();
+              return Column(mainAxisSize: MainAxisSize.min, children: [
+                TextField(
+                  controller: box,
+                  autofocus: true,
+                  decoration: const InputDecoration(hintText: '输入标题或正文'),
+                  onChanged: (_) => setLocal(() {}),
+                ),
+                const SizedBox(height: 8),
+                for (final n in hits)
+                  ListTile(
+                    dense: true,
+                    title: Text(n.heading, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    onTap: () => Navigator.pop(context, n),
+                  ),
+                if (hits.isEmpty) const ListTile(title: Text('没有匹配的笔记')),
+              ]);
+            },
+          ),
+        ),
+      ),
+    );
+    box.dispose();
+    if (picked != null && mounted) _open(context, picked);
+  }
+
   void _daily(Session s) {
     final title = dailyTitle(DateTime.now());
     final existing = noteByTitle(s.notes, title);
@@ -226,7 +262,15 @@ class HomePageState extends State<HomePage> {
           subtitle: Text(s.lastSyncAt == null ? '下拉可以再同步一次' : '上次同步 ${relativeTime(s.lastSyncAt!, DateTime.now())}'),
           trailing: s.syncing ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : null,
         ),
-      if (s.conflicts.isNotEmpty)
+      if (s.pendingFingerprint != null)
+        Material(
+          color: Theme.of(context).colorScheme.tertiaryContainer,
+          child: ListTile(
+            title: const Text('服务器指纹变了'),
+            subtitle: const Text('指纹只用来认出这台服务器，不是解开笔记的钥匙。数据库重装或换过机器时会变。确认是你自己的，再记住新的。'),
+            trailing: FilledButton(onPressed: s.acceptFingerprint, child: const Text('记住')),
+          ),
+        ),
         Material(
           color: Theme.of(context).colorScheme.tertiaryContainer,
           child: ListTile(
@@ -239,7 +283,7 @@ class HomePageState extends State<HomePage> {
         valueListenable: s.transfer,
         builder: (context, t, _) {
           if (t == null) return const SizedBox.shrink();
-          final label = t.error ?? (t.waiting ? '正在确认，等服务器回复' : '正在传输');
+          final label = t.error ?? (t.waiting ? '正在确认，等服务器回复' : (s.queued > 0 ? '正在传输，还有 ${s.queued} 个在排队' : '正在传输'));
           return ListTile(
             title: Text(t.name, maxLines: 1, overflow: TextOverflow.ellipsis),
             subtitle: Text(t.error ?? '$label  ${_pct(t)}', maxLines: 2),
@@ -340,6 +384,7 @@ class HomePageState extends State<HomePage> {
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.keyN, control: true): () => _newNote(s),
+        const SingleActivator(LogicalKeyboardKey.keyK, control: true): () => _switcher(s),
         const SingleActivator(LogicalKeyboardKey.keyF, control: true): _searchFocus.requestFocus,
       },
       child: Focus(

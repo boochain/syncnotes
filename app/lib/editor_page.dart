@@ -553,12 +553,15 @@ class EditorPageState extends State<EditorPage> {
 
   Future<void> _attach(BuildContext context, Session s, Note n) async {
     final picked = await FilePicker.pickFiles();
-    if (picked.isEmpty) return;
-    final f = picked.first;
-    final len = f.lengthSync() ?? await f.length() ?? 0;
-    final path = f.path;
-    await s.attach(n, f.name, () => path != null ? File(path).openRead() : f.readAsByteStream(), len);
-    if (mounted) setState(() {});
+    if (picked.isEmpty || !context.mounted) return;
+    for (final f in picked) {
+      final len = f.lengthSync() ?? await f.length() ?? 0;
+      final path = f.path;
+      unawaited(s.attach(n, f.name, () => path != null ? File(path).openRead() : f.readAsByteStream(), len));
+    }
+    if (!context.mounted || !mounted) return;
+    setState(() {});
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(picked.length == 1 ? '开始上传' : '已排队 ${picked.length} 个文件，一个一个传')));
   }
 
   Future<void> _save(BuildContext context, Session s, Attachment f) async {

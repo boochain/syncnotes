@@ -318,6 +318,14 @@ List<Note> smartMatches(List<Note> notes, String query) {
 
 List<Note> dueNotes(List<Note> notes, int now) => notes.where((n) => !n.trashed && !n.folder && n.remindAt != null && n.remindAt! <= now).toList();
 
+/// none 服务器没给编号。new 这台设备第一次见。same 没变。changed 变了。
+String fingerprintStatus({required String? known, required String? current}) {
+  if (current == null || current.isEmpty) return 'none';
+  if (known == null || known.isEmpty) return 'new';
+  if (known == current) return 'same';
+  return 'changed';
+}
+
 void applyManualOrder(List<Note> visible, int oldIndex, int newIndex) {
   if (oldIndex < 0 || oldIndex >= visible.length) return;
   final target = newIndex.clamp(0, visible.length - 1);

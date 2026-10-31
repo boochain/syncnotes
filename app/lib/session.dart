@@ -10,6 +10,7 @@ import 'package:web_socket_channel/io.dart';
 
 import 'api.dart';
 import 'crypto.dart';
+import 'library.dart';
 
 class Revision {
   final int at;
@@ -261,6 +262,102 @@ class Session extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool get closeToTray => prefs.getBool('close_to_tray') ?? true;
+  set closeToTray(bool v) {
+    prefs.setBool('close_to_tray', v);
+    notifyListeners();
+  }
+
+  String get backdrop => prefs.getString('backdrop') ?? 'default';
+  set backdrop(String v) {
+    prefs.setString('backdrop', v);
+    notifyListeners();
+  }
+
+  double get surfaceOpacity {
+    final raw = double.tryParse(prefs.getString('surface_opacity') ?? '') ?? 1;
+    if (raw < 0.72) return 0.72;
+    if (raw > 1) return 1;
+    return raw;
+  }
+
+  set surfaceOpacity(double v) {
+    final next = v < 0.72 ? 0.72 : (v > 1 ? 1 : v);
+    prefs.setString('surface_opacity', next.toStringAsFixed(2));
+    notifyListeners();
+  }
+
+  double get textScale {
+    final raw = double.tryParse(prefs.getString('text_scale') ?? '') ?? 1;
+    if (raw < 1.05) return 1;
+    if (raw < 1.2) return 1.15;
+    return 1.3;
+  }
+
+  set textScale(double v) {
+    prefs.setString('text_scale', '$v');
+    notifyListeners();
+  }
+
+  String? pendingFingerprint;
+  int queued = 0;
+  final _jobs = <Future<void> Function()>[];
+  var _draining = false;
+
+  Map<String, String> _prints() {
+    final raw = prefs.getString('fingerprints');
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map) return {for (final e in decoded.entries) '${e.key}': '${e.value}'};
+    } catch (_) {}
+    return {};
+  }
+
+  Future<void> _noteFingerprint(String host) async {
+    String? id;
+    try {
+      id = await api.serverFingerprint(host);
+    } catch (_) {
+      return;
+    }
+    final status = fingerprintStatus(known: _prints()[host], current: id);
+    if (status == 'new' && id != null) {
+      final next = _prints()..[host] = id;
+      await prefs.setString('fingerprints', jsonEncode(next));
+      pendingFingerprint = null;
+    } else if (status == 'changed') {
+      pendingFingerprint = id;
+      error = '服务器指纹变了。指纹不是密码，只用来确认还是不是原来那台。';
+    } else {
+      pendingFingerprint = null;
+    }
+    notifyListeners();
+  }
+
+  Future<void> acceptFingerprint() async {
+    final host = server;
+    final id = pendingFingerprint;
+    if (host == null || id == null) return;
+    final next = _prints()..[host] = id;
+    await prefs.setString('fingerprints', jsonEncode(next));
+    pendingFingerprint = null;
+    if (error != null && error!.contains('指纹')) error = null;
+    notifyListeners();
+  }
+
+  String? fingerprintFor(String host) => _prints()[normalizeServer(host)];
+
+  Future<int> resendLocal() async {
+    var sent = 0;
+    for (final n in notes.toList()) {
+      n.dirty = true;
+      await push(n);
+      if (!n.dirty) sent++;
+    }
+    await sync();
+    return sent;
+  }
   bool get windowExpanded => prefs.getBool('window_expanded') ?? true;
   set windowExpanded(bool v) {
     prefs.setBool('window_expanded', v);
@@ -316,6 +413,7 @@ class Session extends ChangeNotifier {
       await prefs.setString('key', base64Encode(await box.extract()));
       await rememberServer(s);
       await sync();
+      await _noteFingerprint(s);
     } on SyncException catch (e) {
       error = e.message;
     } catch (e) {
@@ -438,7 +536,38 @@ class Session extends ChangeNotifier {
     }
   }
 
-  Future<Attachment?> attach(Note n, String name, Stream<List<int>> Function() open, int size) async {
+  Future<Attachment?> attach(Note n, String name, Stream<List<int>> Function() open, int size) {
+    final done = Completer<Attachment?>();
+    _jobs.add(() async {
+      try {
+        done.complete(await _attachNow(n, name, open, size));
+      } catch (e) {
+        if (!done.isCompleted) done.completeError(e);
+      }
+    });
+    queued = _jobs.length;
+    notifyListeners();
+    unawaited(_drain());
+    return done.future;
+  }
+
+  Future<void> _drain() async {
+    if (_draining) return;
+    _draining = true;
+    try {
+      while (_jobs.isNotEmpty) {
+        final job = _jobs.removeAt(0);
+        queued = _jobs.length;
+        notifyListeners();
+        await job();
+      }
+    } finally {
+      _draining = false;
+      if (_jobs.isNotEmpty) unawaited(_drain());
+    }
+  }
+
+  Future<Attachment?> _attachNow(Note n, String name, Stream<List<int>> Function() open, int size) async {
     final box = cipher;
     final tok = token;
     final host = server;
