@@ -40,4 +40,16 @@ void main() {
     expect(again.tags, ['生活']);
     expect(again.title, '买菜');
   });
+
+  test('people can find tasks, headings, slash commands and how long ago', () {
+    final notes = [_n('a', title: '买菜', body: '## 超市\n- [ ] 牛奶\n- [x] 面包')];
+    expect(openTasks(notes).single.text, '牛奶');
+    expect(headingsOf(notes.single.body).single.text, '超市');
+    expect(matchSlash('/待').single.name, '待办');
+    expect(replaceCurrentLine('你好\n/待', 4, '- [ ] '), '你好\n- [ ] ');
+    expect(relativeTime(DateTime.now().millisecondsSinceEpoch, DateTime.now()), '刚刚');
+    expect(nextMatch('牛奶面包', '面包', 0), 2);
+    notes.single.icon = '📁';
+    expect(Note.decode('a', notes.single.encode(), 1).icon, '📁');
+  });
 }

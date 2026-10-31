@@ -1,9 +1,12 @@
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import 'desktop.dart';
 import 'scope.dart';
 
-const appVersion = '1.1.0';
+const appVersion = '1.2.0';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -48,8 +51,43 @@ class SettingsPage extends StatelessWidget {
               },
             ),
           ListTile(
+            title: const Text('导出全部笔记'),
+            subtitle: const Text('存成一个 Markdown 文件，方便自己备份'),
+            onTap: () async {
+              final file = await s.exportNotesFile();
+              if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('已写到 ${file.path}')));
+            },
+          ),
+          ListTile(
+            title: const Text('导入 Markdown'),
+            subtitle: const Text('选一个 .md，变成一篇新笔记'),
+            onTap: () async {
+              final picked = await FilePicker.pickFiles(type: FileType.custom, allowedExtensions: ['md', 'txt', 'markdown']);
+              if (picked.isEmpty) return;
+              final f = picked.first;
+              final path = f.path;
+              if (path == null) return;
+              final text = await File(path).readAsString();
+              final title = f.name.replaceAll(RegExp(r'\.(md|txt|markdown)$'), '');
+              s.create(title: title, body: text);
+              if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('已导入 $title')));
+            },
+          ),
+          ListTile(
             title: const Text('退出登录'),
             onTap: () async {
+              final ok = await showDialog<bool>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('退出登录'),
+                  content: const Text('这台设备上记住的钥匙会清掉。笔记还在服务器上，用同一个密码可以再进来。'),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
+                    FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('退出')),
+                  ],
+                ),
+              );
+              if (ok != true) return;
               await s.logout();
               if (context.mounted) Navigator.of(context).popUntil((r) => r.isFirst);
             },

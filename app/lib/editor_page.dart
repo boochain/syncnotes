@@ -25,6 +25,9 @@ class EditorPageState extends State<EditorPage> {
   var _ready = false;
   var _preview = false;
   var _focus = false;
+  var _finding = false;
+  List<SlashCommand> _slash = const [];
+  final _find = TextEditingController();
 
   Note? _note(BuildContext context) {
     for (final n in Scope.of(context).notes) {
@@ -49,6 +52,7 @@ class EditorPageState extends State<EditorPage> {
     _timer?.cancel();
     _title.dispose();
     _body.dispose();
+    _find.dispose();
     super.dispose();
   }
 
@@ -69,6 +73,38 @@ class EditorPageState extends State<EditorPage> {
     final end = v.selection.end < 0 ? _body.text.length : v.selection.end;
     final next = wrapRange(_body.text, start, end, left, right);
     _apply(s, n, next, (start <= end ? end : start) + left.length);
+  }
+
+  void _onBody(Session s, Note n) {
+    _schedule(s, n);
+    final text = _body.text;
+    final cursor = _body.selection.start < 0 ? text.length : _body.selection.start;
+    final start = text.lastIndexOf('\n', cursor <= 0 ? 0 : cursor - 1) + 1;
+    var end = text.indexOf('\n', cursor);
+    if (end < 0) end = text.length;
+    final line = text.substring(start, end);
+    final matches = matchSlash(line);
+    setState(() => _slash = matches);
+  }
+
+  void _runSlash(Session s, Note n, SlashCommand command) {
+    if (command.name == '删除线') {
+      _wrap(s, n, '~~', '~~');
+      setState(() => _slash = const []);
+      return;
+    }
+    final insert = command.insert == '__DATE__' ? DateTime.now().toIso8601String().substring(0, 10) : command.insert;
+    final cursor = _body.selection.start < 0 ? _body.text.length : _body.selection.start;
+    final next = replaceCurrentLine(_body.text, cursor, insert);
+    _apply(s, n, next, cursor);
+    setState(() => _slash = const []);
+  }
+
+  void _findNext() {
+    final at = nextMatch(_body.text, _find.text, _body.selection.end < 0 ? 0 : _body.selection.end);
+    if (at < 0) return;
+    _body.selection = TextSelection(baseOffset: at, extentOffset: at + _find.text.trim().length);
+    setState(() => _preview = false);
   }
 
   void _prefix(Session s, Note n, String prefix) {
@@ -166,7 +202,11 @@ class EditorPageState extends State<EditorPage> {
               IconButton(tooltip: '待办', onPressed: () => _prefix(s, n, '- [ ] '), icon: const Icon(Icons.check_box_outlined)),
               IconButton(tooltip: '引用', onPressed: () => _prefix(s, n, '> '), icon: const Icon(Icons.format_quote)),
               IconButton(tooltip: '代码', onPressed: () => _wrap(s, n, '`', '`'), icon: const Icon(Icons.code)),
+              IconButton(tooltip: '删除线', onPressed: () => _wrap(s, n, '~~', '~~'), icon: const Icon(Icons.format_strikethrough)),
+              IconButton(tooltip: '编号', onPressed: () => _prefix(s, n, '1. '), icon: const Icon(Icons.format_list_numbered)),
+              IconButton(tooltip: '分隔线', onPressed: () => _prefix(s, n, '---\n'), icon: const Icon(Icons.horizontal_rule)),
               IconButton(tooltip: '链接到笔记', onPressed: () => _wrap(s, n, '[[', ']]'), icon: const Icon(Icons.link)),
+              IconButton(tooltip: '在这篇里查找', onPressed: () => setState(() => _finding = !_finding), icon: const Icon(Icons.search)),
               IconButton(tooltip: '添加文件', onPressed: () => _attach(context, s, n), icon: const Icon(Icons.attach_file)),
             ]),
           ],
@@ -177,6 +217,31 @@ class EditorPageState extends State<EditorPage> {
             decoration: const InputDecoration(hintText: '标题', border: InputBorder.none),
             onChanged: (_) => _schedule(s, n),
           ),
+          if (_finding)
+            Row(children: [
+              Expanded(child: TextField(controller: _find, decoration: const InputDecoration(hintText: '在这篇笔记里找'), onSubmitted: (_) => _findNext())),
+              TextButton(onPressed: _findNext, child: const Text('下一个')),
+            ]),
+          if (_slash.isNotEmpty)
+            Card(
+              child: Column(children: [
+                for (final c in _slash)
+                  ListTile(dense: true, title: Text('/${c.name}'), subtitle: Text(c.hint), onTap: () => _runSlash(s, n, c)),
+              ]),
+            ),
+          if (!_focus && headingsOf(_body.text).isNotEmpty)
+            Wrap(spacing: 6, children: [
+              for (final h in headingsOf(_body.text))
+                ActionChip(label: Text(h.text), onPressed: () {
+                  final lines = _body.text.split('\n');
+                  var offset = 0;
+                  for (var i = 0; i < h.line && i < lines.length; i++) {
+                    offset += lines[i].length + 1;
+                  }
+                  _body.selection = TextSelection.collapsed(offset: offset);
+                  setState(() => _preview = false);
+                }),
+            ]),
           if (_preview)
             MarkdownBody(
               text: _body.text,
@@ -198,8 +263,8 @@ class EditorPageState extends State<EditorPage> {
               controller: _body,
               minLines: 8,
               maxLines: null,
-              decoration: const InputDecoration(hintText: '开始写。用 [[标题]] 链接另一篇笔记。', border: InputBorder.none),
-              onChanged: (_) => _schedule(s, n),
+              decoration: const InputDecoration(hintText: '开始写。输入 / 可以选择待办、标题、日期。用 [[标题]] 链接另一篇笔记。', border: InputBorder.none),
+              onChanged: (_) => _onBody(s, n),
             ),
           for (final f in n.files)
             ListTile(
@@ -207,7 +272,30 @@ class EditorPageState extends State<EditorPage> {
               leading: const Icon(Icons.insert_drive_file_outlined),
               title: Text(f.name),
               subtitle: Text(_size(f.size)),
+              trailing: IconButton(
+                tooltip: '从笔记里去掉',
+                onPressed: () async {
+                  final ok = await showDialog<bool>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('去掉附件'),
+                      content: Text('「${f.name}」会从这篇笔记拿掉。'),
+                      actions: [
+                        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
+                        FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('去掉')),
+                      ],
+                    ),
+                  );
+                  if (ok == true) s.removeFile(n, f.id);
+                },
+                icon: const Icon(Icons.close),
+              ),
               onTap: () => _save(context, s, f),
+            ),
+          if (!_focus)
+            Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: Text('创建于 ${relativeTime(n.createdAt, DateTime.now())} · 改于 ${relativeTime(n.updatedAt, DateTime.now())}', style: Theme.of(context).textTheme.bodySmall),
             ),
           if (!_focus && links.isNotEmpty) ...[
             const Divider(),

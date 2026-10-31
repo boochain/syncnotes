@@ -149,3 +149,97 @@ String exportMarkdown(Note n) {
   final files = n.files.isEmpty ? '' : '\n\n附件：${n.files.map((f) => f.name).join('、')}';
   return '# ${n.heading}\n\n${n.body}$tags$files\n';
 }
+
+class SlashCommand {
+  const SlashCommand(this.name, this.hint, this.insert);
+  final String name;
+  final String hint;
+  final String insert;
+}
+
+const slashCommands = <SlashCommand>[
+  SlashCommand('待办', '一条可以勾的事', '- [ ] '),
+  SlashCommand('列表', '圆点列表', '- '),
+  SlashCommand('编号', '按顺序写', '1. '),
+  SlashCommand('标题', '一个小节', '## '),
+  SlashCommand('引用', '摘一句', '> '),
+  SlashCommand('代码', '一段代码', '```\n\n```'),
+  SlashCommand('分隔', '一条横线', '---'),
+  SlashCommand('日期', '插入今天', '__DATE__'),
+  SlashCommand('删除线', '划掉这段', '~~'),
+];
+
+List<SlashCommand> matchSlash(String line) {
+  if (!line.startsWith('/')) return const [];
+  final q = line.substring(1).trim();
+  return [for (final c in slashCommands) if (q.isEmpty || c.name.contains(q)) c];
+}
+
+String replaceCurrentLine(String text, int cursor, String insert) {
+  final at = cursor.clamp(0, text.length);
+  final start = text.lastIndexOf('\n', at <= 0 ? 0 : at - 1) + 1;
+  var end = text.indexOf('\n', at);
+  if (end < 0) end = text.length;
+  return text.replaceRange(start, end, insert);
+}
+
+class OpenTask {
+  const OpenTask(this.noteId, this.title, this.line, this.text);
+  final String noteId;
+  final String title;
+  final int line;
+  final String text;
+}
+
+List<OpenTask> openTasks(List<Note> notes) {
+  final out = <OpenTask>[];
+  for (final n in notes) {
+    if (n.folder || n.trashed) continue;
+    final lines = n.body.split('\n');
+    for (var i = 0; i < lines.length; i++) {
+      if (lines[i].startsWith('- [ ] ')) out.add(OpenTask(n.id, n.heading, i, lines[i].substring(6)));
+    }
+  }
+  return out;
+}
+
+class Heading {
+  const Heading(this.line, this.text, this.level);
+  final int line;
+  final String text;
+  final int level;
+}
+
+List<Heading> headingsOf(String body) {
+  final out = <Heading>[];
+  final lines = body.split('\n');
+  for (var i = 0; i < lines.length; i++) {
+    final m = RegExp(r'^(#{1,3}) (.+)$').firstMatch(lines[i]);
+    if (m != null) out.add(Heading(i, m.group(2)!.trim(), m.group(1)!.length));
+  }
+  return out;
+}
+
+int folderCount(List<Note> notes, String id) => notes.where((n) => !n.folder && !n.trashed && n.folderId == id).length;
+
+String relativeTime(int millis, DateTime now) {
+  final then = DateTime.fromMillisecondsSinceEpoch(millis);
+  final d = now.difference(then);
+  if (d.isNegative || d.inSeconds < 45) return '刚刚';
+  if (d.inMinutes < 60) return '${d.inMinutes} 分钟前';
+  if (d.inHours < 24) return '${d.inHours} 小时前';
+  if (d.inDays < 7) return '${d.inDays} 天前';
+  return '${then.month}月${then.day}日';
+}
+
+int nextMatch(String text, String query, int from) {
+  final q = query.trim().toLowerCase();
+  if (q.isEmpty) return -1;
+  final hay = text.toLowerCase();
+  final start = from.clamp(0, hay.length);
+  final at = hay.indexOf(q, start);
+  if (at >= 0) return at;
+  return hay.indexOf(q);
+}
+
+const folderIcons = ['', '📁', '📝', '✅', '💡', '🏠', '💼', '📚', '🔒', '⭐'];

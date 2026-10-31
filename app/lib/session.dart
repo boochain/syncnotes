@@ -31,6 +31,7 @@ class Note {
     this.trashed = false,
     this.folder = false,
     this.folderId,
+    this.icon = '',
   })  : files = files ?? [],
         tags = tags ?? [],
         createdAt = createdAt ?? updatedAt;
@@ -47,6 +48,7 @@ class Note {
   bool trashed;
   bool folder;
   String? folderId;
+  String icon;
 
   String get heading => title.trim().isEmpty ? (folder ? '未命名文件夹' : '无标题') : title.trim();
 
@@ -65,6 +67,7 @@ class Note {
     trashed = next.trashed;
     folder = next.folder;
     folderId = next.folderId;
+    icon = next.icon;
     dirty = false;
   }
 
@@ -77,6 +80,7 @@ class Note {
         'trashed': trashed,
         'folder': folder,
         'folderId': folderId,
+        'icon': icon,
         'createdAt': createdAt,
       };
 
@@ -111,6 +115,7 @@ class Note {
       trashed: j['trashed'] == true,
       folder: j['folder'] == true,
       folderId: j['folderId'] as String?,
+      icon: '${j['icon'] ?? ''}',
     );
   }
 
@@ -399,24 +404,56 @@ class Session extends ChangeNotifier {
     }
   }
 
+  bool syncing = false;
+  bool live = false;
+  int? lastSyncAt;
+
   void dismissTransfer() => transfer.value = null;
+
+  void clearError() {
+    error = null;
+    notifyListeners();
+  }
+
+  void removeFile(Note n, String fileId) {
+    n.files.removeWhere((f) => f.id == fileId);
+    touch(n);
+  }
+
+  Future<File> exportNotesFile() async {
+    final f = File('${supportDir.path}${Platform.pathSeparator}syncnotes-export.md');
+    final text = [
+      for (final n in notes)
+        if (!n.folder && !n.trashed) '# ${n.heading}\n\n${n.body}\n',
+    ].join('\n---\n\n');
+    await f.writeAsString(text);
+    return f;
+  }
 
   Future<void> sync() async {
     final box = cipher;
     final tok = token;
     final host = server;
     if (box == null || tok == null || host == null) return;
+    syncing = true;
+    notifyListeners();
     try {
       final remote = await api.notes(host, tok);
       await _merge(remote);
       await _connect(host, tok);
       error = null;
+      live = true;
+      lastSyncAt = DateTime.now().millisecondsSinceEpoch;
     } on SyncException catch (e) {
       error = e.message;
+      live = false;
     } catch (e) {
       error = '同步失败：$e';
+      live = false;
+    } finally {
+      syncing = false;
+      notifyListeners();
     }
-    notifyListeners();
   }
 
   Future<void> _merge(List<RemoteNote> remote) async {
@@ -459,6 +496,7 @@ class Session extends ChangeNotifier {
     _sub = _socket!.stream.listen((event) {
       unawaited(_onSocket(event));
     }, onError: (Object e) {
+      live = false;
       error = '连接中断：$e';
       notifyListeners();
     }, onDone: () {
