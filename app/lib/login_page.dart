@@ -59,6 +59,22 @@ class LoginPageState extends State<LoginPage> {
                 onPressed: s.busy ? null : () => s.login(server: _server.text, username: _user.text, password: _pass.text, register: true),
                 child: const Text('注册'),
               ),
+              if (s.knownServers.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                const Text('记住的服务器'),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    for (final host in s.knownServers)
+                      InputChip(
+                        label: Text(host),
+                        onPressed: () => _server.text = host,
+                        onDeleted: () => s.forgetServer(host),
+                      ),
+                  ],
+                ),
+              ],
             ],
             ),
           ),

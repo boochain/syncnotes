@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'desktop.dart';
 import 'scope.dart';
 
-const appVersion = '1.0.0';
+const appVersion = '1.1.0';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -17,6 +17,13 @@ class SettingsPage extends StatelessWidget {
         children: [
           ListTile(title: const Text('服务器'), subtitle: Text(s.server ?? '')),
           ListTile(title: const Text('用户'), subtitle: Text(s.username ?? '')),
+          if (s.knownServers.isNotEmpty) const ListTile(title: Text('记住的服务器')),
+          for (final host in s.knownServers)
+            ListTile(
+              title: Text(host),
+              trailing: IconButton(tooltip: '删除', onPressed: () => s.forgetServer(host), icon: const Icon(Icons.close)),
+              onTap: () => s.rememberServer(host),
+            ),
           const ListTile(title: Text('外观')),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -50,7 +57,7 @@ class SettingsPage extends StatelessWidget {
           const ListTile(title: Text('版本'), subtitle: Text(appVersion)),
           const ListTile(
             title: Text('加密'),
-            subtitle: Text('笔记和文件用你的密码加密后才发出去。服务器看不到正文。换一台设备时用同一个密码登录。'),
+            subtitle: Text('笔记和文件用你的密码加密后才发出去。文件夹、标签、置顶和回收站都在这篇密文里，换设备登录同一个账号就能看到。'),
           ),
         ],
       ),

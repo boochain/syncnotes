@@ -18,66 +18,108 @@ class Attachment {
 }
 
 class Note {
-  Note({required this.id, this.title = '', this.body = '', List<Attachment>? files, required this.updatedAt, this.dirty = false})
-      : files = files ?? [];
+  Note({
+    required this.id,
+    this.title = '',
+    this.body = '',
+    List<Attachment>? files,
+    List<String>? tags,
+    required this.updatedAt,
+    int? createdAt,
+    this.dirty = false,
+    this.pinned = false,
+    this.trashed = false,
+    this.folder = false,
+    this.folderId,
+  })  : files = files ?? [],
+        tags = tags ?? [],
+        createdAt = createdAt ?? updatedAt;
 
   final String id;
   String title;
   String body;
   final List<Attachment> files;
+  final List<String> tags;
   int updatedAt;
+  int createdAt;
   bool dirty;
+  bool pinned;
+  bool trashed;
+  bool folder;
+  String? folderId;
 
-  String get heading => title.trim().isEmpty ? '无标题' : title.trim();
+  String get heading => title.trim().isEmpty ? (folder ? '未命名文件夹' : '无标题') : title.trim();
 
-  String encode() => jsonEncode({
+  void copyContent(Note next) {
+    title = next.title;
+    body = next.body;
+    files
+      ..clear()
+      ..addAll(next.files);
+    tags
+      ..clear()
+      ..addAll(next.tags);
+    updatedAt = next.updatedAt;
+    createdAt = next.createdAt;
+    pinned = next.pinned;
+    trashed = next.trashed;
+    folder = next.folder;
+    folderId = next.folderId;
+    dirty = false;
+  }
+
+  Map<String, dynamic> _payload() => {
         'title': title,
         'body': body,
         'files': [for (final f in files) {'id': f.id, 'name': f.name, 'size': f.size}],
-      });
+        'tags': tags,
+        'pinned': pinned,
+        'trashed': trashed,
+        'folder': folder,
+        'folderId': folderId,
+        'createdAt': createdAt,
+      };
+
+  String encode() => jsonEncode(_payload());
+
+  static List<Attachment> _files(Object? raw) {
+    final files = <Attachment>[];
+    if (raw is List) {
+      for (final e in raw) {
+        if (e is Map && e['id'] is String) {
+          files.add(Attachment(id: e['id'] as String, name: '${e['name'] ?? 'file'}', size: (e['size'] as num?)?.toInt() ?? 0));
+        }
+      }
+    }
+    return files;
+  }
+
+  static List<String> _tags(Object? raw) => raw is List ? [for (final e in raw) '$e'] : <String>[];
 
   static Note decode(String id, String plain, int updatedAt) {
     final j = jsonDecode(plain);
     if (j is! Map) return Note(id: id, body: plain, updatedAt: updatedAt);
-    final files = <Attachment>[];
-    final raw = j['files'];
-    if (raw is List) {
-      for (final e in raw) {
-        if (e is Map && e['id'] is String) {
-          files.add(Attachment(id: e['id'] as String, name: '${e['name'] ?? 'file'}', size: (e['size'] as num?)?.toInt() ?? 0));
-        }
-      }
-    }
-    return Note(id: id, title: '${j['title'] ?? ''}', body: '${j['body'] ?? ''}', files: files, updatedAt: updatedAt);
-  }
-
-  Map<String, dynamic> toCache() => {
-        'id': id,
-        'title': title,
-        'body': body,
-        'updatedAt': updatedAt,
-        'dirty': dirty,
-        'files': [for (final f in files) {'id': f.id, 'name': f.name, 'size': f.size}],
-      };
-
-  factory Note.fromCache(Map<String, dynamic> j) {
-    final files = <Attachment>[];
-    final raw = j['files'];
-    if (raw is List) {
-      for (final e in raw) {
-        if (e is Map && e['id'] is String) {
-          files.add(Attachment(id: e['id'] as String, name: '${e['name'] ?? 'file'}', size: (e['size'] as num?)?.toInt() ?? 0));
-        }
-      }
-    }
     return Note(
-      id: j['id'] as String,
+      id: id,
       title: '${j['title'] ?? ''}',
       body: '${j['body'] ?? ''}',
-      files: files,
-      updatedAt: (j['updatedAt'] as num?)?.toInt() ?? 0,
-      dirty: j['dirty'] == true,
+      files: _files(j['files']),
+      tags: _tags(j['tags']),
+      updatedAt: updatedAt,
+      createdAt: (j['createdAt'] as num?)?.toInt() ?? updatedAt,
+      pinned: j['pinned'] == true,
+      trashed: j['trashed'] == true,
+      folder: j['folder'] == true,
+      folderId: j['folderId'] as String?,
     );
+  }
+
+  Map<String, dynamic> toCache() => {'id': id, 'updatedAt': updatedAt, 'dirty': dirty, ..._payload()};
+
+  factory Note.fromCache(Map<String, dynamic> j) {
+    final n = Note.decode(j['id'] as String, jsonEncode(j), (j['updatedAt'] as num?)?.toInt() ?? 0);
+    n.dirty = j['dirty'] == true;
+    return n;
   }
 }
 
@@ -123,6 +165,24 @@ class Session extends ChangeNotifier {
     notifyListeners();
   }
 
+  List<String> get knownServers => prefs.getStringList('known_servers');
+
+  Future<void> rememberServer(String raw) async {
+    final s = normalizeServer(raw);
+    if (s.isEmpty) return;
+    final list = prefs.getStringList('known_servers');
+    if (list.contains(s)) return;
+    await prefs.setStringList('known_servers', [...list, s]);
+    notifyListeners();
+  }
+
+  Future<void> forgetServer(String raw) async {
+    final s = normalizeServer(raw);
+    final list = prefs.getStringList('known_servers').where((e) => normalizeServer(e) != s).toList();
+    await prefs.setStringList('known_servers', list);
+    notifyListeners();
+  }
+
   Future<void> restore() async {
     server = prefs.getString('server');
     token = prefs.getString('token');
@@ -152,6 +212,7 @@ class Session extends ChangeNotifier {
       await prefs.setString('token', session.token);
       await prefs.setString('username', session.username);
       await prefs.setString('key', base64Encode(await box.extract()));
+      await rememberServer(s);
       await sync();
     } on SyncException catch (e) {
       error = e.message;
@@ -178,13 +239,41 @@ class Session extends ChangeNotifier {
     notifyListeners();
   }
 
-  Note create() {
-    final n = Note(id: const Uuid().v4(), updatedAt: DateTime.now().millisecondsSinceEpoch, dirty: true);
+  Note create({String title = '', String body = '', String? folderId, bool folder = false}) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final n = Note(id: const Uuid().v4(), title: title, body: body, folderId: folderId, folder: folder, updatedAt: now, createdAt: now, dirty: true);
     notes.insert(0, n);
     notifyListeners();
     unawaited(_saveCache());
     unawaited(push(n));
     return n;
+  }
+
+  Note duplicate(Note source) {
+    final n = create(title: source.title.trim().isEmpty ? '副本' : '${source.title} 副本', body: source.body, folderId: source.folderId);
+    n.tags.addAll(source.tags);
+    n.files.addAll(source.files);
+    touch(n);
+    return n;
+  }
+
+  void touch(Note n) {
+    n.updatedAt = DateTime.now().millisecondsSinceEpoch;
+    n.dirty = true;
+    notes.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    notifyListeners();
+    unawaited(_saveCache());
+    unawaited(push(n));
+  }
+
+  void trashNote(Note n) {
+    n.trashed = true;
+    touch(n);
+  }
+
+  void restoreNote(Note n) {
+    n.trashed = false;
+    touch(n);
   }
 
   void edit(Note n, {String? title, String? body}) {
@@ -351,13 +440,7 @@ class Session extends ChangeNotifier {
         if (local == null) {
           notes.add(next);
         } else {
-          local.title = next.title;
-          local.body = next.body;
-          local.files
-            ..clear()
-            ..addAll(next.files);
-          local.updatedAt = next.updatedAt;
-          local.dirty = false;
+          local.copyContent(next);
         }
       } on SyncException {
         if (local == null) notes.add(Note(id: r.id, title: '无法解密', updatedAt: r.updatedAt));

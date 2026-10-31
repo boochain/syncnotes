@@ -28,6 +28,23 @@ class SettingsStore {
     }
   }
 
+  List<String> getStringList(String k) {
+    if (_mem != null) {
+      final v = _mem[k];
+      if (v is List) return [for (final e in v) '$e'];
+      return const [];
+    }
+    return _prefs!.getStringList(k) ?? const [];
+  }
+
+  Future<void> setStringList(String k, List<String> v) async {
+    if (_mem != null) {
+      _mem[k] = v;
+    } else {
+      await _prefs!.setStringList(k, v);
+    }
+  }
+
   Future<void> remove(String k) async {
     if (_mem != null) {
       _mem.remove(k);
