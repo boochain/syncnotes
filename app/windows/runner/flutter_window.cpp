@@ -1,7 +1,9 @@
 #include "flutter_window.h"
 
+#include <cstring>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include <shellapi.h>
 
@@ -22,6 +24,40 @@ std::wstring TipFor(const std::string& text) {
   std::wstring out(static_cast<size_t>(n - 1), L'\0');
   MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, out.data(), n);
   if (out.size() > 127) out.resize(127);
+  return out;
+}
+
+std::vector<uint8_t> ClipboardBmp() {
+  std::vector<uint8_t> out;
+  if (!OpenClipboard(nullptr)) return out;
+  HANDLE data = GetClipboardData(CF_DIB);
+  if (data == nullptr) {
+    CloseClipboard();
+    return out;
+  }
+  auto* bytes = static_cast<const uint8_t*>(GlobalLock(data));
+  const SIZE_T size = GlobalSize(data);
+  if (bytes == nullptr || size < sizeof(BITMAPINFOHEADER)) {
+    if (bytes != nullptr) GlobalUnlock(data);
+    CloseClipboard();
+    return out;
+  }
+  const auto* info = reinterpret_cast<const BITMAPINFOHEADER*>(bytes);
+  SIZE_T palette = info->biSize;
+  if (info->biBitCount > 0 && info->biBitCount <= 8) {
+    const int colors = info->biClrUsed != 0 ? static_cast<int>(info->biClrUsed) : (1 << info->biBitCount);
+    palette += static_cast<SIZE_T>(colors) * 4;
+  }
+  if (palette > size) palette = sizeof(BITMAPINFOHEADER);
+  BITMAPFILEHEADER file{};
+  file.bfType = 0x4D42;
+  file.bfOffBits = static_cast<DWORD>(sizeof(BITMAPFILEHEADER) + palette);
+  file.bfSize = file.bfOffBits + static_cast<DWORD>(size - palette);
+  out.resize(sizeof(BITMAPFILEHEADER) + size);
+  memcpy(out.data(), &file, sizeof(file));
+  memcpy(out.data() + sizeof(file), bytes, size);
+  GlobalUnlock(data);
+  CloseClipboard();
   return out;
 }
 }  // namespace
@@ -181,6 +217,15 @@ bool FlutterWindow::OnCreate() {
           close_to_tray_ = false;
           if (hwnd != nullptr) PostMessage(hwnd, WM_CLOSE, 0, 0);
           result->Success();
+          return;
+        }
+        if (call.method_name() == "clipboardImage") {
+          const std::vector<uint8_t> bmp = ClipboardBmp();
+          if (bmp.empty()) {
+            result->Success();
+          } else {
+            result->Success(flutter::EncodableValue(bmp));
+          }
           return;
         }
         result->NotImplemented();

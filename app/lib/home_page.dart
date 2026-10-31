@@ -48,6 +48,13 @@ class HomePageState extends State<HomePage> {
       n.remindAt = null;
       s.touch(n);
     }
+    final now = DateTime.now().millisecondsSinceEpoch;
+    for (final n in s.notes) {
+      final at = n.remindAt;
+      if (at != null && at > now) {
+        unawaited(Device.scheduleReminder(at, n.heading, n.body.split('\n').first, n.id.hashCode));
+      }
+    }
   }
 
   @override
@@ -254,12 +261,19 @@ class HomePageState extends State<HomePage> {
                         const SizedBox(height: 12),
                         if (_view != 'trash') Center(child: FilledButton(onPressed: () => _newNote(s), child: const Text('写第一篇'))),
                       ])
-                    : ListView.separated(
+                    : ReorderableListView.builder(
+                        buildDefaultDragHandles: false,
                         itemCount: shown.length + (_view == 'trash' ? 1 : 0),
-                        separatorBuilder: (_, _) => const Divider(height: 1),
+                        onReorderItem: (oldIndex, newIndex) {
+                          if (_view == 'trash') return;
+                          applyManualOrder(shown, oldIndex, newIndex);
+                          setState(() => _sort = 'order');
+                          s.persistOrders(shown);
+                        },
                         itemBuilder: (context, i) {
                           if (_view == 'trash' && i == shown.length) {
                             return ListTile(
+                              key: const ValueKey('empty-trash'),
                               title: const Text('清空回收站'),
                               onTap: () async {
                                 if (await _confirm('清空回收站', '里面的笔记会彻底删掉，不能撤销。')) {
@@ -294,11 +308,12 @@ class HomePageState extends State<HomePage> {
                                       icon: const Icon(Icons.delete_forever),
                                     ),
                                   ])
-                                : null,
+                                : ReorderableDragStartListener(index: i, child: const Icon(Icons.drag_handle)),
                             onTap: () => _open(context, n),
                             onLongPress: () => _menu(s, n),
                           );
                           return Draggable<String>(
+                            key: ValueKey(n.id),
                             data: n.id,
                             feedback: Material(child: Padding(padding: const EdgeInsets.all(8), child: Text(n.heading))),
                             child: _view == 'trash' ? tile : Dismissible(
@@ -561,7 +576,7 @@ class _Sidebar extends StatelessWidget {
       ListTile(selected: view == 'pinned', leading: const Icon(Icons.push_pin), title: const Text('置顶'), onTap: () => onSelect('pinned')),
       ListTile(selected: view == 'tasks', leading: const Icon(Icons.check_box_outlined), title: Text('待办${todo == 0 ? '' : ' $todo'}'), onTap: () => onSelect('tasks')),
       const Divider(),
-      const ListTile(dense: true, title: Text('文件夹  长按可以改名')),
+      const ListTile(dense: true, title: Text('文件夹  拖图标可以嵌套，长按改名')),
       for (final f in folders)
         DragTarget<String>(
           onWillAcceptWithDetails: (d) => d.data != f.id && !folderContains(notes, d.data, f.id),
@@ -570,7 +585,11 @@ class _Sidebar extends StatelessWidget {
             selected: view == 'folder' && folderId == f.id,
             tileColor: candidate.isEmpty ? null : Theme.of(context).colorScheme.secondaryContainer,
             contentPadding: EdgeInsets.only(left: f.folderId == null ? 16 : 32, right: 16),
-            leading: Text(f.icon.isEmpty ? (f.smart ? '✨' : '📁') : f.icon, style: const TextStyle(fontSize: 18)),
+            leading: Draggable<String>(
+              data: f.id,
+              feedback: Material(child: Padding(padding: const EdgeInsets.all(8), child: Text(f.heading))),
+              child: Text(f.icon.isEmpty ? (f.smart ? '✨' : '📁') : f.icon, style: const TextStyle(fontSize: 18)),
+            ),
             title: Text(f.smart ? '智能 · ${f.heading}' : f.heading),
             trailing: Text(f.smart ? '' : '${folderCount(notes, f.id)}'),
             onTap: () => onSelect('folder', folder: f.id),

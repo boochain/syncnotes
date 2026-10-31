@@ -320,9 +320,7 @@ List<Note> dueNotes(List<Note> notes, int now) => notes.where((n) => !n.trashed 
 
 void applyManualOrder(List<Note> visible, int oldIndex, int newIndex) {
   if (oldIndex < 0 || oldIndex >= visible.length) return;
-  var target = newIndex;
-  if (target > oldIndex) target -= 1;
-  target = target.clamp(0, visible.length - 1);
+  final target = newIndex.clamp(0, visible.length - 1);
   final item = visible.removeAt(oldIndex);
   visible.insert(target, item);
   for (var i = 0; i < visible.length; i++) {

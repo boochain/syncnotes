@@ -35,4 +35,36 @@ class Device {
     if (!Platform.isAndroid) return;
     await device.invokeMethod<void>('notify', {'title': title, 'text': text});
   }
+
+  static Future<void> scheduleReminder(int whenMs, String title, String text, int id) async {
+    if (!Platform.isAndroid) return;
+    await device.invokeMethod<void>('schedule', {'when': whenMs, 'title': title, 'text': text, 'id': id.hashCode});
+  }
+
+  /// 剪贴板里的图片。没有就返回空。
+  static Future<Uint8List?> clipboardImage() async {
+    if (Platform.isWindows) {
+      final raw = await windows.invokeMethod<Uint8List>('clipboardImage');
+      if (raw != null && raw.isNotEmpty) return raw;
+      return null;
+    }
+    if (Platform.isAndroid) {
+      final raw = await device.invokeMethod<Uint8List>('clipboardImage');
+      if (raw != null && raw.isNotEmpty) return raw;
+      return null;
+    }
+    if (Platform.isLinux) {
+      for (final cmd in [
+        ['wl-paste', '-t', 'image/png'],
+        ['xclip', '-selection', 'clipboard', '-t', 'image/png', '-o'],
+      ]) {
+        try {
+          final result = await Process.run(cmd.first, cmd.sublist(1), stdoutEncoding: null);
+          final out = result.stdout;
+          if (result.exitCode == 0 && out is Uint8List && out.length > 8) return out;
+        } catch (_) {}
+      }
+    }
+    return null;
+  }
 }

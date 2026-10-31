@@ -359,6 +359,17 @@ class Session extends ChangeNotifier {
     return n;
   }
 
+  void persistOrders(Iterable<Note> visible) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    for (final n in visible) {
+      n.updatedAt = now;
+      n.dirty = true;
+      unawaited(push(n));
+    }
+    unawaited(_saveCache());
+    notifyListeners();
+  }
+
   void touch(Note n) {
     n.updatedAt = DateTime.now().millisecondsSinceEpoch;
     n.dirty = true;

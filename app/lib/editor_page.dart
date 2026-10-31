@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -28,6 +29,7 @@ class EditorPageState extends State<EditorPage> {
   var _preview = false;
   var _focus = false;
   var _finding = false;
+  var _dropping = false;
   List<SlashCommand> _slash = const [];
   final _find = TextEditingController();
   final _replace = TextEditingController();
@@ -179,7 +181,25 @@ class EditorPageState extends State<EditorPage> {
           ),
         ],
       ),
-      body: ListView(
+      body: DropTarget(
+        onDragEntered: (_) => setState(() => _dropping = true),
+        onDragExited: (_) => setState(() => _dropping = false),
+        onDragDone: (detail) async {
+          setState(() => _dropping = false);
+          for (final file in detail.files) {
+            final path = file.path;
+            if (path.isEmpty) continue;
+            final name = file.name.isEmpty ? '文件' : file.name;
+            final image = RegExp(r'\.(png|jpe?g|gif|webp|bmp)$', caseSensitive: false).hasMatch(name);
+            final len = await file.length();
+            await _putFile(s, n, name, () => File(path).openRead(), len, image: image);
+          }
+          if (detail.files.isEmpty && context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('没接到文件。请从文件夹里拖一个文件过来。')));
+          }
+        },
+        child: Stack(children: [
+          ListView(
         padding: const EdgeInsets.all(16),
         children: [
           if (!_focus) ...[
@@ -215,6 +235,7 @@ class EditorPageState extends State<EditorPage> {
             ]),
             Wrap(spacing: 6, children: [
               ActionChip(label: const Text('表格'), onPressed: () => _insert(s, n, markdownTable())),
+              ActionChip(label: const Text('粘贴图片'), onPressed: () => _pasteImage(context, s, n)),
               ActionChip(label: const Text('图片'), onPressed: () => _image(context, s, n)),
               ActionChip(label: const Text('手写'), onPressed: () => _ink(context, s, n)),
               ActionChip(label: const Text('扫描'), onPressed: () => _scan(context, s, n)),
@@ -354,6 +375,15 @@ class EditorPageState extends State<EditorPage> {
               ),
           ],
         ],
+          ),
+          if (_dropping)
+            const Positioned.fill(
+              child: ColoredBox(
+                color: Color(0xAA3D5AFE),
+                child: Center(child: Text('松开，文件就放进这篇笔记', style: TextStyle(color: Colors.white, fontSize: 18))),
+              ),
+            ),
+        ]),
       ),
     );
   }
@@ -378,6 +408,17 @@ class EditorPageState extends State<EditorPage> {
     final att = await s.attach(n, name, open, size);
     if (att != null && image) _insert(s, n, '![${att.name}](snfile:${att.id})\n');
     if (mounted) setState(() {});
+  }
+
+  Future<void> _pasteImage(BuildContext context, Session s, Note n) async {
+    final bytes = await Device.clipboardImage();
+    if (!context.mounted) return;
+    if (bytes == null || bytes.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('剪贴板里没有图片。可以先复制一张图，或把文件拖进这篇笔记。')));
+      return;
+    }
+    final name = bytes.length > 2 && bytes[0] == 0x89 ? '粘贴.png' : '粘贴.bmp';
+    await _putFile(s, n, name, () => Stream.value(bytes), bytes.length, image: true);
   }
 
   Future<void> _image(BuildContext context, Session s, Note n) async {
@@ -437,7 +478,8 @@ class EditorPageState extends State<EditorPage> {
     final when = DateTime(date.year, date.month, date.day, time.hour, time.minute);
     n.remindAt = when.millisecondsSinceEpoch;
     s.touch(n);
-    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('会在 ${when.month}月${when.day}日 ${time.format(context)} 提醒。软件开着时会响，手机会出通知。')));
+    await Device.scheduleReminder(when.millisecondsSinceEpoch, n.heading, n.body.split('\n').first, n.id.hashCode);
+    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('会在 ${when.month}月${when.day}日 ${time.format(context)} 提醒。手机关着也会通知。')));
   }
 
   Future<void> _history(BuildContext context, Session s, Note n) async {

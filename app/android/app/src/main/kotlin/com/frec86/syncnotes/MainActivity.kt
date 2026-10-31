@@ -1,9 +1,12 @@
 package com.frec86.syncnotes
 
 import android.Manifest
+import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -55,6 +58,15 @@ class MainActivity : FlutterActivity() {
                     notify(title, text)
                     result.success(null)
                 }
+                "schedule" -> {
+                    val whenMs = call.argument<Number>("when")?.toLong() ?: 0L
+                    val title = call.argument<String>("title") ?: "SyncNotes"
+                    val text = call.argument<String>("text") ?: ""
+                    val id = call.argument<Int>("id") ?: title.hashCode()
+                    schedule(whenMs, title, text, id)
+                    result.success(null)
+                }
+                "clipboardImage" -> result.success(clipboardImage())
                 else -> result.notImplemented()
             }
         }
@@ -165,6 +177,27 @@ class MainActivity : FlutterActivity() {
             Notification.Builder(this)
         }.setContentTitle(title).setContentText(text).setSmallIcon(android.R.drawable.ic_dialog_info).build()
         nm.notify(title.hashCode(), notification)
+    }
+
+    private fun schedule(whenMs: Long, title: String, text: String, id: Int) {
+        val intent = Intent(this, ReminderReceiver::class.java).apply {
+            putExtra("title", title)
+            putExtra("text", text)
+        }
+        val pending = PendingIntent.getBroadcast(this, id, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val alarms = getSystemService(AlarmManager::class.java)
+        try {
+            alarms.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, whenMs, pending)
+        } catch (_: SecurityException) {
+            alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, whenMs, pending)
+        }
+    }
+
+    private fun clipboardImage(): ByteArray? {
+        val clip = getSystemService(ClipboardManager::class.java).primaryClip ?: return null
+        if (clip.itemCount == 0) return null
+        val uri = clip.getItemAt(0).uri ?: return null
+        return contentResolver.openInputStream(uri)?.use { it.readBytes() }
     }
 
     private fun readShare(intent: Intent?): Map<String, Any?>? {

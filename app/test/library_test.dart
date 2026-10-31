@@ -75,7 +75,7 @@ void main() {
     expect(pinDigest('1234'), pinDigest('1234'));
     expect(pinDigest('1234') == pinDigest('9999'), isFalse);
     final ordered = [_n('a'), _n('b'), _n('c')];
-    applyManualOrder(ordered, 0, 3);
+    applyManualOrder(ordered, 0, 2);
     expect(ordered.map((n) => n.id).toList(), ['b', 'c', 'a']);
     expect(ordered.map((n) => n.order).toList(), [0, 1, 2]);
   });
