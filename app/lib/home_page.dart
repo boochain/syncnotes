@@ -477,7 +477,7 @@ class HomePageState extends State<HomePage> {
               const VerticalDivider(width: 1),
               SizedBox(width: 340, child: body),
               const VerticalDivider(width: 1),
-              Expanded(child: _openId == null ? const Center(child: Text('选一篇笔记，就在右边写')) : EditorPage(key: ValueKey(_openId), noteId: _openId!)),
+              Expanded(child: _openId == null ? const Center(child: Text('选一篇笔记，就在右边写')) : EditorPage(key: ValueKey(_openId), noteId: _openId!, embedded: true)),
             ])
           : body,
         ),

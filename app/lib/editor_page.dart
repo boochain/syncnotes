@@ -14,8 +14,9 @@ import 'scope.dart';
 import 'session.dart';
 
 class EditorPage extends StatefulWidget {
-  const EditorPage({super.key, required this.noteId});
+  const EditorPage({super.key, required this.noteId, this.embedded = false});
   final String noteId;
+  final bool embedded;
 
   @override
   State<EditorPage> createState() => EditorPageState();
@@ -151,37 +152,32 @@ class EditorPageState extends State<EditorPage> {
     final folders = folderNotes(s.notes);
     final links = backlinksOf(s.notes, n);
     final words = wordCount('${_title.text}\n${_body.text}');
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(_focus ? '专注' : '$words 字'),
-        actions: [
-          IconButton(tooltip: n.pinned ? '取消置顶' : '置顶', onPressed: () { n.pinned = !n.pinned; s.touch(n); }, icon: Icon(n.pinned ? Icons.push_pin : Icons.push_pin_outlined)),
-          IconButton(tooltip: _preview ? '编辑' : '预览', onPressed: () => setState(() => _preview = !_preview), icon: Icon(_preview ? Icons.edit : Icons.visibility)),
-          IconButton(tooltip: _focus ? '退出专注' : '专注模式', onPressed: () => setState(() => _focus = !_focus), icon: const Icon(Icons.fullscreen)),
-          PopupMenuButton<String>(
-            onSelected: (v) async {
-              if (v == 'copy') {
-                await Clipboard.setData(ClipboardData(text: exportMarkdown(n)));
-                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已复制 Markdown')));
-              }
-              if (v == 'dup') {
-                final copy = s.duplicate(n);
-                if (context.mounted) Navigator.of(context).push(MaterialPageRoute(builder: (_) => EditorPage(noteId: copy.id)));
-              }
-              if (v == 'trash') {
-                s.trashNote(n);
-                if (context.mounted) Navigator.of(context).pop();
-              }
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'copy', child: Text('复制为 Markdown')),
-              PopupMenuItem(value: 'dup', child: Text('复制这篇笔记')),
-              PopupMenuItem(value: 'trash', child: Text('移到回收站')),
-            ],
-          ),
+    final wide = MediaQuery.sizeOf(context).width >= 900 && !_focus;
+    final bar = <Widget>[
+      IconButton(tooltip: n.pinned ? '取消置顶' : '置顶', onPressed: () { n.pinned = !n.pinned; s.touch(n); }, icon: Icon(n.pinned ? Icons.push_pin : Icons.push_pin_outlined)),
+      IconButton(tooltip: _focus ? '退出专注' : '专注', onPressed: () => setState(() => _focus = !_focus), icon: const Icon(Icons.fullscreen)),
+      if (!wide) IconButton(tooltip: _preview ? '编辑' : '预览', onPressed: () => setState(() => _preview = !_preview), icon: Icon(_preview ? Icons.edit : Icons.visibility)),
+      PopupMenuButton<String>(
+        tooltip: '更多',
+        onSelected: (v) => _more(context, s, n, v),
+        itemBuilder: (_) => const [
+          PopupMenuItem(value: 'table', child: Text('插入表格')),
+          PopupMenuItem(value: 'paste', child: Text('粘贴图片')),
+          PopupMenuItem(value: 'image', child: Text('从相册选图片')),
+          PopupMenuItem(value: 'file', child: Text('添加文件（可多选）')),
+          PopupMenuItem(value: 'ink', child: Text('手写')),
+          PopupMenuItem(value: 'scan', child: Text('扫描 / 拍照')),
+          PopupMenuItem(value: 'voice', child: Text('语音转文字')),
+          PopupMenuItem(value: 'remind', child: Text('提醒')),
+          PopupMenuItem(value: 'history', child: Text('历史版本')),
+          PopupMenuItem(value: 'share', child: Text('分享给别人')),
+          PopupMenuItem(value: 'copy', child: Text('复制为 Markdown')),
+          PopupMenuItem(value: 'dup', child: Text('复制这篇笔记')),
+          PopupMenuItem(value: 'trash', child: Text('移到回收站')),
         ],
       ),
-      body: DropTarget(
+    ];
+    final page = DropTarget(
         onDragEntered: (_) => setState(() => _dropping = true),
         onDragExited: (_) => setState(() => _dropping = false),
         onDragDone: (detail) async {
@@ -231,18 +227,8 @@ class EditorPageState extends State<EditorPage> {
               IconButton(tooltip: '分隔线', onPressed: () => _prefix(s, n, '---\n'), icon: const Icon(Icons.horizontal_rule)),
               IconButton(tooltip: '链接到笔记', onPressed: () => _wrap(s, n, '[[', ']]'), icon: const Icon(Icons.link)),
               IconButton(tooltip: '在这篇里查找', onPressed: () => setState(() => _finding = !_finding), icon: const Icon(Icons.search)),
-              IconButton(tooltip: '添加文件', onPressed: () => _attach(context, s, n), icon: const Icon(Icons.attach_file)),
             ]),
             Wrap(spacing: 6, children: [
-              ActionChip(label: const Text('表格'), onPressed: () => _insert(s, n, markdownTable())),
-              ActionChip(label: const Text('粘贴图片'), onPressed: () => _pasteImage(context, s, n)),
-              ActionChip(label: const Text('图片'), onPressed: () => _image(context, s, n)),
-              ActionChip(label: const Text('手写'), onPressed: () => _ink(context, s, n)),
-              ActionChip(label: const Text('扫描'), onPressed: () => _scan(context, s, n)),
-              ActionChip(label: const Text('语音'), onPressed: () => _voice(context, s, n)),
-              ActionChip(label: const Text('提醒'), onPressed: () => _remind(context, s, n)),
-              ActionChip(label: const Text('历史'), onPressed: () => _history(context, s, n)),
-              ActionChip(label: const Text('分享给别人'), onPressed: () => _share(context, s, n)),
               for (final e in noteColors.entries)
                 if (e.key.isNotEmpty)
                   ChoiceChip(
@@ -293,34 +279,19 @@ class EditorPageState extends State<EditorPage> {
                   setState(() => _preview = false);
                 }),
             ]),
-          if (_preview)
-            MarkdownBody(
-              text: _body.text,
-              onWiki: (title) {
-                final hit = noteByTitle(s.notes, title);
-                final opened = hit ?? s.create(title: title);
-                Navigator.of(context).push(MaterialPageRoute(builder: (_) => EditorPage(noteId: opened.id)));
-              },
-              onToggleTask: (line) {
-                final next = toggleTaskLine(_body.text, line);
-                _body.text = next;
-                _schedule(s, n);
-                setState(() {});
-              },
-              onFile: (id) {
-                final hit = n.files.where((f) => f.id == id);
-                if (hit.isNotEmpty) _save(context, s, hit.first);
-              },
+          if (wide)
+            SizedBox(
+              height: 520,
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Expanded(child: _editorField(s, n, fill: true)),
+                const VerticalDivider(width: 1),
+                Expanded(child: SingleChildScrollView(padding: const EdgeInsets.all(8), child: _previewBody(context, s, n))),
+              ]),
             )
+          else if (_preview)
+            _previewBody(context, s, n)
           else
-            TextField(
-              key: const Key('noteBody'),
-              controller: _body,
-              minLines: 8,
-              maxLines: null,
-              decoration: const InputDecoration(hintText: '开始写。输入 / 可以选择待办、标题、日期。用 [[标题]] 链接另一篇笔记。', border: InputBorder.none),
-              onChanged: (_) => _onBody(s, n),
-            ),
+            _editorField(s, n, fill: false),
           for (final f in n.files)
             ListTile(
               contentPadding: EdgeInsets.zero,
@@ -384,8 +355,82 @@ class EditorPageState extends State<EditorPage> {
               ),
             ),
         ]),
-      ),
     );
+    if (widget.embedded) {
+      return Column(children: [
+        Material(child: Row(children: [Padding(padding: const EdgeInsets.only(left: 12), child: Text(_focus ? '专注' : '$words 字')), const Spacer(), ...bar])),
+        Expanded(child: page),
+      ]);
+    }
+    return Scaffold(appBar: AppBar(title: Text(_focus ? '专注' : '$words 字'), actions: bar), body: page);
+  }
+
+  Widget _editorField(Session s, Note n, {required bool fill}) {
+    return TextField(
+      key: const Key('noteBody'),
+      controller: _body,
+      expands: fill,
+      minLines: fill ? null : 8,
+      maxLines: fill ? null : null,
+      textAlignVertical: TextAlignVertical.top,
+      decoration: const InputDecoration(hintText: '开始写。输入 / 可以选择待办、标题、日期。用 [[标题]] 链接另一篇笔记。', border: InputBorder.none),
+      onChanged: (_) => _onBody(s, n),
+    );
+  }
+
+  Widget _previewBody(BuildContext context, Session s, Note n) {
+    return MarkdownBody(
+      text: _body.text,
+      onWiki: (title) {
+        final hit = noteByTitle(s.notes, title);
+        final opened = hit ?? s.create(title: title);
+        Navigator.of(context).push(MaterialPageRoute(builder: (_) => EditorPage(noteId: opened.id)));
+      },
+      onToggleTask: (line) {
+        final next = toggleTaskLine(_body.text, line);
+        _body.text = next;
+        _schedule(s, n);
+        setState(() {});
+      },
+      onFile: (id) {
+        final hit = n.files.where((f) => f.id == id);
+        if (hit.isNotEmpty) _save(context, s, hit.first);
+      },
+    );
+  }
+
+  Future<void> _more(BuildContext context, Session s, Note n, String v) async {
+    switch (v) {
+      case 'table':
+        _insert(s, n, markdownTable());
+      case 'paste':
+        await _pasteImage(context, s, n);
+      case 'image':
+        await _image(context, s, n);
+      case 'file':
+        await _attach(context, s, n);
+      case 'ink':
+        await _ink(context, s, n);
+      case 'scan':
+        await _scan(context, s, n);
+      case 'voice':
+        await _voice(context, s, n);
+      case 'remind':
+        await _remind(context, s, n);
+      case 'history':
+        await _history(context, s, n);
+      case 'share':
+        await _share(context, s, n);
+      case 'copy':
+        await Clipboard.setData(ClipboardData(text: exportMarkdown(n)));
+        if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已复制 Markdown')));
+      case 'dup':
+        final copy = s.duplicate(n);
+        if (context.mounted) Navigator.of(context).push(MaterialPageRoute(builder: (_) => EditorPage(noteId: copy.id)));
+      case 'trash':
+        s.trashNote(n);
+        if (context.mounted && !widget.embedded) Navigator.of(context).pop();
+    }
   }
 
   void _insert(Session s, Note n, String chunk) {
