@@ -12,6 +12,7 @@ import 'login_page.dart';
 import 'scope.dart';
 import 'session.dart';
 import 'settings_store.dart';
+import 'ui/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,42 +28,6 @@ Future<void> main() async {
   }
   await session.restore();
   runApp(SyncApp(session: session));
-}
-
-class _Look {
-  const _Look(this.seed, this.bg, this.forced);
-  final Color seed;
-  final Color bg;
-  final Brightness? forced;
-}
-
-_Look _look(String name) => switch (name) {
-      'ocean' => const _Look(Color(0xFF0F6E8C), Color(0xFFE7F4F6), null),
-      'dusk' => const _Look(Color(0xFF6B4C9A), Color(0xFFF3EEF8), null),
-      'paper' => const _Look(Color(0xFF8A5A2B), Color(0xFFF7F1E6), Brightness.light),
-      'ink' => const _Look(Color(0xFF8AB4FF), Color(0xFF12141A), Brightness.dark),
-      _ => const _Look(Color(0xFF3D5AFE), Color(0xFFF7F8FC), null),
-    };
-
-ThemeData _theme(_Look look, Brightness brightness, double opacity) {
-  final scheme = ColorScheme.fromSeed(seedColor: look.seed, brightness: brightness);
-  final panel = scheme.surface.withValues(alpha: opacity);
-  return ThemeData(
-    colorScheme: scheme,
-    useMaterial3: true,
-    scaffoldBackgroundColor: brightness == Brightness.dark ? const Color(0xFF12141A) : look.bg,
-    cardTheme: CardThemeData(color: panel),
-    pageTransitionsTheme: const PageTransitionsTheme(
-      builders: {
-        TargetPlatform.android: FadeUpwardsPageTransitionsBuilder(),
-        TargetPlatform.iOS: FadeUpwardsPageTransitionsBuilder(),
-        TargetPlatform.linux: FadeUpwardsPageTransitionsBuilder(),
-        TargetPlatform.macOS: FadeUpwardsPageTransitionsBuilder(),
-        TargetPlatform.windows: FadeUpwardsPageTransitionsBuilder(),
-        TargetPlatform.fuchsia: FadeUpwardsPageTransitionsBuilder(),
-      },
-    ),
-  );
 }
 
 class SyncApp extends StatefulWidget {
@@ -144,7 +109,10 @@ class _SyncAppState extends State<SyncApp> with WidgetsBindingObserver {
             'dark' => ThemeMode.dark,
             _ => ThemeMode.system,
           };
-          final look = _look(session.backdrop);
+          final look = lookFor(session.backdrop, mode == ThemeMode.dark || (mode == ThemeMode.system && WidgetsBinding.instance.platformDispatcher.platformBrightness == Brightness.dark) ? Brightness.dark : Brightness.light);
+          final forced = look.forced;
+          final light = appTheme(lookFor(session.backdrop, Brightness.light), Brightness.light, session.surfaceOpacity);
+          final dark = appTheme(lookFor(session.backdrop, Brightness.dark), Brightness.dark, session.surfaceOpacity);
           final home = !session.signedIn
               ? LoginPage(initialServer: session.server ?? '')
               : session.locked
@@ -152,9 +120,9 @@ class _SyncAppState extends State<SyncApp> with WidgetsBindingObserver {
                   : const HomePage();
           return MaterialApp(
             title: 'SyncNotes',
-            theme: _theme(look, Brightness.light, session.surfaceOpacity),
-            darkTheme: _theme(look, Brightness.dark, session.surfaceOpacity),
-            themeMode: look.forced == null ? mode : (look.forced == Brightness.dark ? ThemeMode.dark : ThemeMode.light),
+            theme: light,
+            darkTheme: dark,
+            themeMode: forced == null ? mode : (forced == Brightness.dark ? ThemeMode.dark : ThemeMode.light),
             builder: (context, child) => MediaQuery(
               data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(session.textScale)),
               child: child ?? const SizedBox.shrink(),

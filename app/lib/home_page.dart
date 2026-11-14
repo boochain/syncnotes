@@ -11,6 +11,7 @@ import 'library.dart';
 import 'scope.dart';
 import 'session.dart';
 import 'settings_page.dart';
+import 'ui/tokens.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -243,53 +244,30 @@ class HomePageState extends State<HomePage> {
       onGraph: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const GraphPage())),
     );
     final body = Column(children: [
-      if (s.error != null)
-        Material(
-          color: Theme.of(context).colorScheme.errorContainer,
-          child: ListTile(
-            dense: true,
-            title: Text(s.error!),
-            trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-              TextButton(onPressed: s.sync, child: const Text('重试')),
-              IconButton(onPressed: s.clearError, icon: const Icon(Icons.close)),
-            ]),
-          ),
-        )
-      else
-        ListTile(
-          dense: true,
-          title: Text(s.syncing ? '正在同步' : (s.live ? '已连上' : '还没连上')),
-          subtitle: Text(s.lastSyncAt == null ? '下拉可以再同步一次' : '上次同步 ${relativeTime(s.lastSyncAt!, DateTime.now())}'),
-          trailing: s.syncing ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : null,
-        ),
+      _StatusLine(session: s),
       if (s.pendingFingerprint != null)
-        Material(
-          color: Theme.of(context).colorScheme.tertiaryContainer,
-          child: ListTile(
-            title: const Text('服务器指纹变了'),
-            subtitle: const Text('指纹只用来认出这台服务器，不是解开笔记的钥匙。数据库重装或换过机器时会变。确认是你自己的，再记住新的。'),
-            trailing: FilledButton(onPressed: s.acceptFingerprint, child: const Text('记住')),
-          ),
+        _Notice(
+          text: '这台服务器的指纹和上次不一样。指纹只用来认出数据库，不是解开笔记的钥匙。确认是你自己的再记住。',
+          action: '记住',
+          onAction: s.acceptFingerprint,
         ),
-        Material(
-          color: Theme.of(context).colorScheme.tertiaryContainer,
-          child: ListTile(
-            title: Text('${s.conflicts.length} 篇笔记在两台设备上都被改过'),
-            subtitle: const Text('选留哪一边，或两边都留'),
-            onTap: () => _conflicts(s),
-          ),
+      if (s.conflicts.isNotEmpty)
+        _Notice(
+          text: '${s.conflicts.length} 篇在两台设备上都被改过',
+          action: '处理',
+          onAction: () => _conflicts(s),
         ),
       ValueListenableBuilder<Transfer?>(
         valueListenable: s.transfer,
         builder: (context, t, _) {
           if (t == null) return const SizedBox.shrink();
-          final label = t.error ?? (t.waiting ? '正在确认，等服务器回复' : (s.queued > 0 ? '正在传输，还有 ${s.queued} 个在排队' : '正在传输'));
-          return ListTile(
-            title: Text(t.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-            subtitle: Text(t.error ?? '$label  ${_pct(t)}', maxLines: 2),
-            trailing: t.error == null
-                ? SizedBox(width: 72, child: LinearProgressIndicator(value: t.waiting ? null : t.fraction))
-                : IconButton(onPressed: s.dismissTransfer, icon: const Icon(Icons.close)),
+          final label = t.error ?? (t.waiting ? '正在确认，等服务器回复' : (s.queued > 0 ? '正在传输，后面还有 ${s.queued} 个' : '正在传输'));
+          return _Notice(
+            text: t.error == null ? '${t.name} · $label ${_pct(t)}' : '${t.name} · ${t.error}',
+            action: t.error == null ? null : '关闭',
+            onAction: t.error == null ? null : s.dismissTransfer,
+            progress: t.error == null ? (t.waiting ? null : t.fraction) : null,
+            busy: t.error == null,
           );
         },
       ),
@@ -473,9 +451,9 @@ class HomePageState extends State<HomePage> {
             ),
       body: wide
           ? Row(children: [
-              SizedBox(width: 220, child: sidebar),
+              SizedBox(width: Tokens.sidebar, child: sidebar),
               const VerticalDivider(width: 1),
-              SizedBox(width: 340, child: body),
+              SizedBox(width: Tokens.list, child: body),
               const VerticalDivider(width: 1),
               Expanded(child: _openId == null ? const Center(child: Text('选一篇笔记，就在右边写')) : EditorPage(key: ValueKey(_openId), noteId: _openId!, embedded: true)),
             ])
@@ -653,6 +631,57 @@ class _Sidebar extends StatelessWidget {
       const Divider(),
       ListTile(selected: view == 'trash', leading: const Icon(Icons.delete_outline), title: const Text('回收站'), onTap: () => onSelect('trash')),
     ]);
+  }
+}
+
+class _StatusLine extends StatelessWidget {
+  const _StatusLine({required this.session});
+  final Session session;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = session;
+    final muted = Theme.of(context).textTheme.bodySmall;
+    final label = s.error ?? (s.syncing ? '正在同步' : (s.live ? '已连上' : '未连接'));
+    final when = s.lastSyncAt == null ? '下拉再同步' : '上次 ${relativeTime(s.lastSyncAt!, DateTime.now())}';
+    return SizedBox(
+      height: Tokens.bar,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Row(children: [
+          Expanded(child: Text(s.error == null ? '$label · $when' : label, maxLines: 1, overflow: TextOverflow.ellipsis, style: muted?.copyWith(color: s.error == null ? null : Theme.of(context).colorScheme.error))),
+          if (s.error != null) TextButton(onPressed: s.sync, child: const Text('重试')),
+          if (s.error != null) IconButton(onPressed: s.clearError, icon: const Icon(Icons.close, size: 16), visualDensity: VisualDensity.compact),
+          if (s.syncing) const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
+        ]),
+      ),
+    );
+  }
+}
+
+class _Notice extends StatelessWidget {
+  const _Notice({required this.text, this.action, this.onAction, this.progress, this.busy = false});
+  final String text;
+  final String? action;
+  final VoidCallback? onAction;
+  final double? progress;
+  final bool busy;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 6, 8, 6),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Row(children: [
+            Expanded(child: Text(text, style: Theme.of(context).textTheme.bodySmall)),
+            if (action != null) TextButton(onPressed: onAction, child: Text(action!)),
+          ]),
+          if (busy) Padding(padding: const EdgeInsets.only(top: 4), child: LinearProgressIndicator(value: progress, minHeight: 2)),
+        ]),
+      ),
+    );
   }
 }
 

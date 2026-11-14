@@ -8,7 +8,7 @@ import 'desktop.dart';
 import 'library.dart';
 import 'scope.dart';
 
-const appVersion = '2.0.0';
+const appVersion = '3.0.0';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
