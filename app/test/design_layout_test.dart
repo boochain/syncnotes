@@ -1,6 +1,4 @@
 // v0.3 视觉回归：封面上的页面图标布局、行内 Markdown 所见即所得渲染。
-import 'dart:typed_data';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -206,7 +204,7 @@ void main() {
 
 /// Vector page icons rasterize a fraction off the old emoji snapshot.
 class _PageHeadGolden extends LocalFileComparator {
-  _PageHeadGolden(Uri testFile) : super(testFile);
+  _PageHeadGolden(super.testFile);
 
   static const _maxDiff = 0.005;
 
