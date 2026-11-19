@@ -141,7 +141,7 @@ class Glass extends StatelessWidget {
                 // 使用与 LiquidRoundedSuperellipse 完全一致的超椭圆曲线绘制边框与阴影，消除四角双线错位
                 final seShape = RoundedSuperellipseBorder(
                   borderRadius: BorderRadius.circular(radius),
-                  side: BorderSide(color: c.border),
+                  side: BorderSide(color: c.separator),
                 );
                 return Padding(
                   padding: margin ?? EdgeInsets.zero,

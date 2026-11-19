@@ -28,6 +28,7 @@ class _FakeApi extends AuthApi {
     void Function(int done, int total)? onProgress,
     void Function()? onWaiting,
     bool Function()? isCanceled,
+    void Function(void Function() abort)? onCancelReady,
   }) async {
     uploads.add(name);
     var n = bytes?.length ?? 0;
