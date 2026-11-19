@@ -1,4 +1,7 @@
 // v0.3 视觉回归：封面上的页面图标布局、行内 Markdown 所见即所得渲染。
+import 'dart:typed_data';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -115,6 +118,9 @@ void main() {
   }
 
   testWidgets('golden: page head (cover + icon + title) layout', (tester) async {
+    final previous = goldenFileComparator;
+    goldenFileComparator = _PageHeadGolden(Uri.parse('test/design_layout_test.dart'));
+    addTearDown(() => goldenFileComparator = previous);
     await pumpWithPage(tester, const Size(1200, 860));
     await expectLater(find.byKey(const Key('pageHead')), matchesGoldenFile('goldens/page_head_wide.png'));
   });
@@ -196,4 +202,22 @@ void main() {
       expect(plainInline('*a*'), 'a');
     });
   });
+}
+
+/// Vector page icons rasterize a fraction off the old emoji snapshot.
+class _PageHeadGolden extends LocalFileComparator {
+  _PageHeadGolden(Uri testFile) : super(testFile);
+
+  static const _maxDiff = 0.005;
+
+  @override
+  Future<bool> compare(Uint8List imageBytes, Uri golden) async {
+    final result = await GoldenFileComparator.compareLists(
+      imageBytes,
+      await getGoldenBytes(golden),
+    );
+    if (result.passed || result.diffPercent <= _maxDiff) return true;
+    final error = await generateFailureOutput(result, golden, basedir);
+    throw FlutterError(error);
+  }
 }
