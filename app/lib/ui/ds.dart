@@ -13,6 +13,7 @@ import 'package:flutter/cupertino.dart';
 // 说明见 docs/design-system.md。
 import 'package:flutter/material.dart';
 
+import 'custom_icons.dart';
 import 'tokens.dart';
 
 /// 高度阶梯：同一行内的元素使用同一高度并垂直居中。
@@ -186,25 +187,14 @@ String? coverToneKey(Object? key) {
   return legacyCoverMap[key];
 }
 
-/// emoji 与文字对齐：固定方框 + 居中 + 行高 1.0、关闭字号缩放，避免 emoji 基线比中文低、尺寸忽大忽小。
+/// 统一矢量图标容器：使用自绘 [SyncIcon] 替代系统 Emoji，确保各平台像素级一致。
 class Emoji extends StatelessWidget {
   final String emoji;
   final double size; // 方框边长
-  const Emoji(this.emoji, {super.key, required this.size});
+  final Color? color;
+  const Emoji(this.emoji, {super.key, required this.size, this.color});
   @override
-  Widget build(BuildContext context) => SizedBox.square(
-        dimension: size,
-        child: Center(
-          child: Text(
-            emoji,
-            textScaler: TextScaler.noScaling,
-            maxLines: 1,
-            overflow: TextOverflow.clip,
-            style: TextStyle(fontSize: size * 0.8, height: 1.0, fontFamilyFallback: FontTokens.emojiFallback),
-            strutStyle: StrutStyle(fontSize: size * 0.8, height: 1.0, forceStrutHeight: true),
-          ),
-        ),
-      );
+  Widget build(BuildContext context) => SyncIcon(emoji, size: size, color: color);
 }
 
 /// 弹出菜单项：统一高 32、图标 16、文字 14（AppFlowy 菜单行 / macOS 菜单）

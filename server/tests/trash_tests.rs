@@ -104,6 +104,7 @@ fn folder_cascade_purge_and_blob_removal() {
     .unwrap();
     std::fs::create_dir_all(dir.path().join(&u)).unwrap();
     std::fs::write(dir.path().join(&u).join("abc-1"), b"x").unwrap();
+    std::fs::write(dir.path().join(&u).join("abc-1.sha256"), b"deadbeef").unwrap();
     // Trash folder: children untouched (restore brings them back with structure).
     up(&st, &u, "pc", "f", "folder", None, 3, false, Some(Some(10)));
     assert_eq!(st.get_block(&u, "c").unwrap().unwrap().deleted_at, None);
@@ -116,6 +117,23 @@ fn folder_cascade_purge_and_blob_removal() {
     }
     assert!(!st.get_block(&u, "other").unwrap().unwrap().deleted);
     assert!(!dir.path().join(&u).join("abc-1").exists());
+    assert!(!dir.path().join(&u).join("abc-1.sha256").exists());
+    // Permanently purged tombstones cannot be resurrected by a later offline edit,
+    // and return an updated_at >= client_updated_at so the client outbox clears.
+    let b = up(&st, &u, "phone", "c", "file", Some("sub"), 999, false, None);
+    assert!(b.deleted);
+    assert!(b.updated_at >= 999);
+}
+
+#[test]
+fn parent_cycle_and_self_parent_are_prevented() {
+    let st = Storage::in_memory().unwrap();
+    let u = user(&st);
+    let a = up(&st, &u, "pc", "a", "folder", Some("a"), 1, false, None);
+    assert_eq!(a.parent_id, None, "self-parent must be sanitized");
+    up(&st, &u, "pc", "b", "folder", Some("a"), 2, false, None);
+    let a2 = up(&st, &u, "phone", "a", "folder", Some("b"), 3, false, None);
+    assert_eq!(a2.parent_id, None, "cycle A -> B -> A must be rejected");
 }
 
 #[test]

@@ -7,10 +7,11 @@ import 'package:window_manager/window_manager.dart';
 
 import '../services/settings.dart';
 import 'autostart.dart';
+import 'single_instance.dart';
 
 bool get isDesktop => !Platform.isAndroid && !Platform.isIOS && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
 
-/// 桌面端：托盘常驻 + 右下角小窗口 + 开机自启。
+/// 桌面端：托盘常驻 + 右下角小窗口 + 开机自启 + 原生标题栏日夜深浅色同步。
 class DesktopShell with TrayListener, WindowListener {
   static final DesktopShell instance = DesktopShell._();
   DesktopShell._();
@@ -20,6 +21,9 @@ class DesktopShell with TrayListener, WindowListener {
   /// 退出前调用（例如把本地缓存写完）。
   Future<void> Function()? onQuit;
 
+  /// 从托盘恢复窗口时调用（例如立即触发 WebSocket 保活探测/重连）。
+  VoidCallback? onRestore;
+
   /// 托盘是否可用；不可用时点关闭直接退出，否则窗口隐藏后就再也找不回来了。
   bool trayAvailable = false;
 
@@ -28,8 +32,44 @@ class DesktopShell with TrayListener, WindowListener {
   String get _mode => expanded.value ? 'expanded' : 'compact';
   int _unread = 0;
   bool _trayListening = false;
+  bool _winChannelListening = false;
   bool _sizing = false;
+  bool _quitting = false;
+  Brightness? _lastBrightness;
   static const _winShell = MethodChannel('syncnotes/win_shell');
+  static const _linuxShell = MethodChannel('syncnotes/linux_shell');
+
+  void _ensureWinChannelHandler() {
+    if (_winChannelListening || !Platform.isWindows) return;
+    _winChannelListening = true;
+    _winShell.setMethodCallHandler((call) async {
+      switch (call.method) {
+        case 'onWindowHiddenToTray':
+          await _saveBounds();
+          break;
+        case 'onTrayRestore':
+          onRestore?.call();
+          break;
+        case 'onTrayQuit':
+          await quit();
+          break;
+      }
+    });
+  }
+
+  /// 同步 Windows DWM / Linux GTK 原生窗口标题栏的白天/黑夜主题状态。
+  Future<void> syncWindowTheme(Brightness brightness) async {
+    if (!isDesktop || _lastBrightness == brightness) return;
+    _lastBrightness = brightness;
+    final dark = brightness == Brightness.dark;
+    try {
+      if (Platform.isWindows) {
+        await _winShell.invokeMethod<void>('setDarkTitleBar', {'dark': dark});
+      } else if (Platform.isLinux) {
+        await _linuxShell.invokeMethod<void>('setDarkTitleBar', {'dark': dark});
+      }
+    } catch (_) {}
+  }
 
   /// tray_manager 只会在「可执行文件旁边的 data/flutter_assets」里找图标。
   static String bundledAssetPath(String executable, String asset, {String? separator}) {
@@ -135,7 +175,15 @@ class DesktopShell with TrayListener, WindowListener {
     _settings = settings;
     expanded.value = settings?.windowExpanded ?? true;
     var hidden = startHidden;
+    _ensureWinChannelHandler();
     await windowManager.ensureInitialized();
+    if (Platform.isWindows) {
+      await _ensureTrayIcon();
+      await ensureTray();
+      try {
+        await _winShell.invokeMethod<void>('setStartHidden', {'value': hidden && trayAvailable});
+      } catch (_) {}
+    }
     final size = fitToDisplay(expanded.value ? expandedSize : windowSize);
     final opts = WindowOptions(
       size: size,
@@ -153,17 +201,26 @@ class DesktopShell with TrayListener, WindowListener {
         } catch (e) {
           debugPrint('place window: $e');
         }
-        // 先显示一次，让系统把顶层窗口建出来。窗口还藏着的时候注册托盘，
-        // Shell_NotifyIcon 会失败，插件却回报成功，于是开关开着但没有图标。
+        if (Platform.isWindows && hidden && trayAvailable) {
+          try {
+            await _winShell.invokeMethod<void>('hideToTray');
+          } catch (_) {
+            await windowManager.hide();
+          }
+          return;
+        }
+        // 非 Windows 平台先显示一次，让系统把顶层窗口建出来后再挂托盘。
         await windowManager.show();
         if (!hidden) await windowManager.focus();
       });
     } catch (e) {
       debugPrint('window ready: $e');
-      try {
-        await windowManager.show();
-        await windowManager.focus();
-      } catch (_) {}
+      if (!hidden) {
+        try {
+          await windowManager.show();
+          await windowManager.focus();
+        } catch (_) {}
+      }
     }
     windowManager.addListener(this);
     final trayOk = await ensureTray();
@@ -176,10 +233,25 @@ class DesktopShell with TrayListener, WindowListener {
       await windowManager.setPreventClose(false);
       if (hidden) {
         hidden = false;
+        if (Platform.isWindows) {
+          try {
+            await _winShell.invokeMethod<void>('setStartHidden', {'value': false});
+            await _winShell.invokeMethod<void>('showFromTray');
+          } catch (_) {}
+        }
         await windowManager.show();
+        await windowManager.focus();
       }
     } else if (hidden) {
-      await windowManager.hide();
+      if (Platform.isWindows) {
+        try {
+          await _winShell.invokeMethod<void>('hideToTray');
+        } catch (_) {
+          await windowManager.hide();
+        }
+      } else {
+        await windowManager.hide();
+      }
     }
     if (Platform.isWindows && (_settings?.autoStart ?? false)) {
       await AutoStart.repairIfNeeded();
@@ -214,7 +286,9 @@ class DesktopShell with TrayListener, WindowListener {
   /// Windows 不用 tray_manager。那个插件不管 Shell_NotifyIcon 成不成功都回报成功，
   /// 于是开关开着、图标没有、关闭又被拦住。这里用程序自己的图标，并核对系统是否收下。
   Future<bool> _ensureWindowsTray() async {
+    _ensureWinChannelHandler();
     try {
+      await _ensureTrayIcon();
       final ok = await _winShell.invokeMethod<bool>('startTray') ?? false;
       trayAvailable = ok;
       await applyClosePolicy();
@@ -253,6 +327,13 @@ class DesktopShell with TrayListener, WindowListener {
 
   Future<void> toggle() async {
     if (await windowManager.isVisible() && await windowManager.isFocused()) {
+      await _saveBounds();
+      if (Platform.isWindows && trayAvailable) {
+        try {
+          await _winShell.invokeMethod<void>('hideToTray');
+          return;
+        } catch (_) {}
+      }
       await windowManager.hide();
     } else {
       await showNearTray();
@@ -260,9 +341,23 @@ class DesktopShell with TrayListener, WindowListener {
   }
 
   Future<void> showNearTray() async {
-    if (!await _restoreBounds()) await windowManager.setAlignment(Alignment.bottomRight);
+    if (!await _restoreBounds()) {
+      await windowManager.setAlignment(expanded.value ? Alignment.center : Alignment.bottomRight);
+    }
+    if (Platform.isWindows) {
+      try {
+        await _winShell.invokeMethod<void>('showFromTray');
+        return;
+      } catch (_) {}
+    }
+    try {
+      if (await windowManager.isMinimized()) {
+        await windowManager.restore();
+      }
+    } catch (_) {}
     await windowManager.show();
     await windowManager.focus();
+    onRestore?.call();
   }
 
   /// 在托盘小窗与大窗口（侧边栏 + 页面）之间切换。
@@ -336,8 +431,16 @@ class DesktopShell with TrayListener, WindowListener {
   }
 
   Future<void> quit() async {
+    if (_quitting) return;
+    _quitting = true;
+    try {
+      await _saveBounds();
+    } catch (_) {}
     try {
       await onQuit?.call().timeout(const Duration(seconds: 3));
+    } catch (_) {}
+    try {
+      await SingleInstance.release();
     } catch (_) {}
     if (Platform.isWindows) {
       try {

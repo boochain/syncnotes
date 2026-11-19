@@ -206,6 +206,7 @@ class AuthApi {
     void Function(int done, int total)? onProgress,
     void Function()? onWaiting,
     bool Function()? isCanceled,
+    void Function(void Function() abort)? onCancelReady,
   }) async {
     if (!wireSeal) {
       final data = bytes ?? await _collect(source);
@@ -225,6 +226,7 @@ class AuthApi {
     final pending = await HttpPending.seal(serverPub: pub, method: 3, path: '/api/blob', headersJson: utf8.encode('{}'), body: meta);
     final hash = Sha256().toSync().newHashSink();
     final io = HttpClient()..connectionTimeout = const Duration(seconds: 20);
+    onCancelReady?.call(() => io.close(force: true));
     try {
       final req = await io.postUrl(endpoint(server, '/api/blob'));
       req.headers.contentType = ContentType('application', 'octet-stream');
@@ -233,6 +235,8 @@ class AuthApi {
       final key = await pending.chunkKey();
       var idx = 0;
       var done = 0;
+      var unflushed = 0;
+      var lastFlushAt = DateTime.now();
       final buf = _Buf();
       Future<void> emit(Uint8List plain) async {
         if (isCanceled?.call() == true) throw WireException('已取消');
@@ -244,9 +248,15 @@ class AuthApi {
         final frame = BytesBuilder(copy: false)
           ..add(_u32(ct.length))
           ..add(ct);
-        // flush 要等套接字收下，进度才是真的发出去了，而不是堆在内存里。
         req.add(frame.takeBytes());
-        await req.flush();
+        unflushed += plain.length;
+        final now = DateTime.now();
+        // 每 1MB 或间隔超过 120ms flush 一次，兼顾高吞吐与背压/进度真实性
+        if (unflushed >= 1024 * 1024 || now.difference(lastFlushAt).inMilliseconds >= 120) {
+          await req.flush();
+          unflushed = 0;
+          lastFlushAt = now;
+        }
         done += plain.length;
         final shown = known != null && known > 0 && done >= known ? known - 1 : done;
         onProgress?.call(shown < 0 ? 0 : shown, known == null || known == 0 ? done : known);
@@ -362,7 +372,10 @@ class AuthApi {
 
   /// 流式下载到 [add]。进度按明文字节计。每个明文块交给 [add] 之后再读下一块，避免把整文件堆在内存里。
   Future<void> downloadStream(String server, String token, String fileId, Future<void> Function(List<int> plain) add,
-      {void Function(int done, int total)? onProgress, bool Function()? isCanceled, String? expectSha256}) async {
+      {void Function(int done, int total)? onProgress,
+      bool Function()? isCanceled,
+      String? expectSha256,
+      void Function(void Function() abort)? onCancelReady}) async {
     if (!wireSeal) {
       final res = await client.get(fileUrl(server, token, fileId));
       if (res.statusCode != 200) throw AuthException('下载失败 (${res.statusCode})');
@@ -374,26 +387,32 @@ class AuthApi {
     final meta = utf8.encode(jsonEncode({'op': 'get', 'file_id': fileId, 'token': token}));
     final pending =
         await HttpPending.seal(serverPub: pub, method: 3, path: '/api/blob', headersJson: utf8.encode('{}'), body: meta);
-    final req = http.StreamedRequest('POST', endpoint(server, '/api/blob'));
-    req.headers['content-type'] = 'application/octet-stream';
-    req.contentLength = 4 + pending.envelope.length + 4;
-    final sent = client.send(req);
-    req.sink.add(_u32(pending.envelope.length));
-    req.sink.add(pending.envelope);
-    req.sink.add(_u32(0));
-    await req.sink.close();
-    final http.StreamedResponse res;
+    final io = HttpClient()..connectionTimeout = const Duration(seconds: 20);
+    onCancelReady?.call(() => io.close(force: true));
+    final HttpClientResponse res;
     try {
-      res = await sent.timeout(const Duration(seconds: 90));
+      final req = await io.postUrl(endpoint(server, '/api/blob'));
+      req.headers.contentType = ContentType('application', 'octet-stream');
+      req.persistentConnection = false;
+      req.contentLength = 4 + pending.envelope.length + 4;
+      req.add(_u32(pending.envelope.length));
+      req.add(pending.envelope);
+      req.add(_u32(0));
+      res = await req.close().timeout(const Duration(seconds: 90));
     } catch (e) {
-      unawaited(sent.then((r) => r.stream.drain<void>(), onError: (Object _) {}));
+      io.close(force: true);
+      if (isCanceled?.call() == true) throw AuthException('已取消');
       throw AuthException(_netText('$e'));
     }
     if (res.statusCode != 200) {
-      final err = await res.stream.toBytes();
+      final err = await res.fold<BytesBuilder>(BytesBuilder(copy: false), (b, c) {
+        b.add(c);
+        return b;
+      }).then((b) => b.takeBytes());
+      io.close(force: false);
       throw AuthException(utf8.decode(err, allowMalformed: true));
     }
-    final reader = _Reader(res.stream);
+    final reader = _Reader(res);
     try {
       final n = await reader.u32();
       if (n == 0x534E4331) {
@@ -454,6 +473,7 @@ class AuthApi {
       throw AuthException('下载失败：$e');
     } finally {
       await reader.cancel();
+      io.close(force: isCanceled?.call() == true);
     }
   }
 }
@@ -510,7 +530,7 @@ class _Reader {
       if (d.isEmpty) return;
       _chunks.add(d is Uint8List ? d : Uint8List.fromList(d));
       _avail += d.length;
-      if (_avail > 512 * 1024) _sub?.pause();
+      if (_avail > 2 * 1024 * 1024) _sub?.pause();
       _wake();
     }, onError: (Object e) {
       _err = e;
@@ -539,7 +559,7 @@ class _Reader {
   }
 
   void _resume() {
-    if (_avail < 256 * 1024) _sub?.resume();
+    if (_avail < 1024 * 1024) _sub?.resume();
   }
 
   Future<void> _need(int n) async {

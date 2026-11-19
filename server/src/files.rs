@@ -2,6 +2,7 @@
 //! The server never buffers a whole file: each chunk is decrypted and written
 //! before the next one is read. Plaintext PUT/GET are rejected at the router.
 
+use std::path::PathBuf;
 use std::pin::Pin;
 
 use axum::body::Body;
@@ -13,7 +14,7 @@ use futures::{SinkExt, Stream, StreamExt};
 use serde::Deserialize;
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
 
 use crate::seal::{open_chunk, seal_chunk, OpenedHttp, CHUNK, MAX_CHUNK};
 use crate::state::AppState;
@@ -25,6 +26,30 @@ pub fn max_http_body() -> usize {
     let chunks = MAX_FILE_BYTES.div_ceil(CHUNK as u64);
     let extra = 4 + 64 * 1024 + chunks * (4 + 16) + 4;
     (MAX_FILE_BYTES + extra) as usize
+}
+
+/// Ensures `.part` upload files are deleted even if the HTTP request task is cancelled mid-stream.
+struct TempFileGuard {
+    path: PathBuf,
+    armed: bool,
+}
+
+impl TempFileGuard {
+    fn new(path: PathBuf) -> Self {
+        Self { path, armed: true }
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for TempFileGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
 }
 
 fn user_for(state: &AppState, token: Option<String>) -> Result<String, (StatusCode, String)> {
@@ -181,13 +206,15 @@ pub async fn blob(State(state): State<AppState>, body: Body) -> axum::response::
         let tmp = dir.join(format!("{id}.part"));
         let final_path = dir.join(&id);
         let hash_path = dir.join(format!("{id}.sha256"));
-        let mut file = match tokio::fs::File::create(&tmp).await {
+        let mut tmp_guard = TempFileGuard::new(tmp.clone());
+        let raw_file = match tokio::fs::File::create(&tmp).await {
             Ok(f) => f,
             Err(_) => {
                 discard_chunks(&mut reader).await;
                 return sealed_err(&opened, StatusCode::INTERNAL_SERVER_ERROR, "服务器内部错误");
             }
         };
+        let mut file = BufWriter::with_capacity(1024 * 1024, raw_file);
         let mut hasher = Sha256::new();
         let mut idx = 0u64;
         let mut got: u64 = 0;
@@ -223,6 +250,7 @@ pub async fn blob(State(state): State<AppState>, body: Body) -> axum::response::
         if let Err(msg) = outcome {
             drop(file);
             let _ = tokio::fs::remove_file(&tmp).await;
+            tmp_guard.disarm();
             discard_chunks(&mut reader).await;
             let code = if msg == "文件过大" {
                 StatusCode::PAYLOAD_TOO_LARGE
@@ -234,16 +262,20 @@ pub async fn blob(State(state): State<AppState>, body: Body) -> axum::response::
         if meta.size != 0 && got != meta.size {
             drop(file);
             let _ = tokio::fs::remove_file(&tmp).await;
+            tmp_guard.disarm();
             return sealed_err(&opened, StatusCode::BAD_REQUEST, "文件长度不符");
         }
         let sha = hex32(&hasher.finalize());
         if !meta.sha256.is_empty() && meta.sha256 != sha {
             drop(file);
             let _ = tokio::fs::remove_file(&tmp).await;
+            tmp_guard.disarm();
             return sealed_err(&opened, StatusCode::BAD_REQUEST, "文件校验失败");
         }
         if file.flush().await.is_err() {
+            drop(file);
             let _ = tokio::fs::remove_file(&tmp).await;
+            tmp_guard.disarm();
             return sealed_err(&opened, StatusCode::INTERNAL_SERVER_ERROR, "写入失败");
         }
         drop(file);
@@ -252,8 +284,10 @@ pub async fn blob(State(state): State<AppState>, body: Body) -> axum::response::
         {
             let _ = tokio::fs::remove_file(&tmp).await;
             let _ = tokio::fs::remove_file(&hash_path).await;
+            tmp_guard.disarm();
             return sealed_err(&opened, StatusCode::INTERNAL_SERVER_ERROR, "写入失败");
         }
+        tmp_guard.disarm();
         let body = serde_json::to_vec(&json!({
             "file_id": id,
             "name": meta.name,
@@ -293,7 +327,7 @@ pub async fn blob(State(state): State<AppState>, body: Body) -> axum::response::
                 .unwrap_or_default(),
         );
         let (mut tx, rx) =
-            futures::channel::mpsc::channel::<Result<axum::body::Bytes, std::io::Error>>(2);
+            futures::channel::mpsc::channel::<Result<axum::body::Bytes, std::io::Error>>(8);
         tokio::spawn(async move {
             let mut prefix = Vec::with_capacity(4 + head.len());
             prefix.extend_from_slice(&(head.len() as u32).to_be_bytes());
@@ -304,12 +338,18 @@ pub async fn blob(State(state): State<AppState>, body: Body) -> axum::response::
             let mut buf = vec![0u8; CHUNK];
             let mut idx = 0u64;
             loop {
-                let n = match file.read(&mut buf).await {
-                    Ok(0) => break,
-                    Ok(n) => n,
-                    Err(_) => return,
-                };
-                let ct = seal_chunk(&key, idx, &buf[..n]);
+                let mut filled = 0usize;
+                while filled < CHUNK {
+                    match file.read(&mut buf[filled..]).await {
+                        Ok(0) => break,
+                        Ok(n) => filled += n,
+                        Err(_) => return,
+                    }
+                }
+                if filled == 0 {
+                    break;
+                }
+                let ct = seal_chunk(&key, idx, &buf[..filled]);
                 let mut frame = Vec::with_capacity(4 + ct.len());
                 frame.extend_from_slice(&(ct.len() as u32).to_be_bytes());
                 frame.extend_from_slice(&ct);

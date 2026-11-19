@@ -35,7 +35,7 @@ List<SwitcherResult> searchAll(SyncClient sync, String q) {
     return cur.kind == BlockKind.page ? cur : null;
   }
 
-  String icon(Block p) => (p.payload['icon'] ?? '📄') as String;
+  String icon(Block p) => (p.payload['icon'] ?? 'doc') as String;
   final all = sync.blocks;
   // 页面标题优先
   for (final b in all.where((b) => b.kind == BlockKind.page)) {
@@ -59,7 +59,7 @@ List<SwitcherResult> searchAll(SyncClient sync, String q) {
   for (final b in all.where((b) => b.kind == BlockKind.message || b.kind == BlockKind.note || b.kind == BlockKind.file)) {
     final hay = '${b.title} ${b.payload['text'] ?? ''} ${b.payload['markdown'] ?? ''}'.toLowerCase();
     if (hay.contains(query) && seen.add(b.id)) {
-      final ic = switch (b.kind) { BlockKind.message => '💬', BlockKind.file => '📎', _ => '📝' };
+      final ic = switch (b.kind) { BlockKind.message => 'chat', BlockKind.file => 'clip', _ => 'note' };
       out.add(SwitcherResult(b, b.title, '收件箱', ic));
     }
   }

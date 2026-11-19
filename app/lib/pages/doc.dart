@@ -447,7 +447,7 @@ class DocController extends ChangeNotifier {
     final p = sync.create(
       kind: BlockKind.page,
       title: title,
-      payload: {'icon': '📄', 'order': order},
+      payload: {'icon': 'doc', 'order': order},
       parentId: pageId,
       viewedMode: ViewedMode.global,
     );

@@ -12,6 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../app_scope.dart';
 import '../models/block.dart';
+import '../ui/custom_icons.dart';
 import '../ui/ds.dart';
 import '../ui/glass.dart';
 import '../ui/server_image.dart';
@@ -586,7 +587,7 @@ class BlockRowState extends State<BlockRow> {
           child: _textField(context),
         );
       case DocType.callout:
-        final icon = (block.payload['icon'] ?? '💡') as String;
+        final icon = SyncIcon.normalizeKey(block.payload['icon'] as String?, fallback: 'bulb');
         // 提示框（Notion 灰色 callout）：中性灰底、圆角 8；emoji 与首行文字同一行高、垂直居中
         return Container(
           key: ValueKey('callout-${block.id}'),
@@ -886,7 +887,7 @@ class _PageLinkRowState extends State<_PageLinkRow> {
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
-    final icon = (widget.page.payload['icon'] ?? '📄') as String;
+    final icon = SyncIcon.normalizeKey(widget.page.payload['icon'] as String?, fallback: 'doc');
     return MouseRegion(
       onEnter: (e) { if (isMouseHover(e)) setState(() => _hover = true); },
       onExit: (_) => setState(() => _hover = false),
@@ -1068,9 +1069,7 @@ Future<void> launchLink(String url) async {
 }
 
 const _emojis = [
-  '📄', '📝', '📌', '📎', '📚', '📖', '🗂️', '📁', '💡', '⭐', '🔥', '✅', '❗', '❓', '⚠️', '🎯',
-  '🚀', '🧠', '💼', '🏠', '🛒', '💰', '📅', '⏰', '🎉', '❤️', '🌱', '🍀', '☕', '🎵', '🎨', '🔧',
-  '💻', '📱', '🐞', '🔒', '🌏', '✈️', '🍜', '🏃', '😀', '😎', '🤔', '👍', '🙏', '🐱', '🐶', '🌙',
+  ...SyncIcon.pageChoices,
 ];
 
 Future<String?> pickEmoji(BuildContext context, {bool allowRemove = false}) => showDialog<String>(

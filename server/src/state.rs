@@ -15,6 +15,7 @@ pub type ConnId = u64;
 pub struct Conn {
     pub user_id: String,
     pub device_id: String,
+    pub token: String,
     pub tx: UnboundedSender<ServerMessage>,
     /// Notified when the session is revoked (password reset) so the socket closes immediately.
     pub kill: Arc<tokio::sync::Notify>,
@@ -118,9 +119,14 @@ impl AppState {
 
     /// Drop every live WebSocket of a user (after password reset / recovery).
     pub fn kick_user(&self, user_id: &str) {
+        self.kick_user_except(user_id, None);
+    }
+
+    /// Drop every live WebSocket of a user except the connection authenticated with `keep_token`.
+    pub fn kick_user_except(&self, user_id: &str, keep_token: Option<&str>) {
         let mut conns = self.conns.lock().unwrap();
         conns.retain(|_, c| {
-            if c.user_id == user_id {
+            if c.user_id == user_id && keep_token != Some(c.token.as_str()) {
                 let _ = c.tx.send(ServerMessage::AuthError {
                     message: "密码已重置，请重新登录".into(),
                 });

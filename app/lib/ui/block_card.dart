@@ -40,7 +40,7 @@ class _BlockCardState extends State<BlockCard> {
     final emoji = block.kind == BlockKind.page
         ? (block.payload['icon'] ?? '') as String
         : block.kind == BlockKind.folder
-            ? (block.payload['icon'] ?? '📁') as String
+            ? (block.payload['icon'] ?? 'folder') as String
             : '';
     var preview = type.previewText(context, block);
     if (preview.isEmpty) preview = type.label;
@@ -233,7 +233,7 @@ Future<void> showBlockMenu(BuildContext context, Block block) async {
                     for (final f in folders)
                       MenuRow(
                         icon: CupertinoIcons.folder,
-                        label: '${(f.payload['icon'] ?? '📁') as String} ${f.title.isEmpty ? '无标题' : f.title}',
+                        label: f.title.isEmpty ? '无标题' : f.title,
                         onTap: () => Navigator.pop(d, f.id),
                       ),
                   ],

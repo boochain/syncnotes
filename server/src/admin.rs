@@ -4,7 +4,7 @@
 //! commands are safe while the server is running; revoked tokens are noticed by the running
 //! server within ~15 s (live WebSockets are closed).
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -148,13 +148,17 @@ fn file_entry(b: &Block) -> Option<(String, String)> {
     ))
 }
 
-fn render_md(
-    b: &Block,
-    kids: &HashMap<String, Vec<&Block>>,
+fn render_md<'a>(
+    b: &'a Block,
+    kids: &HashMap<String, Vec<&'a Block>>,
     files: &HashMap<String, String>,
     depth: usize,
+    visited: &mut HashSet<&'a str>,
     out: &mut String,
 ) {
+    if depth > 128 || !visited.insert(b.id.as_str()) {
+        return;
+    }
     let p = &b.payload;
     let text = {
         let t = str_of(p, "text");
@@ -221,6 +225,11 @@ fn render_md(
             }),
             "code" => format!("```{}\n{text}\n```", str_of(p, "lang")),
             "divider" => "---".into(),
+            "image" if !str_of(p, "url").is_empty() => format!(
+                "{ind}![{}]({})",
+                if text.is_empty() { "image" } else { &text },
+                str_of(p, "url")
+            ),
             _ if b.kind == "folder" || b.kind == "page" => {
                 format!(
                     "{ind}- 📄 {}",
@@ -239,7 +248,7 @@ fn render_md(
     }
     if let Some(cs) = kids.get(&b.id) {
         for c in cs {
-            render_md(c, kids, files, depth + 1, out);
+            render_md(c, kids, files, depth + 1, visited, out);
         }
     }
 }
@@ -330,7 +339,7 @@ pub fn export_user(
     .map_err(err)?;
 
     // Markdown: one file per root (block without a live parent); trash roots in 回收站/.
-    let ids: std::collections::HashSet<&str> = live.iter().map(|b| b.id.as_str()).collect();
+    let ids: HashSet<&str> = live.iter().map(|b| b.id.as_str()).collect();
     let mut kids: HashMap<String, Vec<&Block>> = HashMap::new();
     let mut roots: Vec<&Block> = Vec::new();
     for b in &live {
@@ -348,9 +357,31 @@ pub fn export_user(
     }
     roots.sort_by_key(|b| b.created_at);
     let mut used: BTreeMap<String, usize> = BTreeMap::new();
+    let mut rendered_nodes: HashSet<&str> = HashSet::new();
+    // If legacy data had a cycle where no node has `parent_id == None`, ensure every component is exported.
+    for b in &live {
+        if !roots.iter().any(|r| r.id == b.id) {
+            let mut cur = b.parent_id.as_deref();
+            let mut seen = HashSet::new();
+            seen.insert(b.id.as_str());
+            while let Some(pid) = cur.filter(|p| ids.contains(p)) {
+                if !seen.insert(pid) {
+                    roots.push(b);
+                    break;
+                }
+                cur = live
+                    .iter()
+                    .find(|x| x.id == pid)
+                    .and_then(|x| x.parent_id.as_deref());
+            }
+        }
+    }
     for r in roots {
+        if rendered_nodes.contains(r.id.as_str()) {
+            continue;
+        }
         let mut md = String::new();
-        render_md(r, &kids, &file_paths, 0, &mut md);
+        render_md(r, &kids, &file_paths, 0, &mut rendered_nodes, &mut md);
         let dir = if r.deleted_at.is_some() {
             "markdown/回收站"
         } else {

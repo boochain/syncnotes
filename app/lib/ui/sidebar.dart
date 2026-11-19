@@ -9,7 +9,7 @@ import 'ds.dart';
 import 'home_page.dart' show ConnectionBadge;
 import 'tokens.dart';
 
-/// 侧边栏（布局照 AppFlowy / Notion）：顶部用户行 44，导航与页面树每行 32，分组标题行 32；
+/// 侧边栏（布局照 AppFlowy / Notion + Apple HIG 材质）：顶部用户行 44（含一键日夜切换与侧边栏收起），导航与页面树每行 32，分组标题行 32；
 /// 选中 / 悬停都用中性灰叠加，不用强调色铺底。
 class Sidebar extends StatelessWidget {
   final String? selectedPage; // null = 收件箱
@@ -22,6 +22,7 @@ class Sidebar extends StatelessWidget {
   final VoidCallback? onTrash;
   final bool transfersSelected;
   final VoidCallback? onTransfers;
+  final VoidCallback? onToggleSidebar;
   const Sidebar({
     super.key,
     required this.selectedPage,
@@ -34,6 +35,7 @@ class Sidebar extends StatelessWidget {
     this.onTrash,
     this.transfersSelected = false,
     this.onTransfers,
+    this.onToggleSidebar,
   });
 
   @override
@@ -55,7 +57,7 @@ class Sidebar extends StatelessWidget {
                 key: const Key('sidebarHeader'),
                 height: Sizes.bar,
                 child: Padding(
-                  padding: const EdgeInsets.only(left: Gap.xl, right: Gap.xl),
+                  padding: const EdgeInsets.only(left: Gap.xl, right: Gap.l),
                   child: Row(children: [
                     Container(
                       width: Sizes.iconMd,
@@ -70,6 +72,46 @@ class Sidebar extends StatelessWidget {
                     Expanded(child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: tt.labelLarge)),
                     const SizedBox(width: Gap.xs),
                     ConnectionBadge(sync: s.sync, dotOnly: true),
+                    const SizedBox(width: Gap.xs),
+                    ValueListenableBuilder<ThemeMode>(
+                      valueListenable: s.themeMode,
+                      builder: (context, mode, _) {
+                        final dark = Theme.of(context).brightness == Brightness.dark;
+                        final icon = switch (mode) {
+                          ThemeMode.light => CupertinoIcons.sun_max_fill,
+                          ThemeMode.dark => CupertinoIcons.moon_stars_fill,
+                          ThemeMode.system => dark ? CupertinoIcons.moon_circle : CupertinoIcons.sun_max,
+                        };
+                        final label = switch (mode) {
+                          ThemeMode.light => '浅色模式（点击切换深色）',
+                          ThemeMode.dark => '深色模式（点击切换跟随系统）',
+                          ThemeMode.system => '跟随系统（点击切换浅色）',
+                        };
+                        return SmallIconButton(
+                          key: const Key('sidebarThemeToggle'),
+                          tooltip: label,
+                          icon: icon,
+                          onPressed: () {
+                            final next = switch (mode) {
+                              ThemeMode.system => ThemeMode.light,
+                              ThemeMode.light => ThemeMode.dark,
+                              ThemeMode.dark => ThemeMode.system,
+                            };
+                            s.themeMode.value = next;
+                            s.settings.themeMode = next.name;
+                          },
+                        );
+                      },
+                    ),
+                    if (onToggleSidebar != null) ...[
+                      const SizedBox(width: 2),
+                      SmallIconButton(
+                        key: const Key('sidebarCollapseButton'),
+                        tooltip: '收起侧边栏 (Ctrl+\\)',
+                        icon: CupertinoIcons.sidebar_left,
+                        onPressed: onToggleSidebar,
+                      ),
+                    ],
                   ]),
                 ),
               ),
@@ -297,7 +339,7 @@ String createPage(SyncClient sync, String? parent, {String title = ''}) => sync
     .create(
       kind: BlockKind.page,
       title: title,
-      payload: {'icon': '📄', 'order': DocController.nextRootOrder(sync, parent)},
+      payload: {'icon': 'doc', 'order': DocController.nextRootOrder(sync, parent)},
       parentId: parent,
       viewedMode: ViewedMode.global,
     )
@@ -356,7 +398,7 @@ class _PageTreeTileState extends State<PageTreeTile> {
     final c = AppColors.of(context);
     final kids = childPages(s.sync, widget.page.id);
     final sel = widget.selected == widget.page.id;
-    final icon = (widget.page.payload['icon'] ?? '📄') as String;
+    final icon = (widget.page.payload['icon'] ?? 'doc') as String;
     final title = widget.page.title.isEmpty ? '无标题' : widget.page.title;
     final indent = 16.0 * widget.depth; // AppFlowy HomeSpaceViewSizes.leftPadding 16
     final row = SidebarRow(

@@ -76,11 +76,10 @@ pub async fn login(
     State(state): State<AppState>,
     Json(req): Json<LoginRequest>,
 ) -> Result<Json<AuthResponse>, (StatusCode, String)> {
-    let user = state
-        .storage
-        .find_user(&req.username)
-        .map_err(internal)?
-        .ok_or((StatusCode::UNAUTHORIZED, "用户名或密码错误".into()))?;
+    let Some(user) = state.storage.find_user(&req.username).map_err(internal)? else {
+        crate::auth::dummy_verify(&req.password);
+        return Err((StatusCode::UNAUTHORIZED, "用户名或密码错误".into()));
+    };
     if !verify_password(&req.password, &user.password_hash) {
         return Err((StatusCode::UNAUTHORIZED, "用户名或密码错误".into()));
     }
@@ -268,6 +267,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         let id = state.register_conn(Conn {
                             user_id: uid.clone(),
                             device_id: device_id.clone(),
+                            token,
                             tx: tx.clone(),
                             kill: kill.clone(),
                         });
@@ -357,12 +357,12 @@ fn handle_authed(
                 deleted_at,
             ) {
                 Ok(UpsertOutcome::Applied(block)) => {
-                    let purged = block.deleted;
-                    let root = block.id.clone();
-                    state.broadcast_user(user_id, &ServerMessage::BlockUpdate { block });
-                    if purged {
-                        // Permanent delete: cascade to descendants + remove file blobs.
-                        crate::trash::purge_tree(state, user_id, &root);
+                    if block.deleted {
+                        // Permanent delete: cascade to descendants, remove file blobs,
+                        // and broadcast each affected block (including root) exactly once.
+                        crate::trash::purge_tree(state, user_id, &block.id);
+                    } else {
+                        state.broadcast_user(user_id, &ServerMessage::BlockUpdate { block });
                     }
                 }
                 Ok(UpsertOutcome::Stale(block)) => {
@@ -406,14 +406,11 @@ fn handle_authed(
             }
         }
         ClientMessage::SyncSince { since_seq } => {
-            match (
-                state.storage.blocks_since(user_id, since_seq),
-                state
-                    .storage
-                    .device_views_since(user_id, device_id, since_seq),
-                state.storage.latest_seq(user_id),
-            ) {
-                (Ok(blocks), Ok(views), Ok(latest)) => {
+            match state
+                .storage
+                .sync_since_snapshot(user_id, device_id, since_seq)
+            {
+                Ok((blocks, views, latest)) => {
                     for block in blocks {
                         // For global-viewed blocks, the BlockUpdate already carries viewed_global.
                         let _ = tx.send(ServerMessage::BlockUpdate { block });
@@ -428,8 +425,7 @@ fn handle_authed(
                     }
                     let _ = tx.send(ServerMessage::SyncComplete { latest_seq: latest });
                 }
-                (e1, e2, e3) => {
-                    let err = e1.err().or(e2.err()).or(e3.err()).unwrap();
+                Err(err) => {
                     let _ = tx.send(ServerMessage::Error {
                         message: format!("同步失败: {err}"),
                     });

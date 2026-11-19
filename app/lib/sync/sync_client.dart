@@ -564,16 +564,21 @@ class SyncClient extends ChangeNotifier {
     final existing = _blocks[incoming.id];
     final seq = incoming.seq;
     if (seq > _lastSeq) _lastSeq = seq;
-    // 服务器确认：移除已被该版本（或更新版本）覆盖的待发送操作。
-    _outbox.removeWhere((o) =>
-        o['type'] == 'upsert_block' &&
-        o['id'] == incoming.id &&
-        _asInt(o['client_updated_at']) <= incoming.updatedAt);
+    // 服务器确认：永久删除墓碑具有最终优先级，直接清理该块的所有待发送操作；
+    // 普通更新则移除已被该版本（或更新版本）覆盖的待发送操作。
+    if (incoming.deleted) {
+      _outbox.removeWhere((o) => (o['id'] ?? o['block_id']) == incoming.id);
+    } else {
+      _outbox.removeWhere((o) =>
+          o['type'] == 'upsert_block' &&
+          o['id'] == incoming.id &&
+          _asInt(o['client_updated_at']) <= incoming.updatedAt);
 
-    // 若本地有更新的未确认修改，则保留本地版本（它会在 outbox 中重放）。
-    if (existing != null && existing.pending && existing.updatedAt > incoming.updatedAt) {
-      _notify();
-      return;
+      // 若本地有更新的未确认修改，则保留本地版本（它会在 outbox 中重放）。
+      if (existing != null && existing.pending && existing.updatedAt > incoming.updatedAt) {
+        _notify();
+        return;
+      }
     }
     final stillPending = _outbox.any((o) =>
         o['type'] == 'upsert_block' &&
@@ -725,7 +730,7 @@ class SyncClient extends ChangeNotifier {
   ///
   /// 不改时间戳。服务器上没有的会补上；服务器上更新的版本不会被盖掉。
   int reuploadLocal() {
-    final blocks = _blocks.values.toList();
+    final blocks = _blocks.values.where((b) => !b.deleted).toList();
     for (final b in blocks) {
       if (!b.pending) _blocks[b.id] = b.copyWith(pending: true);
       _enqueue(b.toUpsertMessage());

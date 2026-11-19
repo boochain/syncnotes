@@ -35,7 +35,9 @@ double _order(Map<String, dynamic> b) =>
 String _str(Map? p, String k) => (p?[k] ?? '').toString();
 
 void _renderMd(Map<String, dynamic> b, Map<String, List<Map<String, dynamic>>> kids, Map<String, String> files, int depth,
-    StringBuffer out, String linkPrefix) {
+    Set<String> visited, StringBuffer out, String linkPrefix) {
+  final id = (b['id'] ?? '').toString();
+  if (depth > 128 || (id.isNotEmpty && !visited.add(id))) return;
   final p = (b['payload'] as Map?) ?? const {};
   final title = (b['title'] ?? '').toString();
   final text = _str(p, 'text').isNotEmpty ? _str(p, 'text') : _str(p, 'markdown');
@@ -61,13 +63,14 @@ void _renderMd(Map<String, dynamic> b, Map<String, List<Map<String, dynamic>>> k
       'callout' => '> ${_str(p, 'icon').isEmpty ? '💡' : _str(p, 'icon')} $text',
       'code' => '```${_str(p, 'lang')}\n$text\n```',
       'divider' => '---',
+      'image' when _str(p, 'url').isNotEmpty => '$ind![${text.isEmpty ? 'image' : text}](${_str(p, 'url')})',
       _ when b['kind'] == 'page' || b['kind'] == 'folder' => '$ind- 📄 ${title.isEmpty ? '无标题' : title}',
       _ => '$ind${text.isEmpty ? title : text}',
     };
     out.writeln('$line\n');
   }
   for (final c in kids[b['id']] ?? const <Map<String, dynamic>>[]) {
-    _renderMd(c, kids, files, depth + 1, out, linkPrefix);
+    _renderMd(c, kids, files, depth + 1, visited, out, linkPrefix);
   }
 }
 
@@ -159,7 +162,8 @@ Future<LocalExportResult> buildLocalExport({
     final base = '$dir/${exportSafeName(title.isEmpty ? r['id'].toString() : title)}';
     final n = used[base] = (used[base] ?? 0) + 1;
     final out = StringBuffer();
-    _renderMd(r, kids, files, 0, out, inTrash ? '../../' : '../');
+    final visited = <String>{};
+    _renderMd(r, kids, files, 0, visited, out, inTrash ? '../../' : '../');
     add(n == 1 ? '$base.md' : '$base ($n).md', utf8.encode(out.toString()));
   }
   final bytes = ZipEncoder().encodeBytes(archive);

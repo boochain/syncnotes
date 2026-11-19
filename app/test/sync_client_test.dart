@@ -169,6 +169,19 @@ void main() {
     expect(ups.single['title'], 'kept');
     expect(ups.single['client_updated_at'], 50);
     expect(c.byId('r1')!.updatedAt, 50);
+
+    // Server tombstone clears pending outbox even if local edit had higher timestamp,
+    // and reuploadLocal skips deleted tombstones.
+    c.update('r1', title: 'local edit after purge');
+    expect(c.pendingCount, 1);
+    ch.serverSend({
+      'type': 'block_update',
+      'block': serverBlock('r1', seq: 8, updated: 60, title: 'kept', deleted: true),
+    });
+    await pump();
+    expect(c.pendingCount, 0);
+    expect(c.byId('r1')!.deleted, isTrue);
+    expect(c.reuploadLocal(), 0);
   });
 
   test('outbox persists across restarts', () async {

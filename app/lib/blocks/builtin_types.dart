@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import '../ui/custom_icons.dart';
 import '../ui/ds.dart';
 import '../ui/motion.dart';
 import '../ui/tokens.dart';
@@ -417,9 +418,9 @@ class FolderType extends BlockType {
   @override
   Future<bool> edit(BuildContext context, Block? block, {String? parentId}) async {
     final sync = AppScope.of(context).sync;
-    var icon = (block?.payload['icon'] as String?) ?? '📁';
+    var icon = SyncIcon.normalizeKey(block?.payload['icon'] as String?, fallback: 'folder');
     final ctrl = TextEditingController(text: block?.title ?? '');
-    const choices = ['📁', '🗂️', '📚', '💼', '🏠', '⭐', '🔒', '📎', '💡', '🎯', '📌', '🌱'];
+    const choices = SyncIcon.folderChoices;
     final ok = await showDialog<bool>(
       context: context,
       builder: (c) => StatefulBuilder(
@@ -560,7 +561,7 @@ class PageType extends BlockType {
         .create(
           kind: BlockKind.page,
           title: '',
-          payload: {'icon': '📄', 'order': DocController.nextRootOrder(sync, parentId)},
+          payload: {'icon': 'doc', 'order': DocController.nextRootOrder(sync, parentId)},
           parentId: parentId,
           viewedMode: ViewedMode.global,
         )

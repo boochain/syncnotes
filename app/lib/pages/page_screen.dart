@@ -15,14 +15,21 @@ import 'commands.dart';
 import 'doc.dart';
 import 'page_nav.dart';
 
-/// Notion 式页面：封面、图标、标题、面包屑、块编辑器。
+/// Notion 式页面：封面、图标、标题、面包屑、块编辑器，以及 Spotlight 全屏检视。
 class PageScreen extends StatefulWidget {
   final String pageId;
 
   /// 作为独立路由（手机）打开时显示返回按钮
   final bool standalone;
   final VoidCallback? onMenu;
-  const PageScreen({super.key, required this.pageId, this.standalone = false, this.onMenu});
+  final bool inSpotlight;
+  const PageScreen({
+    super.key,
+    required this.pageId,
+    this.standalone = false,
+    this.onMenu,
+    this.inSpotlight = false,
+  });
 
   @override
   State<PageScreen> createState() => _PageScreenState();
@@ -49,7 +56,7 @@ class _PageScreenState extends State<PageScreen> {
         if (mounted) sync.setViewed(widget.pageId, true);
       });
       // 新建的空页面：直接聚焦标题
-      if (_title.text.isEmpty) {
+      if (_title.text.isEmpty && !widget.inSpotlight) {
         WidgetsBinding.instance.addPostFrameCallback((_) => _titleFocus.requestFocus());
       }
     }
@@ -121,17 +128,34 @@ class _PageScreenState extends State<PageScreen> {
     return id == null ? null : _rowKeys[id]?.currentState;
   }
 
+  void _openSpotlight() {
+    if (widget.inSpotlight) return;
+    final page = _doc?.page;
+    if (page == null) return;
+    final services = AppScope.of(context);
+    showSpotlightModal(
+      context,
+      title: page.title,
+      child: AppScope(
+        services: services,
+        child: PageScreen(pageId: widget.pageId, inSpotlight: true),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final doc = _doc!;
     final c = AppColors.of(context);
     return ListenableBuilder(
-      listenable: doc,
+      listenable: Listenable.merge([doc, Glass.backdropListenable]),
       builder: (context, _) {
         final page = doc.page;
+        final bg = Glass.scaffoldBg(context);
         if (page == null || page.deleted || doc.sync.isHidden(page)) {
           return Scaffold(
-            appBar: AppBar(),
+            backgroundColor: bg,
+            appBar: AppBar(backgroundColor: bg),
             body: const EmptyState(icon: CupertinoIcons.trash, title: '页面已被删除', subtitle: '可以从侧边栏打开其他页面'),
           );
         }
@@ -172,36 +196,49 @@ class _PageScreenState extends State<PageScreen> {
             const SingleActivator(LogicalKeyboardKey.keyZ, control: true): doc.undo,
             const SingleActivator(LogicalKeyboardKey.keyZ, control: true, shift: true): doc.redo,
             const SingleActivator(LogicalKeyboardKey.keyY, control: true): doc.redo,
+            if (!widget.inSpotlight)
+              const SingleActivator(LogicalKeyboardKey.keyF, control: true, shift: true): _openSpotlight,
           },
           child: Scaffold(
-            appBar: AppBar(
-              automaticallyImplyLeading: widget.standalone,
-              leading: widget.onMenu != null
-                  ? IconButton(icon: const Icon(CupertinoIcons.sidebar_left), tooltip: '菜单', onPressed: widget.onMenu)
-                  : widget.standalone && Navigator.of(context).canPop()
-                      // 左上角返回按钮直接返回（系统返回键才会先收起编辑焦点）
-                      ? BackButton(onPressed: () {
-                          FocusManager.instance.primaryFocus?.unfocus();
-                          Navigator.of(context).pop();
-                        })
-                      : null,
-              titleSpacing: widget.standalone || widget.onMenu != null ? 0 : 16,
-              title: _Breadcrumbs(doc: doc, page: page),
-              actions: [
-                IconButton(
-                  tooltip: '撤销 (Ctrl+Z)',
-                  icon: const Icon(CupertinoIcons.arrow_uturn_left),
-                  onPressed: doc.canUndo ? doc.undo : null,
-                ),
-                IconButton(
-                  tooltip: '重做 (Ctrl+Shift+Z)',
-                  icon: const Icon(CupertinoIcons.arrow_uturn_right),
-                  onPressed: doc.canRedo ? doc.redo : null,
-                ),
-                _PageMenu(doc: doc, page: page),
-                const SizedBox(width: Gap.s),
-              ],
-            ),
+            backgroundColor: bg,
+            appBar: widget.inSpotlight
+                ? null
+                : AppBar(
+                    backgroundColor: bg,
+                    automaticallyImplyLeading: widget.standalone,
+                    leading: widget.onMenu != null
+                        ? IconButton(icon: const Icon(CupertinoIcons.sidebar_left), tooltip: '菜单', onPressed: widget.onMenu)
+                        : widget.standalone && Navigator.of(context).canPop()
+                            // 左上角返回按钮直接返回（系统返回键才会先收起编辑焦点）
+                            ? BackButton(onPressed: () {
+                                FocusManager.instance.primaryFocus?.unfocus();
+                                Navigator.of(context).pop();
+                              })
+                            : null,
+                    titleSpacing: widget.standalone || widget.onMenu != null ? 0 : 16,
+                    title: _Breadcrumbs(doc: doc, page: page),
+                    actions: [
+                      IconButton(
+                        tooltip: '撤销 (Ctrl+Z)',
+                        icon: const Icon(CupertinoIcons.arrow_uturn_left),
+                        onPressed: doc.canUndo ? doc.undo : null,
+                      ),
+                      IconButton(
+                        tooltip: '重做 (Ctrl+Shift+Z)',
+                        icon: const Icon(CupertinoIcons.arrow_uturn_right),
+                        onPressed: doc.canRedo ? doc.redo : null,
+                      ),
+                      if (wide && Glass.useShader)
+                        IconButton(
+                          key: const Key('pageSpotlightButton'),
+                          tooltip: 'Spotlight 全屏检视 (Ctrl+Shift+F)',
+                          icon: const Icon(CupertinoIcons.fullscreen),
+                          onPressed: _openSpotlight,
+                        ),
+                      _PageMenu(doc: doc, page: page, onSpotlight: _openSpotlight),
+                      const SizedBox(width: Gap.s),
+                    ],
+                  ),
             body: Column(children: [
               Expanded(
                 child: CustomScrollView(
@@ -512,7 +549,7 @@ class _Breadcrumbs extends StatelessWidget {
     final tt = Theme.of(context).textTheme;
     final crumbs = [...doc.breadcrumbs(), page];
     Widget crumb(Block b, bool last) {
-      final icon = b.kind == BlockKind.folder ? '📁' : (b.payload['icon'] ?? '') as String;
+      final icon = b.kind == BlockKind.folder ? 'folder' : (b.payload['icon'] ?? 'doc') as String;
       return InkWell(
         borderRadius: BorderRadius.circular(AppRadius.xs),
         onTap: last || b.kind != BlockKind.page ? null : () => openPage(context, b.id),
@@ -548,7 +585,8 @@ class _Breadcrumbs extends StatelessWidget {
 class _PageMenu extends StatelessWidget {
   final DocController doc;
   final Block page;
-  const _PageMenu({required this.doc, required this.page});
+  final VoidCallback? onSpotlight;
+  const _PageMenu({required this.doc, required this.page, this.onSpotlight});
 
   @override
   Widget build(BuildContext context) {
@@ -557,6 +595,8 @@ class _PageMenu extends StatelessWidget {
       icon: const Icon(CupertinoIcons.ellipsis),
       onSelected: (v) async {
         switch (v) {
+          case 'spotlight':
+            onSpotlight?.call();
           case 'sub':
             final id = doc.createSubpage(null);
             openPage(context, id);
@@ -572,6 +612,7 @@ class _PageMenu extends StatelessWidget {
         }
       },
       itemBuilder: (_) => [
+        if (onSpotlight != null) menuItem(context, 'spotlight', CupertinoIcons.fullscreen, 'Spotlight 全屏检视'),
         menuItem(context, 'sub', CupertinoIcons.doc_on_doc, '新建子页面'),
         menuItem(context, 'global', CupertinoIcons.globe, page.viewedMode == ViewedMode.global ? '改为按设备已读' : '改为全局已读'),
         const PopupMenuDivider(height: Gap.m + 1),
@@ -582,6 +623,8 @@ class _PageMenu extends StatelessWidget {
 }
 
 /// 编辑工具栏（聚焦块时出现在底部）：转换类型、行内格式、缩进、撤销重做。
+/// 使用 `SingleChildScrollView` + `Row(mainAxisSize: MainAxisSize.min)` 替代 `ListView(shrinkWrap: true)`，
+/// 避免 `GlassContainer` 内部图层测量宽度不确定导致的部分按钮被裁切问题。
 class _Toolbar extends StatelessWidget {
   final DocController doc;
   final BlockRowState? Function() row;
@@ -598,7 +641,7 @@ class _Toolbar extends StatelessWidget {
         );
     final divider = Padding(
       padding: const EdgeInsets.symmetric(horizontal: Gap.xs, vertical: Gap.l),
-      child: SizedBox(width: 1, child: ColoredBox(color: c.separator)),
+      child: SizedBox(width: 1, height: Sizes.bar - Gap.l * 2, child: ColoredBox(color: c.separator)),
     );
     return TextFieldTapRegion(
       // 浮动胶囊工具栏（Notion 选区工具栏 + HIG 材质）：不再是贴底的灰条
@@ -613,49 +656,56 @@ class _Toolbar extends StatelessWidget {
                 key: const Key('formatToolbar'),
                 radius: AppRadius.l,
                 child: SizedBox(
-            height: Sizes.bar,
-            child: ListView(shrinkWrap: true, scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: Gap.s, vertical: Gap.s), children: [
-              PopupMenuButton<DocType>(
-                tooltip: '转换块类型',
-                icon: const Icon(CupertinoIcons.textformat, size: Sizes.iconSm + 2),
-                onSelected: (t) {
-                  final id = doc.focusedId.value;
-                  if (id == null) return;
-                  doc.setType(id, t, text: docText(doc.sync.byId(id)!));
-                },
-                itemBuilder: (_) => [
-                  for (final sc in slashCommands.where((sc) => sc.type != null && isTextual(sc.type!)))
-                    menuItem<DocType>(context, sc.type!, sc.icon, sc.label),
-                ],
-              ),
-              b('粗体 (Ctrl+B)', CupertinoIcons.bold, () => row()?.wrap('**'), key: const Key('tbBold')),
-              b('斜体 (Ctrl+I)', CupertinoIcons.italic, () => row()?.wrap('*')),
-              b('行内代码 (Ctrl+E)', CupertinoIcons.chevron_left_slash_chevron_right, () => row()?.wrap('`')),
-              b('删除线 (Ctrl+Shift+S)', CupertinoIcons.strikethrough, () => row()?.wrap('~~')),
-              b('链接 (Ctrl+Shift+K)', CupertinoIcons.link, () => row()?.promptLink()),
-              b('打开链接', CupertinoIcons.arrow_up_right_square, () {
-                final url = row()?.linkAtCaret;
-                if (url != null) launchLink(url);
-              }),
-              divider,
-              b('增加缩进 (Tab)', CupertinoIcons.increase_indent, () {
-                final id = doc.focusedId.value;
-                if (id != null) doc.indent(id);
-              }),
-              b('减少缩进 (Shift+Tab)', CupertinoIcons.decrease_indent, () {
-                final id = doc.focusedId.value;
-                if (id != null) doc.outdent(id);
-              }),
-              b('删除此块', CupertinoIcons.trash, () {
-                final id = doc.focusedId.value;
-                if (id != null) doc.remove(id);
-              }),
-              divider,
-              b('撤销', CupertinoIcons.arrow_uturn_left, doc.canUndo ? doc.undo : null),
-              b('重做', CupertinoIcons.arrow_uturn_right, doc.canRedo ? doc.redo : null),
-              b('完成', CupertinoIcons.keyboard_chevron_compact_down, () => FocusManager.instance.primaryFocus?.unfocus()),
-            ]),
-          ),
+                  height: Sizes.bar,
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: Gap.s, vertical: Gap.s),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        PopupMenuButton<DocType>(
+                          tooltip: '转换块类型',
+                          icon: const Icon(CupertinoIcons.textformat, size: Sizes.iconSm + 2),
+                          onSelected: (t) {
+                            final id = doc.focusedId.value;
+                            if (id == null) return;
+                            doc.setType(id, t, text: docText(doc.sync.byId(id)!));
+                          },
+                          itemBuilder: (_) => [
+                            for (final sc in slashCommands.where((sc) => sc.type != null && isTextual(sc.type!)))
+                              menuItem<DocType>(context, sc.type!, sc.icon, sc.label),
+                          ],
+                        ),
+                        b('粗体 (Ctrl+B)', CupertinoIcons.bold, () => row()?.wrap('**'), key: const Key('tbBold')),
+                        b('斜体 (Ctrl+I)', CupertinoIcons.italic, () => row()?.wrap('*')),
+                        b('行内代码 (Ctrl+E)', CupertinoIcons.chevron_left_slash_chevron_right, () => row()?.wrap('`')),
+                        b('删除线 (Ctrl+Shift+S)', CupertinoIcons.strikethrough, () => row()?.wrap('~~')),
+                        b('链接 (Ctrl+Shift+K)', CupertinoIcons.link, () => row()?.promptLink()),
+                        b('打开链接', CupertinoIcons.arrow_up_right_square, () {
+                          final url = row()?.linkAtCaret;
+                          if (url != null) launchLink(url);
+                        }),
+                        divider,
+                        b('增加缩进 (Tab)', CupertinoIcons.increase_indent, () {
+                          final id = doc.focusedId.value;
+                          if (id != null) doc.indent(id);
+                        }),
+                        b('减少缩进 (Shift+Tab)', CupertinoIcons.decrease_indent, () {
+                          final id = doc.focusedId.value;
+                          if (id != null) doc.outdent(id);
+                        }),
+                        b('删除此块', CupertinoIcons.trash, () {
+                          final id = doc.focusedId.value;
+                          if (id != null) doc.remove(id);
+                        }),
+                        divider,
+                        b('撤销', CupertinoIcons.arrow_uturn_left, doc.canUndo ? doc.undo : null),
+                        b('重做', CupertinoIcons.arrow_uturn_right, doc.canRedo ? doc.redo : null),
+                        b('完成', CupertinoIcons.keyboard_chevron_compact_down, () => FocusManager.instance.primaryFocus?.unfocus()),
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ),
           ),

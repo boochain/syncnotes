@@ -64,6 +64,26 @@ class Settings {
   String get bgPreset => prefs.getString('bg_preset') ?? 'default';
   set bgPreset(String v) => prefs.setString('bg_preset', v);
 
+  /// 自定义背景壁纸文件路径（为空则使用预设渐变或纯色）。
+  String? get bgImagePath {
+    final v = prefs.getString('bg_image_path');
+    return (v == null || v.trim().isEmpty) ? null : v;
+  }
+
+  set bgImagePath(String? v) =>
+      (v == null || v.trim().isEmpty) ? prefs.remove('bg_image_path') : prefs.setString('bg_image_path', v);
+
+  /// 自定义背景图片之上的可读性遮罩浓度（0.00 – 0.88，默认 0.35）。
+  double get bgImageDim {
+    final v = prefs.getDouble('bg_image_dim');
+    if (v == null) return 0.35;
+    if (v < 0.0) return 0.0;
+    if (v > 0.88) return 0.88;
+    return v;
+  }
+
+  set bgImageDim(double v) => prefs.setDouble('bg_image_dim', v < 0.0 ? 0.0 : (v > 0.88 ? 0.88 : v));
+
   /// 浮层玻璃的不透明度。越小越透。
   double get glassOpacity {
     final v = prefs.getDouble('glass_opacity');
@@ -74,6 +94,21 @@ class Settings {
   }
 
   set glassOpacity(double v) => prefs.setDouble('glass_opacity', v < 0.35 ? 0.35 : (v > 0.92 ? 0.92 : v));
+
+  /// 浮层玻璃折射率（1.00 – 1.12）。
+  double get glassRefraction {
+    final v = prefs.getDouble('glass_refraction');
+    if (v == null) return 1.04;
+    if (v < 1.00) return 1.00;
+    if (v > 1.12) return 1.12;
+    return v;
+  }
+
+  set glassRefraction(double v) => prefs.setDouble('glass_refraction', v < 1.00 ? 1.00 : (v > 1.12 ? 1.12 : v));
+
+  /// 液态玻璃渲染品质：standard / premium / minimal
+  String get glassQuality => prefs.getString('glass_quality') ?? 'standard';
+  set glassQuality(String v) => prefs.setString('glass_quality', v);
 
   String? get token => prefs.getString('token');
   set token(String? v) => v == null ? prefs.remove('token') : prefs.setString('token', v);

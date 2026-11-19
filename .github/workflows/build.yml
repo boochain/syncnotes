@@ -117,10 +117,13 @@ jobs:
           cp target/${{ matrix.target }}/release/syncnotes-server${{ matrix.ext }} ../pkg/$PKG/
           cp ../README.md ../LICENSE ../pkg/$PKG/
           cp -r ../deploy ../pkg/$PKG/deploy
-          # Linux 包附带一键管理脚本（与程序放在同一目录）
           if [ -z "${{ matrix.ext }}" ]; then
-            cp ../scripts/syncnotes-server.sh ../pkg/$PKG/
-            chmod +x ../pkg/$PKG/syncnotes-server.sh
+            # Linux 包附带一键管理脚本与救援脚本
+            cp ../scripts/syncnotes-server.sh ../scripts/syncnotes-rescue.sh ../pkg/$PKG/
+            chmod +x ../pkg/$PKG/syncnotes-server.sh ../pkg/$PKG/syncnotes-rescue.sh
+          else
+            # Windows 包附带 PowerShell 一键管理脚本
+            cp ../scripts/syncnotes-server.ps1 ../pkg/$PKG/
           fi
           cd ../pkg
           if [ "${{ matrix.ext }}" = ".exe" ]; then
@@ -156,9 +159,7 @@ jobs:
         run: flutter build linux --release
       - name: Package
         run: |
-          mkdir -p dist
-          tar -C app/build/linux/x64/release -czf dist/SyncNotes-linux-x64.tar.gz --transform 's/^bundle/SyncNotes/' bundle
-          tar -tvzf dist/SyncNotes-linux-x64.tar.gz | grep -E ' SyncNotes/syncnotes$' | grep -q '^-rwx' || (echo "launcher not executable"; exit 1)
+          bash scripts/package-linux.sh
       - uses: actions/upload-artifact@v4
         with:
           name: app-linux
@@ -181,16 +182,7 @@ jobs:
       - name: Package
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item -Recurse app/build/windows/x64/runner/Release SyncNotes
-          # 附带 VC++ 运行库，干净的 Windows 上无需另装 VC++ Redistributable 也能启动
-          foreach ($dll in @("msvcp140.dll","vcruntime140.dll","vcruntime140_1.dll")) {
-            Copy-Item "$env:WINDIR\System32\$dll" SyncNotes\
-          }
-          if (-not (Test-Path SyncNotes\syncnotes.exe)) { throw "syncnotes.exe missing" }
-          if (-not (Test-Path SyncNotes\data\app.so)) { throw "data\app.so missing" }
-          Compress-Archive -Path SyncNotes -DestinationPath dist/SyncNotes-windows-x64.zip
-          Get-ChildItem -Recurse SyncNotes | Select-Object -ExpandProperty FullName
+          ./scripts/package-windows.ps1
       - uses: actions/upload-artifact@v4
         with:
           name: app-windows
@@ -230,10 +222,7 @@ jobs:
         run: flutter build apk --release
       - name: Package
         run: |
-          mkdir -p dist
-          cp app/build/app/outputs/flutter-apk/app-release.apk dist/SyncNotes-android.apk
-          unzip -l dist/SyncNotes-android.apk | grep -q 'lib/arm64-v8a/libapp.so' || (echo "APK missing arm64 code"; exit 1)
-          unzip -l dist/SyncNotes-android.apk | grep -E 'META-INF/.*\.(SF|RSA|EC|DSA)$' || (echo "APK missing v1 signature"; exit 1)
+          bash scripts/package-android.sh
       - uses: actions/upload-artifact@v4
         with:
           name: app-android

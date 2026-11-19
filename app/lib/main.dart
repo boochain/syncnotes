@@ -55,7 +55,11 @@ Future<void> _main(List<String> args) async {
   Glass.useShader = Platform.environment['SYNCNOTES_GLASS'] != '0';
   Glass.enabled.value = settings.liquidGlass;
   Glass.opacity.value = settings.glassOpacity;
+  Glass.refraction.value = settings.glassRefraction;
+  Glass.quality.value = settings.glassQuality;
   Glass.preset.value = settings.bgPreset;
+  Glass.bgImage.value = settings.bgImagePath;
+  Glass.bgDim.value = settings.bgImageDim;
   if (Glass.useShader) {
     try {
       await LiquidGlassWidgets.initialize(enablePerformanceMonitor: false);
@@ -134,7 +138,10 @@ class _SyncNotesAppState extends State<SyncNotesApp> with WidgetsBindingObserver
       channelFactory: widget.channelFactory,
     );
     c.onRemoteNew = _onRemoteNew;
-    if (isDesktop) DesktopShell.instance.onQuit = c.flush;
+    if (isDesktop) {
+      DesktopShell.instance.onQuit = c.flush;
+      DesktopShell.instance.onRestore = c.reconnectNow;
+    }
     c.addListener(_onSyncChanged);
     return c;
   }
@@ -212,12 +219,16 @@ class _SyncNotesAppState extends State<SyncNotesApp> with WidgetsBindingObserver
         locale: const Locale('zh', 'CN'),
         supportedLocales: const [Locale('zh', 'CN'), Locale('en')],
         localizationsDelegates: GlobalMaterialLocalizations.delegates,
-        // 系统栏图标随主题明暗切换（没有 AppBar 的页面也正确）
+        // 系统栏图标随主题明暗切换（没有 AppBar 的页面也正确），桌面同步原生标题栏明暗
         builder: (context, child) {
-          return ValueListenableBuilder<bool>(
-            valueListenable: Glass.enabled,
-            builder: (context, on, child) {
+          return ListenableBuilder(
+            listenable: Glass.backdropListenable,
+            builder: (context, child) {
+              final on = Glass.enabled.value;
               final theme = Theme.of(context);
+              if (isDesktop && Glass.useShader) {
+                unawaited(DesktopShell.instance.syncWindowTheme(theme.brightness));
+              }
               Widget page = child!;
               if (on) page = Theme(data: glassTheme(theme, true), child: page);
               return AnnotatedRegion<SystemUiOverlayStyle>(

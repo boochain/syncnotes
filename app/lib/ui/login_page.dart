@@ -5,14 +5,16 @@ import 'tokens.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
+import '../app_scope.dart';
 import '../services/auth_api.dart';
 import '../services/discovery.dart';
 import '../services/settings.dart';
 import '../sync/wire_seal.dart';
+import 'glass.dart';
 import 'motion.dart';
 import 'recovery_ui.dart';
 
-/// 登录 / 注册页面。支持手动输入服务器地址或局域网发现。
+/// 登录 / 注册页面。支持手动输入服务器地址、局域网发现与一键日夜主题切换。
 class LoginPage extends StatefulWidget {
   final Settings settings;
   final AuthApi api;
@@ -187,166 +189,207 @@ class _LoginPageState extends State<LoginPage> {
   Widget build(BuildContext context) {
     final pal = AppColors.of(context);
     final tt = Theme.of(context).textTheme;
+    final scope = context.dependOnInheritedWidgetOfExactType<AppScope>();
     final divider = Divider(height: 1, thickness: 1, indent: Gap.l + Sizes.iconMd + Gap.l, color: pal.separator);
+    final formBox = Container(
+      key: const Key('loginForm'),
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: Glass.useShader && Glass.enabled.value ? Colors.transparent : pal.elevated,
+        borderRadius: BorderRadius.circular(AppRadius.l),
+        border: Border.all(color: pal.separator),
+      ),
+      child: Column(children: [
+        _row(context,
+            key: const Key('serverField'),
+            c: _server,
+            icon: CupertinoIcons.globe,
+            hint: '域名自动加 https，IP 自动加 http',
+            label: '服务器地址',
+            suffix: _discovering
+                ? const SizedBox.square(
+                    dimension: Sizes.control,
+                    child: Center(child: SizedBox.square(dimension: Sizes.iconSm, child: CircularProgressIndicator(strokeWidth: 2))))
+                : IconButton(
+                    key: const Key('discoverButton'),
+                    tooltip: '搜索局域网服务器',
+                    icon: Icon(CupertinoIcons.wifi, size: Sizes.iconMd - 2, color: pal.accent),
+                    onPressed: _discover)),
+        divider,
+        _row(context, key: const Key('userField'), c: _user, icon: CupertinoIcons.person, hint: '用户名'),
+        divider,
+        _row(context,
+            key: const Key('passwordField'),
+            c: _pw,
+            icon: CupertinoIcons.lock,
+            hint: '密码',
+            obscure: true,
+            onSubmitted: (_) => _submit()),
+        divider,
+        SizedBox(
+          height: Sizes.bar,
+          child: Row(children: [
+            const SizedBox(width: Gap.l),
+            SizedBox.square(dimension: Sizes.iconMd, child: Icon(CupertinoIcons.lock_shield, size: Sizes.iconMd - 2, color: pal.text2)),
+            const SizedBox(width: Gap.l),
+            Expanded(child: Text('记住密码', style: Theme.of(context).textTheme.bodyMedium)),
+            AppSwitch(
+              key: const Key('rememberPassword'),
+              value: _remember,
+              onChanged: (v) => setState(() => _remember = v),
+            ),
+            const SizedBox(width: Gap.s),
+          ]),
+        ),
+      ]),
+    );
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(Gap.x3),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 360),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              // 应用图标：HIG 圆角方形，纯强调色（不再用渐变与彩色阴影）
-              Center(
-                child: Container(
-                  key: const Key('appMark'),
-                  width: 56,
-                  height: 56,
-                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(13), color: pal.accent),
-                  child: const Icon(CupertinoIcons.arrow_2_squarepath, color: Colors.white, size: 28),
-                ),
-              ),
-              const SizedBox(height: Gap.xl),
-              Text('SyncNotes', textAlign: TextAlign.center, style: tt.headlineSmall),
-              const SizedBox(height: Gap.xs),
-              Text('多设备实时同步的笔记与消息', textAlign: TextAlign.center, style: tt.bodyMedium?.copyWith(color: pal.text2)),
-              const SizedBox(height: Gap.x4 - Gap.xs),
-              Container(
-                key: const Key('loginForm'),
-                clipBehavior: Clip.antiAlias,
-                decoration: BoxDecoration(
-                  color: pal.elevated,
-                  borderRadius: BorderRadius.circular(AppRadius.l),
-                  border: Border.all(color: pal.separator),
-                ),
-                child: Column(children: [
-                  _row(context,
-                      key: const Key('serverField'),
-                      c: _server,
-                      icon: CupertinoIcons.globe,
-                      hint: '域名自动加 https，IP 自动加 http',
-                      label: '服务器地址',
-                      suffix: _discovering
-                          ? const SizedBox.square(
-                              dimension: Sizes.control,
-                              child: Center(child: SizedBox.square(dimension: Sizes.iconSm, child: CircularProgressIndicator(strokeWidth: 2))))
-                          : IconButton(
-                              key: const Key('discoverButton'),
-                              tooltip: '搜索局域网服务器',
-                              icon: Icon(CupertinoIcons.wifi, size: Sizes.iconMd - 2, color: pal.accent),
-                              onPressed: _discover)),
-                  divider,
-                  _row(context, key: const Key('userField'), c: _user, icon: CupertinoIcons.person, hint: '用户名'),
-                  divider,
-                  _row(context,
-                      key: const Key('passwordField'),
-                      c: _pw,
-                      icon: CupertinoIcons.lock,
-                      hint: '密码',
-                      obscure: true,
-                      onSubmitted: (_) => _submit()),
-                  divider,
-                  SizedBox(
-                    height: Sizes.bar,
-                    child: Row(children: [
-                      const SizedBox(width: Gap.l),
-                      SizedBox.square(dimension: Sizes.iconMd, child: Icon(CupertinoIcons.lock_shield, size: Sizes.iconMd - 2, color: pal.text2)),
-                      const SizedBox(width: Gap.l),
-                      Expanded(child: Text('记住密码', style: Theme.of(context).textTheme.bodyMedium)),
-                      AppSwitch(
-                        key: const Key('rememberPassword'),
-                        value: _remember,
-                        onChanged: (v) => setState(() => _remember = v),
-                      ),
-                      const SizedBox(width: Gap.s),
-                    ]),
+      body: Stack(
+        children: [
+          Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(Gap.x3),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 360),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  // 应用图标：HIG 圆角方形，纯强调色
+                  Center(
+                    child: Container(
+                      key: const Key('appMark'),
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(borderRadius: BorderRadius.circular(13), color: pal.accent),
+                      child: const Icon(CupertinoIcons.arrow_2_squarepath, color: Colors.white, size: 28),
+                    ),
                   ),
+                  const SizedBox(height: Gap.xl),
+                  Text('SyncNotes', textAlign: TextAlign.center, style: tt.headlineSmall),
+                  const SizedBox(height: Gap.xs),
+                  Text('多设备实时同步的笔记与消息', textAlign: TextAlign.center, style: tt.bodyMedium?.copyWith(color: pal.text2)),
+                  const SizedBox(height: Gap.x4 - Gap.xs),
+                  if (Glass.useShader && Glass.enabled.value)
+                    Frosted(color: pal.elevated, radius: AppRadius.l, child: formBox)
+                  else
+                    formBox,
+                  AnimatedSize(
+                    duration: Motion.short4,
+                    child: _found.length > 1
+                        ? Padding(
+                            padding: const EdgeInsets.only(top: Gap.m),
+                            child: Wrap(spacing: Gap.s, runSpacing: Gap.s, children: [
+                              for (final s in _found)
+                                OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(fixedSize: const Size.fromHeight(Sizes.control), minimumSize: const Size(0, Sizes.control)),
+                                  icon: const Icon(CupertinoIcons.desktopcomputer, size: Sizes.iconSm),
+                                  label: Text('${s.name} (${s.address})', overflow: TextOverflow.ellipsis),
+                                  onPressed: () => setState(() => _server.text = s.address),
+                                )
+                            ]),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                  MotionSwitch(
+                    child: _error == null
+                        ? const SizedBox(height: Gap.xxl)
+                        : Padding(
+                            padding: const EdgeInsets.symmetric(vertical: Gap.m),
+                            child: Text(_error!, key: const Key('loginError'), textAlign: TextAlign.center, style: tt.bodySmall?.copyWith(color: pal.danger)),
+                          ),
+                  ),
+                  if (_pinMismatch)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: Gap.s),
+                      child: Text(
+                        '指纹只用来认出是不是同一台服务器。它不管笔记在服务器硬盘上是不是密文。确定是你自己换过服务器，再点下面。',
+                        textAlign: TextAlign.center,
+                        style: tt.bodySmall?.copyWith(color: pal.text2),
+                      ),
+                    ),
+                  if (widget.settings.knownServers.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: Gap.m),
+                      child: Wrap(spacing: Gap.s, runSpacing: Gap.s, children: [
+                        for (final s in widget.settings.knownServers)
+                          InputChip(
+                            key: ValueKey('knownServer:$s'),
+                            label: Text(s, overflow: TextOverflow.ellipsis),
+                            deleteButtonTooltipMessage: '删除这个地址',
+                            deleteIcon: Icon(CupertinoIcons.xmark_circle_fill, key: ValueKey('forgetServer:$s'), size: 18),
+                            onPressed: () => setState(() => _server.text = s),
+                            onDeleted: () => setState(() {
+                              widget.settings.forgetServer(s);
+                              if (_server.text.trim() == s || normalizeServer(_server.text) == normalizeServer(s)) {
+                                _server.text = '';
+                              }
+                            }),
+                          ),
+                      ]),
+                    ),
+                  if (_pinMismatch)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: Gap.s),
+                      child: FilledButton.tonal(
+                        key: const Key('trustFingerprint'),
+                        onPressed: _busy ? null : _trustNewPin,
+                        style: FilledButton.styleFrom(fixedSize: const Size.fromHeight(Sizes.bar), minimumSize: const Size.fromHeight(Sizes.bar)),
+                        child: const Text('改用新指纹并登录'),
+                      ),
+                    ),
+                  FilledButton(
+                    key: const Key('loginButton'),
+                    onPressed: _busy ? null : _submit,
+                    style: FilledButton.styleFrom(fixedSize: const Size.fromHeight(Sizes.bar), minimumSize: const Size.fromHeight(Sizes.bar)),
+                    child: _busy
+                        ? const SizedBox.square(dimension: Sizes.iconSm, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : Text(_registerMode ? '注册并登录' : '登录'),
+                  ),
+                  const SizedBox(height: Gap.s),
+                  Wrap(alignment: WrapAlignment.center, spacing: Gap.s, children: [
+                    TextButton(
+                      onPressed: () => setState(() => _registerMode = !_registerMode),
+                      child: Text(_registerMode ? '已有账号？去登录' : '没有账号？注册'),
+                    ),
+                    if (!_registerMode)
+                      TextButton(key: const Key('forgotPasswordButton'), onPressed: _forgot, child: const Text('忘记密码？')),
+                  ]),
                 ]),
               ),
-              AnimatedSize(
-                duration: Motion.short4,
-                child: _found.length > 1
-                    ? Padding(
-                        padding: const EdgeInsets.only(top: Gap.m),
-                        child: Wrap(spacing: Gap.s, runSpacing: Gap.s, children: [
-                          for (final s in _found)
-                            OutlinedButton.icon(
-                              style: OutlinedButton.styleFrom(fixedSize: const Size.fromHeight(Sizes.control), minimumSize: const Size(0, Sizes.control)),
-                              icon: const Icon(CupertinoIcons.desktopcomputer, size: Sizes.iconSm),
-                              label: Text('${s.name} (${s.address})', overflow: TextOverflow.ellipsis),
-                              onPressed: () => setState(() => _server.text = s.address),
-                            )
-                        ]),
-                      )
-                    : const SizedBox.shrink(),
-              ),
-              MotionSwitch(
-                child: _error == null
-                    ? const SizedBox(height: Gap.xxl)
-                    : Padding(
-                        padding: const EdgeInsets.symmetric(vertical: Gap.m),
-                        child: Text(_error!, key: const Key('loginError'), textAlign: TextAlign.center, style: tt.bodySmall?.copyWith(color: pal.danger)),
-                      ),
-              ),
-              if (_pinMismatch)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: Gap.s),
-                  child: Text(
-                    '指纹只用来认出是不是同一台服务器。它不管笔记在服务器硬盘上是不是密文。确定是你自己换过服务器，再点下面。',
-                    textAlign: TextAlign.center,
-                    style: tt.bodySmall?.copyWith(color: pal.text2),
-                  ),
-                ),
-              if (widget.settings.knownServers.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: Gap.m),
-                  child: Wrap(spacing: Gap.s, runSpacing: Gap.s, children: [
-                    for (final s in widget.settings.knownServers)
-                      InputChip(
-                        key: ValueKey('knownServer:$s'),
-                        label: Text(s, overflow: TextOverflow.ellipsis),
-                        deleteButtonTooltipMessage: '删除这个地址',
-                        deleteIcon: Icon(CupertinoIcons.xmark_circle_fill, key: ValueKey('forgetServer:$s'), size: 18),
-                        onPressed: () => setState(() => _server.text = s),
-                        onDeleted: () => setState(() {
-                          widget.settings.forgetServer(s);
-                          if (_server.text.trim() == s || normalizeServer(_server.text) == normalizeServer(s)) {
-                            _server.text = '';
-                          }
-                        }),
-                      ),
-                  ]),
-                ),
-              if (_pinMismatch)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: Gap.s),
-                  child: FilledButton.tonal(
-                    key: const Key('trustFingerprint'),
-                    onPressed: _busy ? null : _trustNewPin,
-                    style: FilledButton.styleFrom(fixedSize: const Size.fromHeight(Sizes.bar), minimumSize: const Size.fromHeight(Sizes.bar)),
-                    child: const Text('改用新指纹并登录'),
-                  ),
-                ),
-              FilledButton(
-                key: const Key('loginButton'),
-                onPressed: _busy ? null : _submit,
-                style: FilledButton.styleFrom(fixedSize: const Size.fromHeight(Sizes.bar), minimumSize: const Size.fromHeight(Sizes.bar)),
-                child: _busy
-                    ? const SizedBox.square(dimension: Sizes.iconSm, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : Text(_registerMode ? '注册并登录' : '登录'),
-              ),
-              const SizedBox(height: Gap.s),
-              Wrap(alignment: WrapAlignment.center, spacing: Gap.s, children: [
-                TextButton(
-                  onPressed: () => setState(() => _registerMode = !_registerMode),
-                  child: Text(_registerMode ? '已有账号？去登录' : '没有账号？注册'),
-                ),
-                if (!_registerMode)
-                  TextButton(key: const Key('forgotPasswordButton'), onPressed: _forgot, child: const Text('忘记密码？')),
-              ]),
-            ]),
+            ),
           ),
-        ),
+          if (scope != null && Glass.useShader)
+            Positioned(
+              top: Gap.m,
+              right: Gap.m,
+              child: SafeArea(
+                child: ValueListenableBuilder<ThemeMode>(
+                  valueListenable: scope.services.themeMode,
+                  builder: (context, mode, _) {
+                    final dark = Theme.of(context).brightness == Brightness.dark;
+                    final icon = switch (mode) {
+                      ThemeMode.light => CupertinoIcons.sun_max_fill,
+                      ThemeMode.dark => CupertinoIcons.moon_stars_fill,
+                      ThemeMode.system => dark ? CupertinoIcons.moon_circle : CupertinoIcons.sun_max,
+                    };
+                    return IconButton(
+                      key: const Key('loginThemeToggle'),
+                      tooltip: '切换日夜主题',
+                      icon: Icon(icon, size: Sizes.iconMd),
+                      onPressed: () {
+                        final next = switch (mode) {
+                          ThemeMode.system => ThemeMode.light,
+                          ThemeMode.light => ThemeMode.dark,
+                          ThemeMode.dark => ThemeMode.system,
+                        };
+                        scope.services.themeMode.value = next;
+                        widget.settings.themeMode = next.name;
+                      },
+                    );
+                  },
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

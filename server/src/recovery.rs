@@ -180,6 +180,6 @@ pub async fn change_password(
             keep.as_deref(),
         )
         .map_err(internal)?;
-    // Other devices' live sockets are dropped by the periodic token re-check.
+    state.kick_user_except(&user.id, keep.as_deref());
     Ok(StatusCode::NO_CONTENT)
 }

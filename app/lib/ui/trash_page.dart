@@ -8,6 +8,7 @@ import '../models/block.dart';
 import '../sync/sync_client.dart';
 import 'block_card.dart' show EmptyState, relTime;
 import 'ds.dart';
+import 'glass.dart';
 
 /// 设备名：本设备显示"本设备"，其他设备显示 id 前 8 位。
 String deviceLabel(SyncClient sync, String? id) {
@@ -92,8 +93,9 @@ class _TrashPageState extends State<TrashPage> {
     final c = AppColors.of(context);
     final tt = Theme.of(context).textTheme;
     return ListenableBuilder(
-      listenable: s.sync,
+      listenable: Listenable.merge([s.sync, Glass.backdropListenable]),
       builder: (context, _) {
+        final bg = Glass.scaffoldBg(context);
         final all = s.sync.trash;
         _selected.removeWhere((id) => !all.any((b) => b.id == id));
         final q = _query.trim().toLowerCase();
@@ -112,7 +114,9 @@ class _TrashPageState extends State<TrashPage> {
             },
           },
           child: Scaffold(
+          backgroundColor: bg,
           appBar: AppBar(
+            backgroundColor: bg,
             title: Text(selecting ? '已选择 ${_selected.length} 项' : '回收站'),
             actions: [
               if (selecting) ...[

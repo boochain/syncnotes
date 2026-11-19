@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'ds.dart';
+import 'glass.dart';
 import 'tokens.dart';
 
 import '../app_scope.dart';
@@ -14,7 +15,7 @@ import 'quick_send_bar.dart';
 import 'settings_page.dart';
 
 class HomePage extends StatefulWidget {
-  /// 窄屏：打开侧边抽屉
+  /// 窄屏打开侧边抽屉，或宽屏展开已折叠的侧边栏
   final VoidCallback? onMenu;
 
   /// 宽屏嵌入外壳时隐藏设置按钮（侧边栏里有）
@@ -41,82 +42,85 @@ class _HomePageState extends State<HomePage> {
     final s = AppScope.of(context);
     final c = AppColors.of(context);
     final tt = Theme.of(context).textTheme;
-    // 顶栏 44：左右按钮都是 32×32，标题 16/600，全部垂直居中
-    final bar = Container(
-      height: Sizes.bar,
-      padding: const EdgeInsets.symmetric(horizontal: Gap.s),
-      decoration: BoxDecoration(color: c.bg, border: Border(bottom: BorderSide(color: c.separator))),
-      child: Row(children: [
-        if (widget.onMenu != null)
-          IconButton(key: const Key('menuButton'), icon: const Icon(CupertinoIcons.sidebar_left), tooltip: '菜单', onPressed: widget.onMenu)
-        else
-          const SizedBox(width: Gap.s),
-        const SizedBox(width: Gap.xs),
-        Expanded(
-          child: _searching
-              ? SizedBox(
-                  height: Sizes.control,
-                  // Esc 关闭搜索（桌面）
-                  child: CallbackShortcuts(
-                  bindings: {
-                    const SingleActivator(LogicalKeyboardKey.escape): () => setState(() {
-                          _searching = false;
-                          _filter = '';
-                        }),
-                  },
-                  child: TextField(
-                    key: const ValueKey('search'),
-                    autofocus: true,
-                    style: tt.bodyMedium,
-                    onChanged: (v) => setState(() => _filter = v),
-                    decoration: const InputDecoration(
-                      hintText: '搜索…',
-                      prefixIcon: Icon(CupertinoIcons.search, size: Sizes.iconSm),
-                      prefixIconConstraints: BoxConstraints(minWidth: Sizes.control, minHeight: Sizes.control),
-                      contentPadding: EdgeInsets.symmetric(horizontal: Gap.m, vertical: (Sizes.control - 20) / 2),
+    // 顶栏 44：左右按钮都是 32×32，标题 16/600，全部垂直居中；液态玻璃开启时折射顶栏
+    final bar = Frosted(
+      color: c.bg,
+      child: Container(
+        height: Sizes.bar,
+        padding: const EdgeInsets.symmetric(horizontal: Gap.s),
+        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: c.separator))),
+        child: Row(children: [
+          if (widget.onMenu != null)
+            IconButton(key: const Key('menuButton'), icon: const Icon(CupertinoIcons.sidebar_left), tooltip: '菜单', onPressed: widget.onMenu)
+          else
+            const SizedBox(width: Gap.s),
+          const SizedBox(width: Gap.xs),
+          Expanded(
+            child: _searching
+                ? SizedBox(
+                    height: Sizes.control,
+                    // Esc 关闭搜索（桌面）
+                    child: CallbackShortcuts(
+                    bindings: {
+                      const SingleActivator(LogicalKeyboardKey.escape): () => setState(() {
+                            _searching = false;
+                            _filter = '';
+                          }),
+                    },
+                    child: TextField(
+                      key: const ValueKey('search'),
+                      autofocus: true,
+                      style: tt.bodyMedium,
+                      onChanged: (v) => setState(() => _filter = v),
+                      decoration: const InputDecoration(
+                        hintText: '搜索…',
+                        prefixIcon: Icon(CupertinoIcons.search, size: Sizes.iconSm),
+                        prefixIconConstraints: BoxConstraints(minWidth: Sizes.control, minHeight: Sizes.control),
+                        contentPadding: EdgeInsets.symmetric(horizontal: Gap.m, vertical: (Sizes.control - 20) / 2),
+                      ),
                     ),
-                  ),
-                  ),
-                )
-              : Row(key: const ValueKey('title'), children: [
-                  Flexible(
-                    child: Text(widget.embedded ? '收件箱' : 'SyncNotes',
-                        key: const Key('homeTitle'), maxLines: 1, overflow: TextOverflow.ellipsis, style: tt.titleMedium),
-                  ),
-                  if (!widget.embedded) ...[
-                    const SizedBox(width: Gap.m),
-                    // 窄屏 + 触屏 48dp 按钮时，状态文字可以被压缩（省略号），不溢出
-                    Flexible(child: ListenableBuilder(listenable: s.sync, builder: (c, _) => ConnectionBadge(sync: s.sync, dotOnly: true))),
-                  ],
-                ]),
-        ),
-        const SizedBox(width: Gap.xs),
-        IconButton(
-          key: const Key('homeSearch'),
-          tooltip: _searching ? '关闭搜索' : '搜索',
-          icon: Icon(_searching ? CupertinoIcons.xmark : CupertinoIcons.search),
-          onPressed: () => setState(() {
-            _searching = !_searching;
-            _filter = '';
-          }),
-        ),
-        if (isDesktop)
-          ValueListenableBuilder<bool>(
-            valueListenable: DesktopShell.instance.expanded,
-            builder: (c, ex, _) => IconButton(
-              tooltip: ex ? '收起为小窗' : '展开窗口',
-              icon: Icon(ex ? CupertinoIcons.arrow_down_right_arrow_up_left : CupertinoIcons.arrow_up_left_arrow_down_right),
-              onPressed: DesktopShell.instance.toggleExpanded,
-            ),
+                    ),
+                  )
+                : Row(key: const ValueKey('title'), children: [
+                    Flexible(
+                      child: Text(widget.embedded ? '收件箱' : 'SyncNotes',
+                          key: const Key('homeTitle'), maxLines: 1, overflow: TextOverflow.ellipsis, style: tt.titleMedium),
+                    ),
+                    if (!widget.embedded) ...[
+                      const SizedBox(width: Gap.m),
+                      // 窄屏 + 触屏 48dp 按钮时，状态文字可以被压缩（省略号），不溢出
+                      Flexible(child: ListenableBuilder(listenable: s.sync, builder: (c, _) => ConnectionBadge(sync: s.sync, dotOnly: true))),
+                    ],
+                  ]),
           ),
-        if (!widget.embedded)
+          const SizedBox(width: Gap.xs),
           IconButton(
-            key: const Key('homeSettings'),
-            tooltip: '设置',
-            icon: const Icon(CupertinoIcons.gear),
-            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SettingsPage())),
+            key: const Key('homeSearch'),
+            tooltip: _searching ? '关闭搜索' : '搜索',
+            icon: Icon(_searching ? CupertinoIcons.xmark : CupertinoIcons.search),
+            onPressed: () => setState(() {
+              _searching = !_searching;
+              _filter = '';
+            }),
           ),
-      ]),
+          if (isDesktop)
+            ValueListenableBuilder<bool>(
+              valueListenable: DesktopShell.instance.expanded,
+              builder: (c, ex, _) => IconButton(
+                tooltip: ex ? '收起为小窗' : '展开窗口',
+                icon: Icon(ex ? CupertinoIcons.arrow_down_right_arrow_up_left : CupertinoIcons.arrow_up_left_arrow_down_right),
+                onPressed: DesktopShell.instance.toggleExpanded,
+              ),
+            ),
+          if (!widget.embedded)
+            IconButton(
+              key: const Key('homeSettings'),
+              tooltip: '设置',
+              icon: const Icon(CupertinoIcons.gear),
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SettingsPage())),
+            ),
+        ]),
+      ),
     );
     // 返回键先关闭搜索、恢复“全部”筛选，再交给外壳（退出 / 回到收件箱）
     final transient = _searching || _kind != 'all';
@@ -133,72 +137,76 @@ class _HomePageState extends State<HomePage> {
           }
         });
       },
-      child: Scaffold(
-      body: SafeArea(
-        bottom: false,
-        child: Column(children: [
-          bar,
-          // 筛选行 44：标签 28 高、垂直居中
-          SizedBox(
-            height: Sizes.bar,
-            child: ListView(
-              key: const Key('filterRow'),
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: Gap.l, vertical: (Sizes.bar - Sizes.compact) / 2),
-              children: [
-                for (final e in _kinds.entries)
-                  Padding(
-                    padding: const EdgeInsets.only(right: Gap.xs),
-                    child: FilterTab(
-                      key: Key('filter-${e.key}'),
-                      label: e.value.$1,
-                      selected: _kind == e.key,
-                      onTap: () => setState(() => _kind = e.key),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          ListenableBuilder(
-            listenable: s.sync,
-            builder: (context, _) {
-              if (!s.sync.sealBlocked) return const SizedBox.shrink();
-              return Material(
-                color: c.danger.withValues(alpha: 0.12),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: Gap.l, vertical: Gap.xs),
-                  child: Row(children: [
-                    Expanded(
-                      child: Text(s.sync.lastError ?? '服务器指纹和上次不一致',
-                          style: tt.bodySmall?.copyWith(color: c.danger)),
-                    ),
-                    TextButton(
-                      key: const Key('trustFingerprintHome'),
-                      onPressed: () {
-                        final server = s.settings.server;
-                        if (server != null) {
-                          s.settings.clearSealPin(server);
-                          WireSeal.forget(server);
-                        }
-                        s.sync.reconnectNow();
-                      },
-                      child: const Text('改用新指纹'),
-                    ),
-                  ]),
+      child: ListenableBuilder(
+        listenable: Glass.backdropListenable,
+        builder: (context, _) => Scaffold(
+          backgroundColor: Glass.scaffoldBg(context),
+          body: SafeArea(
+            bottom: false,
+            child: Column(children: [
+              bar,
+              // 筛选行 44：标签 28 高、垂直居中
+              SizedBox(
+                height: Sizes.bar,
+                child: ListView(
+                  key: const Key('filterRow'),
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: Gap.l, vertical: (Sizes.bar - Sizes.compact) / 2),
+                  children: [
+                    for (final e in _kinds.entries)
+                      Padding(
+                        padding: const EdgeInsets.only(right: Gap.xs),
+                        child: FilterTab(
+                          key: Key('filter-${e.key}'),
+                          label: e.value.$1,
+                          selected: _kind == e.key,
+                          onTap: () => setState(() => _kind = e.key),
+                        ),
+                      ),
+                  ],
                 ),
-              );
-            },
+              ),
+              ListenableBuilder(
+                listenable: s.sync,
+                builder: (context, _) {
+                  if (!s.sync.sealBlocked) return const SizedBox.shrink();
+                  return Material(
+                    color: c.danger.withValues(alpha: 0.12),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: Gap.l, vertical: Gap.xs),
+                      child: Row(children: [
+                        Expanded(
+                          child: Text(s.sync.lastError ?? '服务器指纹和上次不一致',
+                              style: tt.bodySmall?.copyWith(color: c.danger)),
+                        ),
+                        TextButton(
+                          key: const Key('trustFingerprintHome'),
+                          onPressed: () {
+                            final server = s.settings.server;
+                            if (server != null) {
+                              s.settings.clearSealPin(server);
+                              WireSeal.forget(server);
+                            }
+                            s.sync.reconnectNow();
+                          },
+                          child: const Text('改用新指纹'),
+                        ),
+                      ]),
+                    ),
+                  );
+                },
+              ),
+              Expanded(
+                child: RefreshIndicator(
+                  onRefresh: () async => s.sync.reconnectNow(),
+                  child: BlockList(filter: _filter, kinds: _kinds[_kind]!.$2),
+                ),
+              ),
+            ]),
           ),
-          Expanded(
-            child: RefreshIndicator(
-              onRefresh: () async => s.sync.reconnectNow(),
-              child: BlockList(filter: _filter, kinds: _kinds[_kind]!.$2),
-            ),
-          ),
-        ]),
+          bottomNavigationBar: const QuickSendBar(),
+        ),
       ),
-      bottomNavigationBar: const QuickSendBar(),
-    ),
     );
   }
 }

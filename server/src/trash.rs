@@ -7,19 +7,20 @@ use crate::state::AppState;
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 
 fn remove_blob(state: &AppState, user_id: &str, b: &Block) {
-    if b.kind != "file" {
-        return;
-    }
+    // Both standalone file blocks (`kind == "file"`) and inline page image blocks
+    // (`kind == "text"` / `"doc"` with `payload.file_id`) store blobs in `files_dir`.
     let Some(fid) = b.payload.get("file_id").and_then(|v| v.as_str()) else {
         return;
     };
     if fid.is_empty() || !fid.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
         return;
     }
-    let _ = std::fs::remove_file(state.files_dir.join(user_id).join(fid));
+    let user_dir = state.files_dir.join(user_id);
+    let _ = std::fs::remove_file(user_dir.join(fid));
+    let _ = std::fs::remove_file(user_dir.join(format!("{fid}.sha256")));
 }
 
-/// Tombstone `root` + descendants, broadcast changes, delete file blobs.
+/// Tombstone `root` + descendants, broadcast changes, delete file blobs and `.sha256` sidecars.
 pub fn purge_tree(state: &AppState, user_id: &str, root: &str) -> usize {
     match state.storage.purge_tree(user_id, root) {
         Ok(blocks) => {

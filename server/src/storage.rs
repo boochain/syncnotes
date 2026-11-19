@@ -1,5 +1,6 @@
 //! SQLite persistence.
 
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -40,9 +41,13 @@ pub struct UserSummary {
 #[derive(Debug)]
 pub enum UpsertOutcome {
     Applied(Block),
-    /// Incoming change was older than stored (LWW); returns current block.
+    /// Incoming change was older than stored (LWW) or block was already permanently purged;
+    /// returns current block.
     Stale(Block),
 }
+
+/// Point-in-time snapshot for `SyncSince`: `(blocks, device_views, latest_seq)`.
+pub type SyncSnapshot = (Vec<Block>, Vec<(String, bool, i64)>, i64);
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS users (
@@ -77,6 +82,7 @@ CREATE TABLE IF NOT EXISTS blocks (
     PRIMARY KEY (user_id, id)
 );
 CREATE INDEX IF NOT EXISTS idx_blocks_seq ON blocks(user_id, seq);
+CREATE INDEX IF NOT EXISTS idx_blocks_parent ON blocks(user_id, parent_id);
 CREATE TABLE IF NOT EXISTS device_views (
     user_id TEXT NOT NULL,
     block_id TEXT NOT NULL,
@@ -163,7 +169,8 @@ impl Storage {
             }
         }
         conn.execute_batch(
-            "CREATE INDEX IF NOT EXISTS idx_blocks_trash ON blocks(deleted_at) WHERE deleted_at IS NOT NULL AND deleted = 0",
+            "CREATE INDEX IF NOT EXISTS idx_blocks_trash ON blocks(deleted_at) WHERE deleted_at IS NOT NULL AND deleted = 0;
+             CREATE INDEX IF NOT EXISTS idx_blocks_parent ON blocks(user_id, parent_id);",
         )?;
         Ok(())
     }
@@ -179,6 +186,46 @@ impl Storage {
             params![user_id],
             |r| r.get(0),
         )
+    }
+
+    /// Guard against self-parenting (`id == parent_id`) and multi-hop parent cycles (`A -> B -> A`)
+    /// that can arise when two devices concurrently move folders into each other while offline.
+    fn sanitize_parent_id(
+        conn: &Connection,
+        user_id: &str,
+        id: &str,
+        parent_id: Option<&str>,
+        fallback_parent: Option<&str>,
+    ) -> rusqlite::Result<Option<String>> {
+        let Some(raw) = parent_id.map(str::trim).filter(|s| !s.is_empty()) else {
+            return Ok(None);
+        };
+        if raw == id {
+            return Ok(fallback_parent.filter(|p| *p != id).map(str::to_string));
+        }
+        let mut seen = HashSet::new();
+        seen.insert(id.to_string());
+        let mut cur = Some(raw.to_string());
+        for _ in 0..64 {
+            let Some(cid) = cur else {
+                return Ok(Some(raw.to_string()));
+            };
+            if !seen.insert(cid.clone()) {
+                // Cycle detected: keep previous safe parent (or None if also cyclic).
+                return Ok(fallback_parent
+                    .filter(|p| *p != id && *p != raw)
+                    .map(str::to_string));
+            }
+            cur = conn
+                .query_row(
+                    "SELECT parent_id FROM blocks WHERE user_id = ?1 AND id = ?2",
+                    params![user_id, cid],
+                    |r| r.get::<_, Option<String>>(0),
+                )
+                .optional()?
+                .flatten();
+        }
+        Ok(None)
     }
 
     // ---------- users / tokens ----------
@@ -420,14 +467,33 @@ impl Storage {
         deleted: bool,
         deleted_at: Option<Option<i64>>,
     ) -> rusqlite::Result<UpsertOutcome> {
-        let conn = self.conn.lock().unwrap();
-        let existing = Self::get_block_inner(&conn, user_id, id)?;
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        let existing = Self::get_block_inner(&tx, user_id, id)?;
         if let Some(ref b) = existing {
+            // Once permanently purged (`deleted == true`), a tombstone is final and its blob may
+            // already be removed from disk; never resurrect it or re-bump its seq.
+            // Advance the returned `updated_at` to at least `client_updated_at` so any client
+            // waiting on an outbox ack with a higher local timestamp clears its pending queue.
+            if b.deleted {
+                let mut stale = b.clone();
+                if client_updated_at > stale.updated_at {
+                    stale.updated_at = client_updated_at;
+                }
+                return Ok(UpsertOutcome::Stale(stale));
+            }
             if client_updated_at < b.updated_at {
                 return Ok(UpsertOutcome::Stale(b.clone()));
             }
         }
-        let seq = Self::next_seq(&conn, user_id)?;
+        let safe_parent = Self::sanitize_parent_id(
+            &tx,
+            user_id,
+            id,
+            parent_id,
+            existing.as_ref().and_then(|b| b.parent_id.as_deref()),
+        )?;
+        let seq = Self::next_seq(&tx, user_id)?;
         let payload_s = serde_json::to_string(payload).unwrap_or_else(|_| "null".into());
         let (created_at, created_by, viewed_global) = match &existing {
             Some(b) => (b.created_at, b.created_by.clone(), b.viewed_global),
@@ -450,7 +516,7 @@ impl Storage {
             (Some(Some(t)), Some(b)) if b.deleted_at.is_some() => (Some(t), b.deleted_by.clone()),
             (Some(Some(t)), _) => (Some(t), Some(device_id.to_string())),
         };
-        conn.execute(
+        tx.execute(
             "INSERT INTO blocks(id, user_id, kind, title, payload, parent_id, viewed_mode, viewed_global,
                                 created_at, updated_at, created_by, deleted, seq, deleted_at, deleted_by)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
@@ -461,12 +527,25 @@ impl Storage {
                deleted = excluded.deleted, seq = excluded.seq,
                deleted_at = excluded.deleted_at, deleted_by = excluded.deleted_by",
             params![
-                id, user_id, kind, title, payload_s, parent_id, viewed_mode.as_str(),
-                viewed_global as i64, created_at, client_updated_at, created_by, deleted as i64, seq,
-                deleted_at, deleted_by
+                id,
+                user_id,
+                kind,
+                title,
+                payload_s,
+                safe_parent,
+                viewed_mode.as_str(),
+                viewed_global as i64,
+                created_at,
+                client_updated_at,
+                created_by,
+                deleted as i64,
+                seq,
+                deleted_at,
+                deleted_by
             ],
         )?;
-        let b = Self::get_block_inner(&conn, user_id, id)?.expect("just inserted");
+        let b = Self::get_block_inner(&tx, user_id, id)?.expect("just inserted");
+        tx.commit()?;
         Ok(UpsertOutcome::Applied(b))
     }
 
@@ -479,31 +558,34 @@ impl Storage {
         block_id: &str,
         viewed: bool,
     ) -> rusqlite::Result<Option<(Block, Option<String>, i64)>> {
-        let conn = self.conn.lock().unwrap();
-        let Some(block) = Self::get_block_inner(&conn, user_id, block_id)? else {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        let Some(block) = Self::get_block_inner(&tx, user_id, block_id)? else {
             return Ok(None);
         };
-        let seq = Self::next_seq(&conn, user_id)?;
-        match block.viewed_mode {
+        let seq = Self::next_seq(&tx, user_id)?;
+        let out = match block.viewed_mode {
             ViewedMode::Global => {
-                conn.execute(
+                tx.execute(
                     "UPDATE blocks SET viewed_global = ?1, seq = ?2 WHERE user_id = ?3 AND id = ?4",
                     params![viewed as i64, seq, user_id, block_id],
                 )?;
-                let b = Self::get_block_inner(&conn, user_id, block_id)?.unwrap();
-                Ok(Some((b, None, seq)))
+                let b = Self::get_block_inner(&tx, user_id, block_id)?.unwrap();
+                Some((b, None, seq))
             }
             ViewedMode::PerDevice => {
-                conn.execute(
+                tx.execute(
                     "INSERT INTO device_views(user_id, block_id, device_id, viewed, updated_at, seq)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6)
                      ON CONFLICT(user_id, block_id, device_id) DO UPDATE SET
                        viewed = excluded.viewed, updated_at = excluded.updated_at, seq = excluded.seq",
                     params![user_id, block_id, device_id, viewed as i64, now_ms(), seq],
                 )?;
-                Ok(Some((block, Some(device_id.to_string()), seq)))
+                Some((block, Some(device_id.to_string()), seq))
             }
-        }
+        };
+        tx.commit()?;
+        Ok(out)
     }
 
     pub fn device_viewed(
@@ -526,6 +608,14 @@ impl Storage {
 
     pub fn blocks_since(&self, user_id: &str, since_seq: i64) -> rusqlite::Result<Vec<Block>> {
         let conn = self.conn.lock().unwrap();
+        Self::blocks_since_inner(&conn, user_id, since_seq)
+    }
+
+    fn blocks_since_inner(
+        conn: &Connection,
+        user_id: &str,
+        since_seq: i64,
+    ) -> rusqlite::Result<Vec<Block>> {
         let mut st =
             conn.prepare("SELECT * FROM blocks WHERE user_id = ?1 AND seq > ?2 ORDER BY seq ASC")?;
         let rows = st.query_map(params![user_id, since_seq], row_to_block)?;
@@ -540,6 +630,15 @@ impl Storage {
         since_seq: i64,
     ) -> rusqlite::Result<Vec<(String, bool, i64)>> {
         let conn = self.conn.lock().unwrap();
+        Self::device_views_since_inner(&conn, user_id, device_id, since_seq)
+    }
+
+    fn device_views_since_inner(
+        conn: &Connection,
+        user_id: &str,
+        device_id: &str,
+        since_seq: i64,
+    ) -> rusqlite::Result<Vec<(String, bool, i64)>> {
         let mut st = conn.prepare(
             "SELECT block_id, viewed, seq FROM device_views WHERE user_id = ?1 AND device_id = ?2 AND seq > ?3 ORDER BY seq",
         )?;
@@ -551,6 +650,10 @@ impl Storage {
 
     pub fn latest_seq(&self, user_id: &str) -> rusqlite::Result<i64> {
         let conn = self.conn.lock().unwrap();
+        Self::latest_seq_inner(&conn, user_id)
+    }
+
+    fn latest_seq_inner(conn: &Connection, user_id: &str) -> rusqlite::Result<i64> {
         Ok(conn
             .query_row(
                 "SELECT seq FROM counters WHERE user_id = ?1",
@@ -561,40 +664,58 @@ impl Storage {
             .unwrap_or(0))
     }
 
+    /// Read `blocks_since`, `device_views_since`, and `latest_seq` under a single mutex lock
+    /// so concurrent writers cannot advance `latest_seq` past the returned block set.
+    pub fn sync_since_snapshot(
+        &self,
+        user_id: &str,
+        device_id: &str,
+        since_seq: i64,
+    ) -> rusqlite::Result<SyncSnapshot> {
+        let conn = self.conn.lock().unwrap();
+        let blocks = Self::blocks_since_inner(&conn, user_id, since_seq)?;
+        let views = Self::device_views_since_inner(&conn, user_id, device_id, since_seq)?;
+        let latest = Self::latest_seq_inner(&conn, user_id)?;
+        Ok((blocks, views, latest))
+    }
+
     // ---------- recycle bin ----------
 
     /// Permanently delete `root` and all its descendants (tombstones, new seq each).
     /// Returns every block that changed state (root included if it wasn't already a tombstone),
     /// plus the root itself when it was already a tombstone so callers can clean its blob.
     pub fn purge_tree(&self, user_id: &str, root: &str) -> rusqlite::Result<Vec<Block>> {
-        let conn = self.conn.lock().unwrap();
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
         let mut out = Vec::new();
         let mut stack = vec![root.to_string()];
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = HashSet::new();
+        let ts = now_ms();
         while let Some(id) = stack.pop() {
             if !seen.insert(id.clone()) {
                 continue;
             }
-            if let Some(b) = Self::get_block_inner(&conn, user_id, &id)? {
+            if let Some(b) = Self::get_block_inner(&tx, user_id, &id)? {
                 if !b.deleted {
-                    let seq = Self::next_seq(&conn, user_id)?;
-                    conn.execute(
+                    let seq = Self::next_seq(&tx, user_id)?;
+                    tx.execute(
                         "UPDATE blocks SET deleted = 1, seq = ?1, updated_at = MAX(updated_at, ?2)
                          WHERE user_id = ?3 AND id = ?4",
-                        params![seq, now_ms(), user_id, id],
+                        params![seq, ts, user_id, id],
                     )?;
-                    out.push(Self::get_block_inner(&conn, user_id, &id)?.unwrap());
+                    out.push(Self::get_block_inner(&tx, user_id, &id)?.unwrap());
                 } else if id == root {
                     out.push(b);
                 }
             }
             let mut st =
-                conn.prepare("SELECT id FROM blocks WHERE user_id = ?1 AND parent_id = ?2")?;
+                tx.prepare("SELECT id FROM blocks WHERE user_id = ?1 AND parent_id = ?2")?;
             let kids = st.query_map(params![user_id, id], |r| r.get::<_, String>(0))?;
             for k in kids {
                 stack.push(k?);
             }
         }
+        tx.commit()?;
         Ok(out)
     }
 

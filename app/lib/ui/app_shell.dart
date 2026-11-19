@@ -27,7 +27,7 @@ import 'trash_page.dart';
 /// 宽屏断点：≥ 720 显示常驻侧边栏，否则使用抽屉。
 const wideBreakpoint = 720.0;
 
-/// 应用外壳：侧边栏（页面树）+ 内容区；Ctrl+K 快速切换。
+/// 应用外壳：侧边栏（页面树，桌面可折叠、窄屏自动抽屉）+ 内容区；Ctrl+K 快速切换。
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
   @override
@@ -39,8 +39,12 @@ class AppShellState extends State<AppShell> implements PageHost {
   final _scaffold = GlobalKey<ScaffoldState>();
   final _navKey = GlobalKey<NavigatorState>();
   bool _wide = false;
+  bool _sidebarCollapsed = false;
 
   String? get currentPage => _page;
+  bool get sidebarCollapsed => _sidebarCollapsed;
+
+  void toggleSidebar() => setState(() => _sidebarCollapsed = !_sidebarCollapsed);
 
   @override
   void showPage(String id) => setState(() => _page = id);
@@ -201,10 +205,12 @@ class AppShellState extends State<AppShell> implements PageHost {
         const SingleActivator(LogicalKeyboardKey.keyK, control: true): openSwitcher,
         const SingleActivator(LogicalKeyboardKey.keyK, meta: true): openSwitcher,
         const SingleActivator(LogicalKeyboardKey.keyP, control: true): openSwitcher,
-        // 桌面通用快捷键：Ctrl+F 查找、Ctrl+, 设置
+        // 桌面通用快捷键：Ctrl+F 查找、Ctrl+, 设置、Ctrl+\ 折叠/展开侧边栏
         const SingleActivator(LogicalKeyboardKey.keyF, control: true): openSwitcher,
         const SingleActivator(LogicalKeyboardKey.comma, control: true): _settings,
         const SingleActivator(LogicalKeyboardKey.comma, meta: true): _settings,
+        const SingleActivator(LogicalKeyboardKey.backslash, control: true): toggleSidebar,
+        const SingleActivator(LogicalKeyboardKey.backslash, meta: true): toggleSidebar,
         // Ctrl+N 新建；Ctrl+W 关闭当前页面（没有页面时关闭窗口）
         const SingleActivator(LogicalKeyboardKey.keyN, control: true): newItem,
         const SingleActivator(LogicalKeyboardKey.keyW, control: true): closeCurrent,
@@ -216,6 +222,7 @@ class AppShellState extends State<AppShell> implements PageHost {
           // 当前页面被删除（例如在其他设备上）→ 回到收件箱
           final page = _page == null ? null : sync.byId(_page!);
           final pageId = page == null || sync.isHidden(page) ? null : _page;
+          final showSidebar = _wide && !_sidebarCollapsed;
           final sidebar = Sidebar(
             selectedPage: _inSettings || _inTrash || _inTransfers ? null : pageId,
             inboxSelected: pageId == null && !_inSettings && !_inTrash && !_inTransfers,
@@ -230,13 +237,22 @@ class AppShellState extends State<AppShell> implements PageHost {
               openSwitcher();
             },
             onSettings: _settings,
+            onToggleSidebar: _wide ? toggleSidebar : null,
           );
           final Widget home;
           if (_wide) {
             home = MotionSwitch(
               child: pageId == null
-                  ? const HomePage(key: ValueKey('inbox'), embedded: true)
-                  : PageScreen(key: ValueKey('page-$pageId'), pageId: pageId),
+                  ? HomePage(
+                      key: const ValueKey('inbox'),
+                      embedded: true,
+                      onMenu: _sidebarCollapsed ? toggleSidebar : null,
+                    )
+                  : PageScreen(
+                      key: ValueKey('page-$pageId'),
+                      pageId: pageId,
+                      onMenu: _sidebarCollapsed ? toggleSidebar : null,
+                    ),
             );
           } else {
             home = HomePage(onMenu: () => _scaffold.currentState?.openDrawer());
@@ -253,46 +269,50 @@ class AppShellState extends State<AppShell> implements PageHost {
             ),
           ));
           final pal = AppColors.of(context);
-          return ValueListenableBuilder<bool>(
-            valueListenable: Glass.enabled,
-            builder: (context, glassOn, _) {
-          final shell = Scaffold(
-            key: _scaffold,
-            backgroundColor: glassOn ? Colors.transparent : pal.bg,
-            drawer: _wide
-                ? null
-                : Drawer(
-                    backgroundColor: glassOn ? Colors.transparent : pal.sidebar,
-                    child: Frosted(color: pal.sidebar, child: sidebar),
-                  ),
-            body: Column(children: [
-              Expanded(
-                child: _wide
-                    ? Row(children: [
-                        SizedBox(
-                          width: Sizes.sidebarWidth,
-                          child: Frosted(
-                            color: pal.sidebar,
-                            border: Border(right: BorderSide(color: pal.separator)),
-                            child: sidebar,
-                          ),
-                        ),
-                        Expanded(
-                          child: ColoredBox(
-                            color: glassOn ? pal.bg.withValues(alpha: 0.9) : pal.bg,
+          return ListenableBuilder(
+            listenable: Glass.backdropListenable,
+            builder: (context, _) {
+              final glassOn = Glass.enabled.value || Glass.hasCustomBg;
+              final contentBg = Glass.hasCustomBg
+                  ? Colors.transparent
+                  : (glassOn ? pal.bg.withValues(alpha: 0.78) : pal.bg);
+              final shell = Scaffold(
+                key: _scaffold,
+                backgroundColor: glassOn ? Colors.transparent : pal.bg,
+                drawer: _wide
+                    ? null
+                    : Drawer(
+                        backgroundColor: glassOn ? Colors.transparent : pal.sidebar,
+                        child: Frosted(color: pal.sidebar, child: sidebar),
+                      ),
+                body: Column(children: [
+                  Expanded(
+                    child: showSidebar
+                        ? Row(children: [
+                            SizedBox(
+                              width: Sizes.sidebarWidth,
+                              child: Frosted(
+                                color: pal.sidebar,
+                                border: Border(right: BorderSide(color: pal.separator)),
+                                child: sidebar,
+                              ),
+                            ),
+                            Expanded(
+                              child: ColoredBox(
+                                color: contentBg,
+                                child: _RebuildingHome(home: home, navKey: _navKey, child: content),
+                              ),
+                            ),
+                          ])
+                        : ColoredBox(
+                            color: contentBg,
                             child: _RebuildingHome(home: home, navKey: _navKey, child: content),
                           ),
-                        ),
-                      ])
-                    : ColoredBox(
-                        color: glassOn ? pal.bg.withValues(alpha: 0.92) : pal.bg,
-                        child: _RebuildingHome(home: home, navKey: _navKey, child: content),
-                      ),
-              ),
-              TransferStrip(onOpen: _transfers),
-            ]),
-          );
-          return GlassBackdrop(child: shell);
+                  ),
+                  TransferStrip(onOpen: _transfers),
+                ]),
+              );
+              return GlassBackdrop(child: shell);
             },
           );
         }),

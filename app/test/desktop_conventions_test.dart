@@ -62,5 +62,22 @@ void main() {
     for (final s in [16, 20, 24, 32, 40, 48, 64]) {
       expect(sizes, contains(s));
     }
+
+    // Native runner resource icon (IDI_APP_ICON) must also contain uncompressed BMP frames for LoadImageW.
+    final runnerBytes = File('windows/runner/resources/app_icon.ico').readAsBytesSync();
+    final runnerData = ByteData.sublistView(Uint8List.fromList(runnerBytes));
+    final runnerCount = runnerData.getUint16(4, Endian.little);
+    final bmpSizes = <int>[];
+    for (var i = 0; i < runnerCount; i++) {
+      final entry = 6 + i * 16;
+      final sz = runnerData.getUint8(entry);
+      final offset = runnerData.getUint32(entry + 12, Endian.little);
+      if (runnerData.getUint32(offset, Endian.little) == 40) {
+        bmpSizes.add(sz);
+      }
+    }
+    for (final s in [16, 20, 24, 32, 40, 48, 64]) {
+      expect(bmpSizes, contains(s));
+    }
   });
 }

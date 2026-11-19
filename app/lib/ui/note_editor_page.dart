@@ -4,6 +4,7 @@ import 'tokens.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
+import 'glass.dart';
 import 'motion.dart';
 import 'ds.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
@@ -118,71 +119,79 @@ class _NoteEditorPageState extends State<NoteEditorPage> with SingleTickerProvid
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      onPopInvokedWithResult: (didPop, _) {
-        if (_dirty) _save();
+    return ListenableBuilder(
+      listenable: Glass.backdropListenable,
+      builder: (context, _) {
+        final bg = Glass.scaffoldBg(context);
+        return PopScope(
+          onPopInvokedWithResult: (didPop, _) {
+            if (_dirty) _save();
+          },
+          child: Scaffold(
+            backgroundColor: bg,
+            appBar: AppBar(
+              backgroundColor: bg,
+              title: TextField(
+                controller: _title,
+                onChanged: (_) => _changed(),
+                style: Theme.of(context).textTheme.titleMedium,
+                decoration: const InputDecoration(
+                    hintText: '标题', filled: false, border: InputBorder.none, enabledBorder: InputBorder.none, focusedBorder: InputBorder.none),
+              ),
+              actions: [
+                MotionSwitch(
+                  child: _dirty
+                      ? const SizedBox.square(
+                          key: ValueKey('saving'),
+                          dimension: Sizes.bar,
+                          child: Center(child: SizedBox.square(dimension: Sizes.iconSm, child: CircularProgressIndicator(strokeWidth: 2))))
+                      : Tooltip(
+                          key: const ValueKey('saved'),
+                          message: '已保存',
+                          child: SizedBox.square(
+                              dimension: Sizes.bar, child: Icon(CupertinoIcons.checkmark_alt_circle, size: Sizes.iconMd, color: AppColors.of(context).text3)),
+                        ),
+                ),
+              ],
+              bottom: PreferredSize(
+                preferredSize: const Size.fromHeight(Sizes.bar),
+                child: TabBar(
+                  controller: _tabs,
+                  labelColor: AppColors.of(context).text,
+                  unselectedLabelColor: AppColors.of(context).text2,
+                  labelStyle: Theme.of(context).textTheme.labelLarge,
+                  unselectedLabelStyle: Theme.of(context).textTheme.bodyMedium,
+                  indicatorColor: AppColors.of(context).text,
+                  indicatorSize: TabBarIndicatorSize.label,
+                  dividerColor: AppColors.of(context).separator,
+                  tabs: const [Tab(height: Sizes.bar, text: '编辑'), Tab(height: Sizes.bar, text: '预览')],
+                ),
+              ),
+            ),
+            body: TabBarView(controller: _tabs, children: [
+              Padding(
+                padding: const EdgeInsets.all(Gap.xl),
+                child: TextField(
+                  key: const Key('noteBody'),
+                  controller: _body,
+                  onChanged: (_) => _changed(),
+                  maxLines: null,
+                  expands: true,
+                  textAlignVertical: TextAlignVertical.top,
+                  style: EditorType.code.style.copyWith(fontFamily: FontTokens.mono, fontFamilyFallback: FontTokens.monoFallback, height: 1.5),
+                  decoration: const InputDecoration(
+                      hintText: '支持 Markdown：# 标题、**粗体**、- 列表、`代码`…',
+                      filled: false,
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none),
+                ),
+              ),
+              Markdown(data: _body.text, selectable: true, padding: const EdgeInsets.all(Gap.xl)),
+            ]),
+          ),
+        );
       },
-      child: Scaffold(
-        appBar: AppBar(
-          title: TextField(
-            controller: _title,
-            onChanged: (_) => _changed(),
-            style: Theme.of(context).textTheme.titleMedium,
-            decoration: const InputDecoration(
-                hintText: '标题', filled: false, border: InputBorder.none, enabledBorder: InputBorder.none, focusedBorder: InputBorder.none),
-          ),
-          actions: [
-            MotionSwitch(
-              child: _dirty
-                  ? const SizedBox.square(
-                      key: ValueKey('saving'),
-                      dimension: Sizes.bar,
-                      child: Center(child: SizedBox.square(dimension: Sizes.iconSm, child: CircularProgressIndicator(strokeWidth: 2))))
-                  : Tooltip(
-                      key: const ValueKey('saved'),
-                      message: '已保存',
-                      child: SizedBox.square(
-                          dimension: Sizes.bar, child: Icon(CupertinoIcons.checkmark_alt_circle, size: Sizes.iconMd, color: AppColors.of(context).text3)),
-                    ),
-            ),
-          ],
-          bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(Sizes.bar),
-            child: TabBar(
-              controller: _tabs,
-              labelColor: AppColors.of(context).text,
-              unselectedLabelColor: AppColors.of(context).text2,
-              labelStyle: Theme.of(context).textTheme.labelLarge,
-              unselectedLabelStyle: Theme.of(context).textTheme.bodyMedium,
-              indicatorColor: AppColors.of(context).text,
-              indicatorSize: TabBarIndicatorSize.label,
-              dividerColor: AppColors.of(context).separator,
-              tabs: const [Tab(height: Sizes.bar, text: '编辑'), Tab(height: Sizes.bar, text: '预览')],
-            ),
-          ),
-        ),
-        body: TabBarView(controller: _tabs, children: [
-          Padding(
-            padding: const EdgeInsets.all(Gap.xl),
-            child: TextField(
-              key: const Key('noteBody'),
-              controller: _body,
-              onChanged: (_) => _changed(),
-              maxLines: null,
-              expands: true,
-              textAlignVertical: TextAlignVertical.top,
-              style: EditorType.code.style.copyWith(fontFamily: FontTokens.mono, fontFamilyFallback: FontTokens.monoFallback, height: 1.5),
-              decoration: const InputDecoration(
-                  hintText: '支持 Markdown：# 标题、**粗体**、- 列表、`代码`…',
-                  filled: false,
-                  border: InputBorder.none,
-                  enabledBorder: InputBorder.none,
-                  focusedBorder: InputBorder.none),
-            ),
-          ),
-          Markdown(data: _body.text, selectable: true, padding: const EdgeInsets.all(Gap.xl)),
-        ]),
-      ),
     );
   }
 }

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../app_scope.dart';
 import '../services/transfer_queue.dart';
 import 'ds.dart';
+import 'glass.dart';
 
 String formatBytes(num n) {
   final v = n.toDouble();
@@ -38,39 +39,47 @@ class TransferPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final q = AppScope.of(context).transfers;
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('传输'),
-        actions: [
-          ListenableBuilder(
-            listenable: Listenable.merge([q, q.progress]),
-            builder: (context, _) => TextButton(
-              onPressed: q.jobs.any((j) =>
-                      j.status == TransferStatus.done ||
-                      j.status == TransferStatus.failed ||
-                      j.status == TransferStatus.canceled)
-                  ? q.clearFinished
-                  : null,
-              child: const Text('清除已完成'),
-            ),
+    return ListenableBuilder(
+      listenable: Glass.backdropListenable,
+      builder: (context, _) {
+        final bg = Glass.scaffoldBg(context);
+        return Scaffold(
+          backgroundColor: bg,
+          appBar: AppBar(
+            backgroundColor: bg,
+            title: const Text('传输'),
+            actions: [
+              ListenableBuilder(
+                listenable: Listenable.merge([q, q.progress]),
+                builder: (context, _) => TextButton(
+                  onPressed: q.jobs.any((j) =>
+                          j.status == TransferStatus.done ||
+                          j.status == TransferStatus.failed ||
+                          j.status == TransferStatus.canceled)
+                      ? q.clearFinished
+                      : null,
+                  child: const Text('清除已完成'),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
-      body: ListenableBuilder(
-        listenable: Listenable.merge([q, q.progress]),
-        builder: (context, _) {
-          if (q.jobs.isEmpty) {
-            return Center(
-              child: Text('没有传输任务', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.of(context).text3)),
-            );
-          }
-          return ListView.builder(
-            padding: const EdgeInsets.only(bottom: Gap.x3),
-            itemCount: q.jobs.length,
-            itemBuilder: (context, i) => _Tile(job: q.jobs[q.jobs.length - 1 - i], queue: q),
-          );
-        },
-      ),
+          body: ListenableBuilder(
+            listenable: Listenable.merge([q, q.progress]),
+            builder: (context, _) {
+              if (q.jobs.isEmpty) {
+                return Center(
+                  child: Text('没有传输任务', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.of(context).text3)),
+                );
+              }
+              return ListView.builder(
+                padding: const EdgeInsets.only(bottom: Gap.x3),
+                itemCount: q.jobs.length,
+                itemBuilder: (context, i) => _Tile(job: q.jobs[q.jobs.length - 1 - i], queue: q),
+              );
+            },
+          ),
+        );
+      },
     );
   }
 }
