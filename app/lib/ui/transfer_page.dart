@@ -72,7 +72,7 @@ class TransferPage extends StatelessWidget {
                 );
               }
               return ListView.builder(
-                padding: const EdgeInsets.only(bottom: Gap.x3),
+                padding: const EdgeInsets.fromLTRB(Gap.l, Gap.s, Gap.l, Gap.x3),
                 itemCount: q.jobs.length,
                 itemBuilder: (context, i) => _Tile(job: q.jobs[q.jobs.length - 1 - i], queue: q),
               );
@@ -97,23 +97,41 @@ class _Tile extends StatelessWidget {
     final eta = formatEta(job);
     final sub = switch (job.status) {
       TransferStatus.queued => '等待中',
-      TransferStatus.running => job.confirming
-          ? '正在等服务器确认'
-          : [formatPct(job), formatSpeed(job.speed), ?eta].join(' · '),
+      TransferStatus.running => job.statusNote != null
+          ? '${formatPct(job)} · ${job.statusNote}'
+          : job.confirming
+              ? '正在等服务器确认'
+              : [
+                  formatPct(job),
+                  if (job.total > 0) '${formatBytes(job.done)} / ${formatBytes(job.total)}',
+                  formatSpeed(job.speed),
+                  ?eta,
+                ].join(' · '),
       TransferStatus.done => '完成 · ${formatBytes(job.done == 0 ? job.total : job.done)}',
       TransferStatus.failed => job.error ?? '失败',
       TransferStatus.canceled => '已取消',
     };
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: Gap.xl, vertical: Gap.m),
+    final content = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: Gap.l, vertical: Gap.m),
       child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-        Icon(up ? CupertinoIcons.arrow_up_circle : CupertinoIcons.arrow_down_circle, size: Sizes.iconMd, color: c.text2),
+        Icon(
+          up ? CupertinoIcons.arrow_up_circle : CupertinoIcons.arrow_down_circle,
+          size: Sizes.iconMd,
+          color: job.status == TransferStatus.failed
+              ? c.danger
+              : job.status == TransferStatus.running
+                  ? c.accent
+                  : c.text2,
+        ),
         const SizedBox(width: Gap.l),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(job.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: tt.bodyMedium),
             const SizedBox(height: 2),
-            Text(sub, maxLines: job.status == TransferStatus.failed ? 3 : 1, overflow: TextOverflow.ellipsis, style: tt.bodySmall?.copyWith(color: job.status == TransferStatus.failed ? c.danger : c.text2)),
+            Text(sub,
+                maxLines: job.status == TransferStatus.failed ? 3 : 1,
+                overflow: TextOverflow.ellipsis,
+                style: tt.bodySmall?.copyWith(color: job.status == TransferStatus.failed ? c.danger : c.text2)),
             if (job.status == TransferStatus.running || job.status == TransferStatus.queued) ...[
               const SizedBox(height: Gap.s),
               ClipRRect(
@@ -142,6 +160,15 @@ class _Tile extends StatelessWidget {
           ),
       ]),
     );
+    if (!Glass.useShader) return content;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: Gap.s),
+      child: SpecularGlassCard(
+        radius: AppRadius.l,
+        tintAccent: job.status == TransferStatus.failed ? c.danger : (job.status == TransferStatus.running ? c.accent : null),
+        child: content,
+      ),
+    );
   }
 }
 
@@ -154,21 +181,33 @@ class TransferStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     final q = AppScope.of(context).transfers;
     return ListenableBuilder(
-      listenable: Listenable.merge([q, q.progress]),
+      listenable: Listenable.merge([q, q.progress, Glass.backdropListenable]),
       builder: (context, _) {
         final j = q.current;
         if (j == null) return const SizedBox.shrink();
         final c = AppColors.of(context);
+        final translucent = Glass.surfaceTranslucent;
+
+        Widget wrapSurface(Widget child) {
+          if (translucent) {
+            return Frosted(
+              color: c.sidebar,
+              border: Border(top: BorderSide(color: c.separator.withValues(alpha: 0.7))),
+              child: Material(type: MaterialType.transparency, child: child),
+            );
+          }
+          return Material(color: c.sidebar, child: child);
+        }
+
         if (j.status == TransferStatus.failed) {
-          return Material(
-            color: c.sidebar,
-            child: InkWell(
+          return wrapSurface(
+            InkWell(
               onTap: onOpen,
               child: Container(
                 key: const Key('transferStrip'),
                 constraints: const BoxConstraints(minHeight: Sizes.bar),
                 padding: const EdgeInsets.symmetric(horizontal: Gap.l, vertical: Gap.s),
-                decoration: BoxDecoration(border: Border(top: BorderSide(color: c.separator))),
+                decoration: translucent ? null : BoxDecoration(border: Border(top: BorderSide(color: c.separator))),
                 child: Row(children: [
                   Icon(CupertinoIcons.exclamationmark_circle, size: Sizes.iconSm, color: c.danger),
                   const SizedBox(width: Gap.m),
@@ -191,15 +230,14 @@ class TransferStrip extends StatelessWidget {
           );
         }
         final extra = q.activeCount > 1 ? '  +${q.activeCount - 1}' : '';
-        return Material(
-          color: c.sidebar,
-          child: InkWell(
+        return wrapSurface(
+          InkWell(
             onTap: onOpen,
             child: Container(
               key: const Key('transferStrip'),
               height: Sizes.bar,
               padding: const EdgeInsets.symmetric(horizontal: Gap.l),
-              decoration: BoxDecoration(border: Border(top: BorderSide(color: c.separator))),
+              decoration: translucent ? null : BoxDecoration(border: Border(top: BorderSide(color: c.separator))),
               child: Row(children: [
                 Icon(
                   j.dir == TransferDir.up ? CupertinoIcons.arrow_up : CupertinoIcons.arrow_down,
@@ -209,7 +247,7 @@ class TransferStrip extends StatelessWidget {
                 const SizedBox(width: Gap.m),
                 Expanded(
                   child: Text(
-                    '${j.name}$extra',
+                    j.statusNote != null ? '${j.name} · ${j.statusNote}' : '${j.name}$extra',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodyMedium,

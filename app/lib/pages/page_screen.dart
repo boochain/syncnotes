@@ -252,7 +252,7 @@ class _PageScreenState extends State<PageScreen> {
                         onReorderItem: (from, to) => doc.moveRow(from, to > from ? to + 1 : to),
                         proxyDecorator: (child, i, a) => Material(
                           elevation: 6,
-                          color: c.elevated,
+                          color: c.elevated.withValues(alpha: 0.90),
                           shadowColor: Colors.black26,
                           borderRadius: BorderRadius.circular(AppRadius.s),
                           child: child,

@@ -1,12 +1,16 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'ds.dart';
-import 'tokens.dart';
+import 'package:flutter/services.dart';
 
 import '../app_scope.dart';
-import '../sync/sync_client.dart';
 import '../blocks/block_type.dart';
 import '../models/block.dart';
+import '../platform/desktop.dart';
+import '../sync/sync_client.dart';
+import 'context_menu.dart';
+import 'ds.dart';
+import 'glass.dart';
+import 'tokens.dart';
 
 String relTime(int ms) {
   final d = DateTime.now().difference(DateTime.fromMillisecondsSinceEpoch(ms));
@@ -18,8 +22,213 @@ String relTime(int ms) {
   return '${t.month}月${t.day}日';
 }
 
-/// 收件箱 / 文件夹的列表行（照 Notion / AppFlowy 列表）：固定 56 高、两行（标题 + 单行摘要），
-/// 左侧 28×28 中性图标底、右侧时间 / 未读点 / 更多按钮在第一行垂直居中；行间 1px 分隔线。
+/// 模拟便利贴风格的液态玻璃卡片（网格视图使用）：
+/// - 顶部镜面高光条 + 毛玻璃透光 + 柔和类型色微染
+/// - 多行摘要展示、底部同步云状态、悬停快捷操作与桌面端右键光标上下文菜单
+class StickyNoteCard extends StatefulWidget {
+  final Block block;
+  const StickyNoteCard({super.key, required this.block});
+
+  @override
+  State<StickyNoteCard> createState() => _StickyNoteCardState();
+}
+
+class _StickyNoteCardState extends State<StickyNoteCard> {
+  bool _hover = false;
+
+  void _moveToTrash(BuildContext context) {
+    final s = AppScope.of(context);
+    final block = widget.block;
+    final type = BlockTypes.of(block.kind);
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final ids = s.sync.delete(block.id);
+    showToast(
+      context,
+      '已移到回收站：“${block.title.isEmpty ? type.label : block.title}”',
+      messenger: messenger,
+      actionLabel: '撤销',
+      onAction: () => s.sync.restoreAll(ids),
+    );
+  }
+
+  Color? _kindTint(BlockKind kind) => switch (kind) {
+        BlockKind.folder => const Color(0xFFF59E0B),
+        BlockKind.file => const Color(0xFF38BDF8),
+        BlockKind.page || BlockKind.note || BlockKind.text => const Color(0xFFA855F7),
+        BlockKind.message || BlockKind.unknown => null,
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final block = widget.block;
+    final s = AppScope.of(context);
+    final c = AppColors.of(context);
+    final tt = Theme.of(context).textTheme;
+    final type = BlockTypes.of(block.kind);
+    final unread = !block.isViewed && block.kind != BlockKind.folder;
+    final emoji = block.kind == BlockKind.page
+        ? (block.payload['icon'] ?? '') as String
+        : block.kind == BlockKind.folder
+            ? (block.payload['icon'] ?? 'folder') as String
+            : '';
+
+    String bodyText;
+    if (block.kind == BlockKind.message) {
+      bodyText = ((block.payload['text'] ?? '') as String).trim();
+    } else if (block.kind == BlockKind.note) {
+      bodyText = ((block.payload['markdown'] ?? '') as String).trim();
+    } else {
+      bodyText = type.previewText(context, block).trim();
+    }
+    if (bodyText.isEmpty) bodyText = type.label;
+
+    return Semantics(
+      button: true,
+      label: '${block.title}，$bodyText${unread ? '，未读' : ''}',
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (e) {
+          if (isMouseHover(e)) setState(() => _hover = true);
+        },
+        onExit: (_) => setState(() => _hover = false),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => type.execute(context, block),
+          onLongPress: () {
+            Feedback.forLongPress(context);
+            showBlockMenu(context, block);
+          },
+          onSecondaryTapUp: (d) => showBlockMenu(context, block, anchor: d.globalPosition),
+          child: SpecularGlassCard(
+            key: ValueKey('card-${block.id}'),
+            radius: 18,
+            hover: _hover,
+            tintAccent: _kindTint(block.kind),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 12, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 24,
+                        height: 24,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: c.fill.withValues(alpha: 0.72),
+                          borderRadius: BorderRadius.circular(AppRadius.s),
+                        ),
+                        child: emoji.isNotEmpty
+                            ? Emoji(emoji, size: 15)
+                            : Icon(type.icon, size: 13, color: c.text2),
+                      ),
+                      const SizedBox(width: Gap.s),
+                      Expanded(
+                        child: Text(
+                          block.title.isEmpty ? '无标题' : block.title,
+                          key: const Key('cardTitle'),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: tt.titleSmall?.copyWith(fontSize: 15, fontWeight: FontWeight.w600, color: c.text),
+                        ),
+                      ),
+                      if (unread) ...[
+                        const SizedBox(width: Gap.xs),
+                        Container(
+                          key: const Key('unreadDot'),
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(color: c.accent, shape: BoxShape.circle),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: Gap.m),
+                  Expanded(
+                    child: Text(
+                      bodyText,
+                      key: const Key('cardPreview'),
+                      maxLines: 5,
+                      overflow: TextOverflow.ellipsis,
+                      style: tt.bodySmall?.copyWith(color: c.text2, fontSize: 13, height: 1.48),
+                    ),
+                  ),
+                  const SizedBox(height: Gap.s),
+                  Row(
+                    children: [
+                      Icon(
+                        block.pending ? CupertinoIcons.cloud_upload : CupertinoIcons.cloud,
+                        size: 13,
+                        color: block.pending ? c.warning : c.text3,
+                      ),
+                      const SizedBox(width: 5),
+                      Expanded(
+                        child: Text(
+                          relTime(block.updatedAt),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: tt.bodySmall?.copyWith(color: c.text3, fontSize: 11),
+                        ),
+                      ),
+                      if (isDesktop && _hover) ...[
+                        _CardHoverAction(
+                          tooltip: block.isViewed ? '标为未读' : '标为已读',
+                          icon: block.isViewed ? CupertinoIcons.circle : CupertinoIcons.checkmark_circle,
+                          onPressed: () => s.sync.setViewed(block.id, !block.isViewed),
+                        ),
+                        _CardHoverAction(
+                          tooltip: '编辑',
+                          icon: CupertinoIcons.pencil,
+                          onPressed: () => type.edit(context, block),
+                        ),
+                        _CardHoverAction(
+                          tooltip: '移入回收站',
+                          icon: CupertinoIcons.trash,
+                          danger: true,
+                          onPressed: () => _moveToTrash(context),
+                        ),
+                      ],
+                      Builder(
+                        builder: (btnCtx) => SizedBox.square(
+                          dimension: Sizes.compact,
+                          child: IconButton(
+                            key: const Key('cardMore'),
+                            style: IconButton.styleFrom(
+                              fixedSize: const Size.square(Sizes.compact),
+                              minimumSize: const Size.square(Sizes.compact),
+                              padding: EdgeInsets.zero,
+                            ),
+                            iconSize: Sizes.iconSm,
+                            icon: Icon(CupertinoIcons.ellipsis, color: c.text2),
+                            tooltip: '更多',
+                            onPressed: () {
+                              Offset? anchor;
+                              if (isDesktop && Glass.useShader) {
+                                final box = btnCtx.findRenderObject() as RenderBox?;
+                                if (box != null) anchor = box.localToGlobal(Offset(box.size.width, box.size.height + 4));
+                              }
+                              showBlockMenu(context, block, anchor: anchor);
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 收件箱 / 文件夹的列表行（普通列表视图）：
+/// - 桌面端支持鼠标右键原生 Apple Liquid Glass 上下文菜单 + 悬停一键快捷操作（已读/编辑/删除）
+/// - 移动端支持左滑移入回收站（带撤销提示，不与系统边缘返回冲突）与长按底部菜单
 class BlockCard extends StatefulWidget {
   final Block block;
   const BlockCard({super.key, required this.block});
@@ -30,9 +239,25 @@ class BlockCard extends StatefulWidget {
 class _BlockCardState extends State<BlockCard> {
   bool _hover = false;
 
+  void _moveToTrash(BuildContext context) {
+    final s = AppScope.of(context);
+    final block = widget.block;
+    final type = BlockTypes.of(block.kind);
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final ids = s.sync.delete(block.id);
+    showToast(
+      context,
+      '已移到回收站：“${block.title.isEmpty ? type.label : block.title}”',
+      messenger: messenger,
+      actionLabel: '撤销',
+      onAction: () => s.sync.restoreAll(ids),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final block = widget.block;
+    final s = AppScope.of(context);
     final c = AppColors.of(context);
     final tt = Theme.of(context).textTheme;
     final type = BlockTypes.of(block.kind);
@@ -44,31 +269,55 @@ class _BlockCardState extends State<BlockCard> {
             : '';
     var preview = type.previewText(context, block);
     if (preview.isEmpty) preview = type.label;
-    return Semantics(
+
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final translucent = Glass.surfaceTranslucent;
+    final cardBg = _hover
+        ? (translucent ? c.elevated.withValues(alpha: dark ? 0.56 : 0.78) : c.hover)
+        : (translucent ? c.elevated.withValues(alpha: dark ? 0.28 : 0.44) : Colors.transparent);
+
+    final rowWidget = Semantics(
       button: true,
       label: '${block.title}，$preview${unread ? '，未读' : ''}',
       child: MouseRegion(
-        onEnter: (e) { if (isMouseHover(e)) setState(() => _hover = true); },
+        onEnter: (e) {
+          if (isMouseHover(e)) setState(() => _hover = true);
+        },
         onExit: (_) => setState(() => _hover = false),
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: () => type.execute(context, block),
           onLongPress: () {
-            // Android 长按菜单：触感反馈
             Feedback.forLongPress(context);
             showBlockMenu(context, block);
           },
-          onSecondaryTap: () => showBlockMenu(context, block),
+          onSecondaryTapUp: (d) => showBlockMenu(context, block, anchor: d.globalPosition),
           child: AnimatedContainer(
             key: ValueKey('card-${block.id}'),
             duration: Motion.short2,
-            // 最小 56：字号放大（最高 200%）时自动增高，不溢出
+            curve: Curves.easeOutCubic,
             constraints: const BoxConstraints(minHeight: Sizes.listRow),
-            margin: const EdgeInsets.symmetric(horizontal: Gap.m),
+            margin: EdgeInsets.symmetric(horizontal: translucent ? Gap.xl : Gap.m, vertical: translucent ? 4 : 0),
             padding: const EdgeInsets.only(left: Gap.m, right: Gap.xs),
             decoration: BoxDecoration(
-              color: _hover ? c.hover : Colors.transparent,
-              borderRadius: BorderRadius.circular(AppRadius.m),
+              color: cardBg,
+              borderRadius: BorderRadius.circular(translucent ? AppRadius.l : AppRadius.m),
+              border: translucent
+                  ? Border.all(
+                      color: _hover
+                          ? (dark ? Colors.white.withValues(alpha: 0.28) : Colors.white.withValues(alpha: 0.92))
+                          : (dark ? Colors.white.withValues(alpha: 0.12) : Colors.white.withValues(alpha: 0.65)),
+                    )
+                  : null,
+              boxShadow: translucent
+                  ? [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: dark ? 0.18 : 0.04),
+                        blurRadius: 12,
+                        offset: const Offset(0, 3),
+                      ),
+                    ]
+                  : const [],
             ),
             child: Row(children: [
               Container(
@@ -81,7 +330,6 @@ class _BlockCardState extends State<BlockCard> {
               const SizedBox(width: Gap.l),
               Expanded(
                 child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                  // 标题与时间按文字基线对齐（字号不同也在同一条线上）
                   Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
                     Expanded(
                       child: Text(block.title.isEmpty ? '无标题' : block.title,
@@ -89,7 +337,10 @@ class _BlockCardState extends State<BlockCard> {
                     ),
                     if (block.pending) ...[
                       const SizedBox(width: Gap.s),
-                      Tooltip(message: '等待同步', child: SizedBox(height: 20, child: Center(child: Icon(CupertinoIcons.cloud_upload, size: 12, color: c.text3)))),
+                      Tooltip(
+                        message: '等待同步',
+                        child: SizedBox(height: 20, child: Center(child: Icon(CupertinoIcons.cloud_upload, size: 12, color: c.text3))),
+                      ),
                     ],
                     const SizedBox(width: Gap.m),
                     Text(relTime(block.updatedAt), maxLines: 1, style: tt.bodySmall?.copyWith(color: c.text3)),
@@ -97,7 +348,14 @@ class _BlockCardState extends State<BlockCard> {
                       width: 16,
                       height: 20,
                       child: unread
-                          ? Center(child: Container(key: const Key('unreadDot'), width: 8, height: 8, decoration: BoxDecoration(color: c.accent, shape: BoxShape.circle)))
+                          ? Center(
+                              child: Container(
+                                key: const Key('unreadDot'),
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(color: c.accent, shape: BoxShape.circle),
+                              ),
+                            )
                           : null,
                     ),
                   ]),
@@ -105,21 +363,109 @@ class _BlockCardState extends State<BlockCard> {
                   Text(preview, key: const Key('cardPreview'), maxLines: 1, overflow: TextOverflow.ellipsis, style: tt.bodySmall?.copyWith(color: c.text2)),
                 ]),
               ),
-              // 视觉 28；触屏点击区 48×48（TouchTarget），图形位置不变
-              TouchTarget(
-                size: Sizes.compact,
-                child: IconButton(
-                  key: const Key('cardMore'),
-                  style: IconButton.styleFrom(fixedSize: const Size.square(Sizes.compact), minimumSize: const Size.square(Sizes.compact)),
-                  iconSize: Sizes.iconSm,
-                  icon: Icon(CupertinoIcons.ellipsis, color: c.text2),
-                  onPressed: () => showBlockMenu(context, block),
-                  tooltip: '更多',
+              if (isDesktop && _hover) ...[
+                _CardHoverAction(
+                  tooltip: block.isViewed ? '标为未读' : '标为已读',
+                  icon: block.isViewed ? CupertinoIcons.circle : CupertinoIcons.checkmark_circle,
+                  onPressed: () => s.sync.setViewed(block.id, !block.isViewed),
+                ),
+                _CardHoverAction(
+                  tooltip: '编辑',
+                  icon: CupertinoIcons.pencil,
+                  onPressed: () => type.edit(context, block),
+                ),
+                _CardHoverAction(
+                  tooltip: '移入回收站',
+                  icon: CupertinoIcons.trash,
+                  danger: true,
+                  onPressed: () => _moveToTrash(context),
+                ),
+              ],
+              Builder(
+                builder: (btnCtx) => TouchTarget(
+                  size: Sizes.compact,
+                  child: IconButton(
+                    key: const Key('cardMore'),
+                    style: IconButton.styleFrom(fixedSize: const Size.square(Sizes.compact), minimumSize: const Size.square(Sizes.compact)),
+                    iconSize: Sizes.iconSm,
+                    icon: Icon(CupertinoIcons.ellipsis, color: c.text2),
+                    onPressed: () {
+                      Offset? anchor;
+                      if (isDesktop && Glass.useShader) {
+                        final box = btnCtx.findRenderObject() as RenderBox?;
+                        if (box != null) anchor = box.localToGlobal(Offset(box.size.width, box.size.height + 4));
+                      }
+                      showBlockMenu(context, block, anchor: anchor);
+                    },
+                    tooltip: '更多',
+                  ),
                 ),
               ),
             ]),
           ),
         ),
+      ),
+    );
+
+    if (isDesktop) return rowWidget;
+
+    // 移动端：左滑卡片快捷移入回收站（带触感与撤销，不占用屏幕边缘返回区）
+    return Dismissible(
+      key: ValueKey('dismiss-${block.id}'),
+      direction: DismissDirection.endToStart,
+      dismissThresholds: const {DismissDirection.endToStart: 0.35},
+      background: Container(
+        margin: EdgeInsets.symmetric(horizontal: translucent ? Gap.xl : Gap.m, vertical: translucent ? 4 : 0),
+        padding: const EdgeInsets.only(right: Gap.xl),
+        alignment: Alignment.centerRight,
+        decoration: BoxDecoration(
+          color: c.danger.withValues(alpha: 0.88),
+          borderRadius: BorderRadius.circular(translucent ? AppRadius.l : AppRadius.m),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(CupertinoIcons.trash, size: Sizes.iconMd, color: Colors.white),
+            SizedBox(width: Gap.xs),
+            Text('删除', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+          ],
+        ),
+      ),
+      onDismissed: (_) {
+        HapticFeedback.mediumImpact();
+        _moveToTrash(context);
+      },
+      child: rowWidget,
+    );
+  }
+}
+
+class _CardHoverAction extends StatelessWidget {
+  final String tooltip;
+  final IconData icon;
+  final bool danger;
+  final VoidCallback onPressed;
+  const _CardHoverAction({
+    required this.tooltip,
+    required this.icon,
+    this.danger = false,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    return Tooltip(
+      message: tooltip,
+      child: IconButton(
+        style: IconButton.styleFrom(
+          fixedSize: const Size.square(Sizes.compact),
+          minimumSize: const Size.square(Sizes.compact),
+          padding: EdgeInsets.zero,
+        ),
+        iconSize: Sizes.iconSm,
+        icon: Icon(icon, color: danger ? c.danger : c.text2),
+        onPressed: onPressed,
       ),
     );
   }
@@ -142,7 +488,6 @@ class MenuRow extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(AppRadius.s),
-      // 单行 44、带说明 56（最小高度：字号放大时自动增高，不会溢出）
       child: ConstrainedBox(
         constraints: BoxConstraints(minHeight: detail == null ? Sizes.bar : Sizes.listRow),
         child: Padding(
@@ -164,15 +509,93 @@ class MenuRow extends StatelessWidget {
   }
 }
 
-/// 块的上下文菜单（底部弹窗）
-Future<void> showBlockMenu(BuildContext context, Block block) async {
+/// 块的上下文菜单：桌面右键 / 传 anchor 时弹出光标跟随 Apple Liquid Glass 上下文菜单；移动端弹出底部表单。
+Future<void> showBlockMenu(BuildContext context, Block block, {Offset? anchor}) async {
   final s = AppScope.of(context);
   final type = BlockTypes.of(block.kind);
   final extra = type.extraActions(context, block);
   final banned = s.sync.descendantIds(block.id)..add(block.id);
-  final folders = s.sync.blocks.where((b) => b.kind == BlockKind.folder && !b.deleted && !banned.contains(b.id) && b.id != block.parentId).toList();
-  final tt = Theme.of(context).textTheme;
+  final folders = s.sync.blocks
+      .where((b) => b.kind == BlockKind.folder && !b.deleted && !banned.contains(b.id) && b.id != block.parentId)
+      .toList();
   final messenger = ScaffoldMessenger.maybeOf(context);
+  final title = block.title.isEmpty ? '无标题' : block.title;
+
+  Future<void> moveToFolder() async {
+    final target = await showDialog<String>(
+      context: context,
+      builder: (d) => SimpleDialog(
+        title: const Text('移动到'),
+        contentPadding: const EdgeInsets.fromLTRB(Gap.m, Gap.m, Gap.m, Gap.l),
+        children: [
+          MenuRow(icon: CupertinoIcons.tray, label: '收件箱（根目录）', onTap: () => Navigator.pop(d, '__root__')),
+          for (final f in folders)
+            MenuRow(
+              icon: CupertinoIcons.folder,
+              label: f.title.isEmpty ? '无标题' : f.title,
+              onTap: () => Navigator.pop(d, f.id),
+            ),
+        ],
+      ),
+    );
+    if (target == null) return;
+    if (target == '__root__') {
+      s.sync.update(block.id, moveToRoot: true);
+    } else {
+      s.sync.update(block.id, parentId: target);
+    }
+  }
+
+  void deleteBlock() {
+    final ids = s.sync.delete(block.id);
+    showToast(
+      context,
+      '已移到回收站：“${block.title.isEmpty ? type.label : block.title}”',
+      messenger: messenger,
+      actionLabel: '撤销',
+      onAction: () => s.sync.restoreAll(ids),
+    );
+  }
+
+  if (anchor != null) {
+    await showGlassContextMenu(
+      context,
+      anchor: anchor,
+      header: title,
+      items: [
+        ContextMenuItem(icon: type.icon, label: type.executeLabel, onTap: () => type.execute(context, block)),
+        ContextMenuItem(icon: CupertinoIcons.pencil, label: '编辑', onTap: () => type.edit(context, block)),
+        for (final a in extra) ContextMenuItem(icon: a.icon, label: a.label, onTap: a.run),
+        const ContextMenuDivider(),
+        ContextMenuItem(
+          icon: block.isViewed ? CupertinoIcons.circle_fill : CupertinoIcons.checkmark_circle,
+          label: block.isViewed ? '标为未读' : '标为已读',
+          onTap: () => s.sync.setViewed(block.id, !block.isViewed),
+        ),
+        ContextMenuItem(
+          icon: CupertinoIcons.device_laptop,
+          label: '全局已读',
+          checked: block.viewedMode == ViewedMode.global,
+          onTap: () => s.sync.update(
+            block.id,
+            viewedMode: block.viewedMode == ViewedMode.global ? ViewedMode.perDevice : ViewedMode.global,
+          ),
+        ),
+        ContextMenuItem(icon: CupertinoIcons.folder, label: '移动到…', onTap: moveToFolder),
+        const ContextMenuDivider(),
+        ContextMenuItem(
+          key: const Key('menuDelete'),
+          icon: CupertinoIcons.trash,
+          label: '删除',
+          danger: true,
+          onTap: deleteBlock,
+        ),
+      ],
+    );
+    return;
+  }
+
+  final tt = Theme.of(context).textTheme;
   await showModalBottomSheet(
     context: context,
     isScrollControlled: true,
@@ -183,7 +606,7 @@ Future<void> showBlockMenu(BuildContext context, Block block) async {
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(Gap.l, 0, Gap.l, Gap.m),
-            child: Text(block.title.isEmpty ? '无标题' : block.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: tt.titleMedium),
+            child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: tt.titleMedium),
           ),
           MenuRow(icon: type.icon, label: type.executeLabel, onTap: () {
             Navigator.pop(c);
@@ -221,39 +644,15 @@ Future<void> showBlockMenu(BuildContext context, Block block) async {
           MenuRow(
             icon: CupertinoIcons.folder,
             label: '移动到…',
-            onTap: () async {
+            onTap: () {
               Navigator.pop(c);
-              final target = await showDialog<String>(
-                context: context,
-                builder: (d) => SimpleDialog(
-                  title: const Text('移动到'),
-                  contentPadding: const EdgeInsets.fromLTRB(Gap.m, Gap.m, Gap.m, Gap.l),
-                  children: [
-                    MenuRow(icon: CupertinoIcons.tray, label: '收件箱（根目录）', onTap: () => Navigator.pop(d, '__root__')),
-                    for (final f in folders)
-                      MenuRow(
-                        icon: CupertinoIcons.folder,
-                        label: f.title.isEmpty ? '无标题' : f.title,
-                        onTap: () => Navigator.pop(d, f.id),
-                      ),
-                  ],
-                ),
-              );
-              if (target == null) return;
-              if (target == '__root__') {
-                s.sync.update(block.id, moveToRoot: true);
-              } else {
-                s.sync.update(block.id, parentId: target);
-              }
+              moveToFolder();
             },
           ),
           const Divider(height: Gap.l),
           MenuRow(key: const Key('menuDelete'), icon: CupertinoIcons.trash, label: '删除', danger: true, onTap: () {
             Navigator.pop(c);
-            final ids = s.sync.delete(block.id);
-            // 删除 = 移入回收站；提示条里可以撤销（撤销 = 恢复）
-            showToast(context, '已移到回收站：“${block.title.isEmpty ? type.label : block.title}”',
-                messenger: messenger, actionLabel: '撤销', onAction: () => s.sync.restoreAll(ids));
+            deleteBlock();
           }),
         ]),
       ),
@@ -293,14 +692,27 @@ class EmptyState extends StatelessWidget {
   }
 }
 
-/// 动画块列表。
+/// 动画块列表（支持模拟便利贴玻璃卡片网格视图与普通紧凑列表视图自由切换）。
 class BlockList extends StatelessWidget {
   final String? parentId;
   final String filter;
 
   /// 只显示这些类型（null = 全部）
   final Set<BlockKind>? kinds;
-  const BlockList({super.key, this.parentId, this.filter = '', this.kinds});
+
+  /// true = 模拟便利贴液态玻璃卡片网格；false = 普通单列列表
+  final bool gridMode;
+  final double topPadding;
+  final double bottomPadding;
+  const BlockList({
+    super.key,
+    this.parentId,
+    this.filter = '',
+    this.kinds,
+    this.gridMode = false,
+    this.topPadding = Gap.xs,
+    this.bottomPadding = Gap.x3,
+  });
 
   static final Set<String> _known = {};
   static var _ready = false;
@@ -325,8 +737,6 @@ class BlockList extends StatelessWidget {
           ...items.where((b) => b.kind == BlockKind.folder),
           ...items.where((b) => b.kind != BlockKind.folder),
         ];
-        // 懒加载的列表项第一次被建出来时不能再播进入动画，否则 PC 上往下滚，每一行都从头淡入。
-        // 只有「已经打开之后新来的一条」才动。一次同步进来很多条时不播，避免整表乱跳。
         final fresh = [for (final b in items) if (!_known.contains(b.id)) b.id];
         final enterId = _ready && fresh.length == 1 ? fresh.single : null;
         if (enterId == null) {
@@ -341,8 +751,9 @@ class BlockList extends StatelessWidget {
           return LayoutBuilder(
             builder: (context, c) => SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
+              padding: EdgeInsets.only(top: topPadding, bottom: bottomPadding),
               child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: c.maxHeight),
+                constraints: BoxConstraints(minHeight: (c.maxHeight - topPadding - bottomPadding).clamp(0.0, double.infinity)),
                 child: Center(
                   child: EmptyState(
                     key: const Key('emptyState'),
@@ -355,10 +766,31 @@ class BlockList extends StatelessWidget {
             ),
           );
         }
+
+        if (gridMode) {
+          return GridView.builder(
+            key: const Key('blockGridView'),
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            padding: EdgeInsets.fromLTRB(Gap.xl, topPadding, Gap.xl, bottomPadding),
+            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: 268,
+              mainAxisSpacing: 14,
+              crossAxisSpacing: 14,
+              childAspectRatio: 0.96,
+            ),
+            itemCount: items.length,
+            itemBuilder: (context, i) {
+              final card = StickyNoteCard(block: items[i]);
+              if (items[i].id != enterId) return card;
+              return _FadeIn(key: ValueKey('enter-${items[i].id}'), child: card);
+            },
+          );
+        }
+
         return ListView.builder(
-          // 拖动列表时收起键盘（Android 习惯）
+          key: const Key('blockListView'),
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          padding: const EdgeInsets.only(top: Gap.xs, bottom: Gap.x3),
+          padding: EdgeInsets.only(top: topPadding, bottom: bottomPadding),
           itemCount: items.length,
           itemBuilder: (context, i) {
             final card = BlockCard(block: items[i]);
@@ -402,8 +834,28 @@ class _FadeInState extends State<_FadeIn> with SingleTickerProviderStateMixin {
   }
 }
 
-/// 新建块菜单（底部弹出）：和上下文菜单同样的 44 高菜单行
-Future<void> showCreateMenu(BuildContext context, {String? parentId}) async {
+/// 新建块菜单：桌面传入 anchor 时弹出液态玻璃上下文菜单；移动端弹出底部表单。
+Future<void> showCreateMenu(BuildContext context, {String? parentId, Offset? anchor}) async {
+  if (anchor != null) {
+    BlockType? picked;
+    await showGlassContextMenu(
+      context,
+      anchor: anchor,
+      header: '新建',
+      items: [
+        for (final t in BlockTypes.creatable)
+          ContextMenuItem(
+            key: Key('create-${t.kind.name}'),
+            icon: t.icon,
+            label: t.label,
+            onTap: () => picked = t,
+          ),
+      ],
+    );
+    if (picked != null && context.mounted) await picked!.edit(context, null, parentId: parentId);
+    return;
+  }
+
   final t = await showModalBottomSheet<BlockType>(
     context: context,
     constraints: const BoxConstraints(maxWidth: 520),

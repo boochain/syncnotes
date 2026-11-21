@@ -10,6 +10,7 @@ import '../services/auth_api.dart';
 import '../services/settings.dart';
 import '../sync/wire_seal.dart';
 import 'ds.dart';
+import 'glass.dart';
 import 'motion.dart';
 import 'tokens.dart';
 
@@ -510,8 +511,10 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
       },
       child: Focus(
       autofocus: true,
+      child: GlassBackdrop(
       child: Scaffold(
-      appBar: AppBar(title: const Text('忘记密码')),
+      backgroundColor: Glass.scaffoldBg(context),
+      appBar: AppBar(backgroundColor: Glass.scaffoldBg(context), title: const Text('忘记密码')),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(Gap.x3),
@@ -586,6 +589,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
           ),
         ),
       ),
+    ),
     ),
     ),
     );

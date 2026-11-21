@@ -163,8 +163,25 @@ fn prepare_layout(args: &Args) -> std::io::Result<syncnotes_server::paths::DataL
     })
 }
 
+#[cfg(windows)]
+fn enable_utf8_console() {
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn SetConsoleOutputCP(wCodePageID: u32) -> i32;
+        fn SetConsoleCP(wCodePageID: u32) -> i32;
+    }
+    unsafe {
+        let _ = SetConsoleOutputCP(65001);
+        let _ = SetConsoleCP(65001);
+    }
+}
+
+#[cfg(not(windows))]
+fn enable_utf8_console() {}
+
 #[tokio::main]
 async fn main() {
+    enable_utf8_console();
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
         .init();

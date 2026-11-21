@@ -48,6 +48,8 @@ class AuthException implements Exception {
   String toString() => message;
 }
 
+class _UnsupportedResume implements Exception {}
+
 /// HTTP 登录 / 注册 / 文件。默认走 syncnotes-seal-v1，明文 JSON 只在测试里关闭。
 class AuthApi {
   final http.Client client;
@@ -194,29 +196,437 @@ class AuthApi {
   /// 和服务器一致：单个文件最大 4 GiB。
   static const maxUploadBytes = 4 * 1024 * 1024 * 1024;
 
-  /// 流式上传。大文件按 256KB 分块加密，不把整文件再复制一份。
-  /// 知道长度时带上 Content-Length，避免分块传输被中间代理掐断后停在 100%。
+  /// 单次网络读写卡顿超时：25 秒无进展即判定公网链路假死，立即断开并断点续传。
+  static const _stallTimeout = Duration(seconds: 25);
+
+  /// 超过 4 MiB 且数据源可随机读取（本地文件/内存字节）时自动走分片断点续传。
+  static const _resumeThreshold = 4 * 1024 * 1024;
+  static const _defaultPartBytes = 4 * 1024 * 1024;
+  static const _maxPartRetries = 5;
+
+  static bool _isTransientNetError(Object e) {
+    final s = '$e'.toLowerCase();
+    if (s.contains('已取消') ||
+        s.contains('未登录') ||
+        s.contains('413') ||
+        s.contains('文件过大') ||
+        s.contains('无效令牌') ||
+        s.contains('校验失败') ||
+        s.contains('未知操作')) {
+      return false;
+    }
+    return s.contains('连接') ||
+        s.contains('timeout') ||
+        s.contains('超时') ||
+        s.contains('reset') ||
+        s.contains('broken pipe') ||
+        s.contains('没有回复') ||
+        s.contains('socket');
+  }
+
+  /// 发送 0 字节数据体的加密 `/api/blob` 控制请求（`put_init` / `put_finish` / `put_abort`）。
+  Future<Map<String, dynamic>> _blobRpc({
+    required String server,
+    required Uint8List pub,
+    required Map<String, dynamic> meta,
+    Duration responseTimeout = const Duration(seconds: 30),
+    bool Function()? isCanceled,
+    void Function(void Function() abort)? onCancelReady,
+  }) async {
+    final pending = await HttpPending.seal(
+      serverPub: pub,
+      method: 3,
+      path: '/api/blob',
+      headersJson: utf8.encode('{}'),
+      body: utf8.encode(jsonEncode(meta)),
+    );
+    final io = HttpClient()..connectionTimeout = const Duration(seconds: 20);
+    onCancelReady?.call(() => io.close(force: true));
+    try {
+      final req = await io.postUrl(endpoint(server, '/api/blob'));
+      req.headers.contentType = ContentType('application', 'octet-stream');
+      req.persistentConnection = false;
+      req.contentLength = 4 + pending.envelope.length + 4;
+      req.add(_u32(pending.envelope.length));
+      req.add(pending.envelope);
+      req.add(_u32(0));
+      await req.flush().timeout(_stallTimeout);
+      final res = await req.close().timeout(responseTimeout);
+      final raw = await res
+          .fold<BytesBuilder>(BytesBuilder(copy: false), (b, c) {
+            b.add(c);
+            return b;
+          })
+          .timeout(const Duration(seconds: 30))
+          .then((b) => b.takeBytes());
+      if (res.statusCode != 200) {
+        throw AuthException(_netText(utf8.decode(raw, allowMalformed: true), upload: true, status: res.statusCode));
+      }
+      final (status, body) = await pending.openResponse(raw);
+      if (status != 200) {
+        final msg = utf8.decode(body, allowMalformed: true);
+        if (msg.contains('未知操作')) throw _UnsupportedResume();
+        throw AuthException(msg.isEmpty ? '上传失败 ($status)' : msg);
+      }
+      if (body.isEmpty) return <String, dynamic>{};
+      return Map<String, dynamic>.from(jsonDecode(utf8.decode(body)) as Map);
+    } catch (e) {
+      io.close(force: true);
+      if (isCanceled?.call() == true) throw AuthException('已取消');
+      if (e is _UnsupportedResume || e is AuthException) rethrow;
+      if (e is WireException) throw AuthException('$e');
+      throw AuthException(_netText('$e', upload: true));
+    } finally {
+      io.close(force: false);
+    }
+  }
+
+  /// 上传单个 4 MiB 分片（带 25s 卡顿检测与分块加密事件循环让出）。
+  Future<int> _putPart({
+    required String server,
+    required String token,
+    required Uint8List pub,
+    required String uploadId,
+    required int offset,
+    required Uint8List partBytes,
+    required int fileTotal,
+    void Function(int done, int total)? onProgress,
+    bool Function()? isCanceled,
+    void Function(void Function() abort)? onCancelReady,
+  }) async {
+    final meta = utf8.encode(jsonEncode({
+      'op': 'put_part',
+      'upload_id': uploadId,
+      'offset': offset,
+      'length': partBytes.length,
+      'token': token,
+    }));
+    final pending = await HttpPending.seal(
+      serverPub: pub,
+      method: 3,
+      path: '/api/blob',
+      headersJson: utf8.encode('{}'),
+      body: meta,
+    );
+    final io = HttpClient()..connectionTimeout = const Duration(seconds: 20);
+    onCancelReady?.call(() => io.close(force: true));
+    try {
+      final req = await io.postUrl(endpoint(server, '/api/blob'));
+      req.headers.contentType = ContentType('application', 'octet-stream');
+      req.persistentConnection = false;
+      req.contentLength = 4 + pending.envelope.length + _framedBytes(partBytes.length);
+      final key = await pending.chunkKey();
+
+      req.add(_u32(pending.envelope.length));
+      req.add(pending.envelope);
+      await req.flush().timeout(_stallTimeout);
+
+      var idx = 0;
+      var sent = 0;
+      var unflushed = 0;
+      var lastFlushAt = DateTime.now();
+
+      for (var i = 0; i < partBytes.length; i += WireSeal.chunkSize) {
+        if (isCanceled?.call() == true) throw WireException('已取消');
+        final n = i + WireSeal.chunkSize < partBytes.length ? WireSeal.chunkSize : partBytes.length - i;
+        final plain = Uint8List.sublistView(partBytes, i, i + n);
+        final ct = await sealChunk(key, idx++, plain);
+        final frame = BytesBuilder(copy: false)
+          ..add(_u32(ct.length))
+          ..add(ct);
+        req.add(frame.takeBytes());
+        unflushed += plain.length;
+        final now = DateTime.now();
+        // 每 512KB 或 120ms flush 并带 25 秒防卡死超时，确保公网慢速链路真实背压且不假死
+        if (unflushed >= 512 * 1024 || now.difference(lastFlushAt).inMilliseconds >= 120) {
+          await req.flush().timeout(_stallTimeout);
+          unflushed = 0;
+          lastFlushAt = DateTime.now();
+        }
+        sent += plain.length;
+        final totalDone = offset + sent;
+        final shown = fileTotal > 0 && totalDone >= fileTotal ? fileTotal - 1 : totalDone;
+        onProgress?.call(shown < 0 ? 0 : shown, fileTotal);
+        // 每块让出一次事件循环，避免软件加密阻塞 UI 渲染
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      req.add(_u32(0));
+      await req.flush().timeout(_stallTimeout);
+
+      final pendingClose = req.close();
+      final HttpClientResponse res;
+      try {
+        res = await pendingClose.timeout(const Duration(seconds: 45));
+      } on TimeoutException {
+        io.close(force: true);
+        unawaited(pendingClose.then((_) {}, onError: (Object _) {}));
+        throw AuthException('分片传输超时，服务器没有回复');
+      }
+      final raw = await res
+          .fold<BytesBuilder>(BytesBuilder(copy: false), (b, c) {
+            b.add(c);
+            return b;
+          })
+          .timeout(const Duration(seconds: 25))
+          .then((b) => b.takeBytes());
+      if (res.statusCode == 413) {
+        throw AuthException('上传被拒绝：请求太大。Nginx 要设 client_max_body_size，Caddy 要设 request_body。');
+      }
+      if (res.statusCode != 200) {
+        throw AuthException(_netText(utf8.decode(raw, allowMalformed: true), upload: true, status: res.statusCode));
+      }
+      final (status, body) = await pending.openResponse(raw);
+      if (status != 200) throw AuthException(utf8.decode(body, allowMalformed: true));
+      final j = jsonDecode(utf8.decode(body)) as Map;
+      return j['offset'] is num ? (j['offset'] as num).toInt() : offset + partBytes.length;
+    } catch (e) {
+      io.close(force: true);
+      if (isCanceled?.call() == true) throw AuthException('已取消');
+      if (e is AuthException) rethrow;
+      if (e is WireException) throw AuthException('$e');
+      throw AuthException(_netText('$e', upload: true));
+    } finally {
+      io.close(force: false);
+    }
+  }
+
+  /// 大文件分片断点续传上传：每次只传 4 MiB，单分片超时/断连仅重传该分片，绝不从 0% 重来。
+  Future<UploadedFile> _putFileResumable({
+    required String server,
+    required String token,
+    required String name,
+    required Uint8List pub,
+    required int total,
+    List<int>? bytes,
+    String? filePath,
+    Stream<List<int>>? source,
+    void Function(int done, int total)? onProgress,
+    void Function()? onWaiting,
+    void Function(String? status)? onStatus,
+    bool Function()? isCanceled,
+    void Function(void Function() abort)? onCancelReady,
+  }) async {
+    final initRes = await _blobRpc(
+      server: server,
+      pub: pub,
+      meta: {
+        'op': 'put_init',
+        'name': name,
+        'size': total,
+        'token': token,
+      },
+      isCanceled: isCanceled,
+      onCancelReady: onCancelReady,
+    );
+    final uploadId = initRes['upload_id'] as String;
+    final serverPart = initRes['part_size'] is num ? (initRes['part_size'] as num).toInt() : _defaultPartBytes;
+    final partSize = serverPart.clamp(1024 * 1024, 8 * 1024 * 1024);
+
+    final hash = Sha256().toSync().newHashSink();
+    final Uint8List? memBytes = bytes == null ? null : (bytes is Uint8List ? bytes : Uint8List.fromList(bytes));
+    RandomAccessFile? raf;
+    StreamIterator<List<int>>? streamIter;
+    final streamBuf = _Buf();
+    if (memBytes == null && filePath != null) {
+      raf = await File(filePath).open(mode: FileMode.read);
+    } else if (memBytes == null && source != null) {
+      streamIter = StreamIterator<List<int>>(source);
+    }
+
+    var offset = 0;
+    try {
+      while (offset < total) {
+        if (isCanceled?.call() == true) throw AuthException('已取消');
+        final want = (total - offset) > partSize ? partSize : (total - offset);
+        final Uint8List partBytes;
+        if (memBytes != null) {
+          partBytes = Uint8List.sublistView(memBytes, offset, offset + want);
+        } else if (raf != null) {
+          await raf.setPosition(offset);
+          partBytes = await raf.read(want);
+          if (partBytes.length != want) {
+            throw AuthException('读取本地文件失败（${offset + partBytes.length} / $total）');
+          }
+        } else {
+          while (streamBuf.len < want && await streamIter!.moveNext()) {
+            if (isCanceled?.call() == true) throw AuthException('已取消');
+            streamBuf.add(streamIter.current);
+          }
+          final taken = streamBuf.take(want, partial: true);
+          if (taken == null || taken.length != want) {
+            throw AuthException('读取文件流失败（${offset + (taken?.length ?? 0)} / $total）');
+          }
+          partBytes = taken;
+        }
+
+        var attempt = 0;
+        while (true) {
+          try {
+            final confirmed = await _putPart(
+              server: server,
+              token: token,
+              pub: pub,
+              uploadId: uploadId,
+              offset: offset,
+              partBytes: partBytes,
+              fileTotal: total,
+              onProgress: onProgress,
+              isCanceled: isCanceled,
+              onCancelReady: onCancelReady,
+            );
+            onStatus?.call(null);
+            hash.add(partBytes);
+            offset = confirmed;
+            break;
+          } catch (e) {
+            if (isCanceled?.call() == true || !_isTransientNetError(e) || attempt >= _maxPartRetries) {
+              rethrow;
+            }
+            attempt++;
+            onStatus?.call('网络波动，正在续传分片 ($attempt/$_maxPartRetries)…');
+            onProgress?.call(offset, total);
+            await Future<void>.delayed(Duration(seconds: attempt));
+            if (isCanceled?.call() == true) throw AuthException('已取消');
+          }
+        }
+      }
+
+      hash.close();
+      final sha = _hex(hash.hashSync().bytes);
+      onStatus?.call('正在校验文件完整性…');
+      onWaiting?.call();
+
+      var finAttempt = 0;
+      Map<String, dynamic> finRes;
+      while (true) {
+        try {
+          finRes = await _blobRpc(
+            server: server,
+            pub: pub,
+            meta: {
+              'op': 'put_finish',
+              'upload_id': uploadId,
+              'name': name,
+              'size': total,
+              'sha256': sha,
+              'token': token,
+            },
+            responseTimeout: const Duration(seconds: 120),
+            isCanceled: isCanceled,
+            onCancelReady: onCancelReady,
+          );
+          break;
+        } catch (e) {
+          if (isCanceled?.call() == true || !_isTransientNetError(e) || finAttempt >= 2) {
+            rethrow;
+          }
+          finAttempt++;
+          onStatus?.call('等待服务器校验确认 ($finAttempt/2)…');
+          await Future<void>.delayed(Duration(seconds: finAttempt));
+        }
+      }
+
+      onStatus?.call(null);
+      final remote = finRes['sha256'];
+      if (remote is String && remote.isNotEmpty && remote != sha) throw AuthException('文件校验失败');
+      final size = finRes['size'] is num ? (finRes['size'] as num).toInt() : total;
+      onProgress?.call(size, size);
+      return UploadedFile(id: finRes['file_id'] as String, sha256: sha, size: size);
+    } catch (e) {
+      if (isCanceled?.call() == true) {
+        unawaited(_blobRpc(
+          server: server,
+          pub: pub,
+          meta: {'op': 'put_abort', 'upload_id': uploadId, 'token': token},
+          responseTimeout: const Duration(seconds: 5),
+        ).catchError((Object _) => <String, dynamic>{}));
+      }
+      rethrow;
+    } finally {
+      await raf?.close();
+      await streamIter?.cancel();
+    }
+  }
+
+  /// 流式上传。大文件（>= 4 MiB 且可随机读取）自动启用 4 MiB 分片断点续传；小文件或纯流式来源走单请求流式加密上传（带 25s 防卡死超时）。
   Future<UploadedFile> putFile({
     required String server,
     required String token,
     required String name,
     List<int>? bytes,
+    String? filePath,
     Stream<List<int>>? source,
     int total = 0,
+    void Function(int done, int total)? onProgress,
+    void Function()? onWaiting,
+    void Function(String? status)? onStatus,
+    bool Function()? isCanceled,
+    void Function(void Function() abort)? onCancelReady,
+  }) async {
+    if (!wireSeal) {
+      final data = bytes ?? await _collect(source ?? (filePath != null ? File(filePath).openRead() : null));
+      final id = await _putPlain(server, token, name, data);
+      return UploadedFile(id: id, sha256: _sha256(data), size: data.length);
+    }
+    // 有流时 total 是已经数过的真实长度，0 表示空文件，不是“长度未知”。
+    final known = bytes != null ? bytes.length : (source != null || filePath != null || total > 0 ? total : null);
+    if (known != null && known > maxUploadBytes) throw AuthException('文件过大（最大 4 GB）');
+    final pub = await WireSeal.serverPublic(server, pins: pins, client: client);
+
+    // 大文件自动走 4 MiB 分片断点续传（含 Android content:// 流式来源）；若服务端为旧版不支持，则平滑回退到单请求流式上传
+    final hasFile = filePath != null && File(filePath).existsSync();
+    if (known != null && known >= _resumeThreshold && (bytes != null || hasFile || source != null)) {
+      try {
+        return await _putFileResumable(
+          server: server,
+          token: token,
+          name: name,
+          pub: pub,
+          total: known,
+          bytes: bytes,
+          filePath: hasFile ? filePath : null,
+          source: (bytes == null && !hasFile) ? source : null,
+          onProgress: onProgress,
+          onWaiting: onWaiting,
+          onStatus: onStatus,
+          isCanceled: isCanceled,
+          onCancelReady: onCancelReady,
+        );
+      } on _UnsupportedResume {
+        // 旧版服务器不支持 put_init，无缝降级（纯流模式已未消费任何字节，直接继续）
+      }
+    }
+
+    final effectiveSource = bytes != null ? null : (source ?? (filePath != null ? File(filePath).openRead() : null));
+    return _putFileSingle(
+      server: server,
+      token: token,
+      name: name,
+      pub: pub,
+      bytes: bytes,
+      source: effectiveSource,
+      known: known,
+      onProgress: onProgress,
+      onWaiting: onWaiting,
+      isCanceled: isCanceled,
+      onCancelReady: onCancelReady,
+    );
+  }
+
+  Future<UploadedFile> _putFileSingle({
+    required String server,
+    required String token,
+    required String name,
+    required Uint8List pub,
+    List<int>? bytes,
+    Stream<List<int>>? source,
+    int? known,
     void Function(int done, int total)? onProgress,
     void Function()? onWaiting,
     bool Function()? isCanceled,
     void Function(void Function() abort)? onCancelReady,
   }) async {
-    if (!wireSeal) {
-      final data = bytes ?? await _collect(source);
-      final id = await _putPlain(server, token, name, data);
-      return UploadedFile(id: id, sha256: _sha256(data), size: data.length);
-    }
-    // 有流时 total 是已经数过的真实长度，0 表示空文件，不是“长度未知”。
-    final known = bytes != null ? bytes.length : (source != null || total > 0 ? total : null);
-    if (known != null && known > maxUploadBytes) throw AuthException('文件过大（最大 4 GB）');
-    final pub = await WireSeal.serverPublic(server, pins: pins, client: client);
     final meta = utf8.encode(jsonEncode({
       'op': 'put',
       'name': name,
@@ -251,20 +661,21 @@ class AuthApi {
         req.add(frame.takeBytes());
         unflushed += plain.length;
         final now = DateTime.now();
-        // 每 1MB 或间隔超过 120ms flush 一次，兼顾高吞吐与背压/进度真实性
-        if (unflushed >= 1024 * 1024 || now.difference(lastFlushAt).inMilliseconds >= 120) {
-          await req.flush();
+        // 每 512KB 或间隔超过 120ms flush 一次，并强制 25s 超时，防止公网半开连接永久假死
+        if (unflushed >= 512 * 1024 || now.difference(lastFlushAt).inMilliseconds >= 120) {
+          await req.flush().timeout(_stallTimeout);
           unflushed = 0;
-          lastFlushAt = now;
+          lastFlushAt = DateTime.now();
         }
         done += plain.length;
         final shown = known != null && known > 0 && done >= known ? known - 1 : done;
         onProgress?.call(shown < 0 ? 0 : shown, known == null || known == 0 ? done : known);
+        await Future<void>.delayed(Duration.zero);
       }
 
       req.add(_u32(pending.envelope.length));
       req.add(pending.envelope);
-      await req.flush();
+      await req.flush().timeout(_stallTimeout);
       if (bytes != null) {
         final src = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
         for (var i = 0; i < src.length; i += WireSeal.chunkSize) {
@@ -286,7 +697,7 @@ class AuthApi {
         throw AuthException('文件长度和声明不一致（$done / $known）');
       }
       req.add(_u32(0));
-      await req.flush();
+      await req.flush().timeout(_stallTimeout);
       onWaiting?.call();
       final pendingClose = req.close();
       final HttpClientResponse res;
@@ -370,21 +781,33 @@ class AuthApi {
     return b.takeBytes();
   }
 
-  /// 流式下载到 [add]。进度按明文字节计。每个明文块交给 [add] 之后再读下一块，避免把整文件堆在内存里。
+  /// 流式下载到 [add]。支持可选的 [offset]/[length] 断点续传，且内置 25s 卡顿检测。
+  /// 进度按明文字节计。每个明文块交给 [add] 之后再读下一块，避免把整文件堆在内存里。
   Future<void> downloadStream(String server, String token, String fileId, Future<void> Function(List<int> plain) add,
       {void Function(int done, int total)? onProgress,
       bool Function()? isCanceled,
       String? expectSha256,
+      int offset = 0,
+      int length = 0,
+      void Function(int total, String serverSha, int serverOffset)? onHeader,
       void Function(void Function() abort)? onCancelReady}) async {
     if (!wireSeal) {
       final res = await client.get(fileUrl(server, token, fileId));
       if (res.statusCode != 200) throw AuthException('下载失败 (${res.statusCode})');
+      onHeader?.call(res.bodyBytes.length, '', 0);
       await add(res.bodyBytes);
       onProgress?.call(res.bodyBytes.length, res.bodyBytes.length);
       return;
     }
     final pub = await WireSeal.serverPublic(server, pins: pins, client: client);
-    final meta = utf8.encode(jsonEncode({'op': 'get', 'file_id': fileId, 'token': token}));
+    final metaMap = <String, dynamic>{
+      'op': 'get',
+      'file_id': fileId,
+      'token': token,
+      if (offset > 0) 'offset': offset,
+      if (length > 0) 'length': length,
+    };
+    final meta = utf8.encode(jsonEncode(metaMap));
     final pending =
         await HttpPending.seal(serverPub: pub, method: 3, path: '/api/blob', headersJson: utf8.encode('{}'), body: meta);
     final io = HttpClient()..connectionTimeout = const Duration(seconds: 20);
@@ -398,7 +821,7 @@ class AuthApi {
       req.add(_u32(pending.envelope.length));
       req.add(pending.envelope);
       req.add(_u32(0));
-      res = await req.close().timeout(const Duration(seconds: 90));
+      res = await req.close().timeout(const Duration(seconds: 45));
     } catch (e) {
       io.close(force: true);
       if (isCanceled?.call() == true) throw AuthException('已取消');
@@ -412,7 +835,7 @@ class AuthApi {
       io.close(force: false);
       throw AuthException(utf8.decode(err, allowMalformed: true));
     }
-    final reader = _Reader(res);
+    final reader = _Reader(res, stallTimeout: _stallTimeout);
     try {
       final n = await reader.u32();
       if (n == 0x534E4331) {
@@ -436,15 +859,23 @@ class AuthApi {
         throw AuthException(msg.isEmpty ? '下载失败 ($status)' : msg);
       }
       var total = 0;
+      var serverSha = '';
+      var serverOffset = 0;
       try {
         final j = jsonDecode(utf8.decode(raw));
-        if (j is Map && j['size'] is num) total = (j['size'] as num).toInt();
+        if (j is Map) {
+          if (j['size'] is num) total = (j['size'] as num).toInt();
+          if (j['sha256'] is String) serverSha = j['sha256'] as String;
+          if (j['offset'] is num) serverOffset = (j['offset'] as num).toInt();
+        }
       } catch (_) {}
+      onHeader?.call(total, serverSha, serverOffset);
+
+      final isPartial = serverOffset > 0 || length > 0;
       final key = await pending.chunkKey();
-      final hash = Sha256().toSync().newHashSink();
+      final hash = isPartial ? null : Sha256().toSync().newHashSink();
       var idx = 0;
-      var done = 0;
-      var serverSha = '';
+      var done = serverOffset;
       while (true) {
         if (isCanceled?.call() == true) throw WireException('已取消');
         final cn = await reader.u32();
@@ -452,20 +883,21 @@ class AuthApi {
         if (cn > 1024 * 1024 + 32) throw AuthException('分块过大');
         final ct = await reader.take(cn);
         final plain = await openChunk(key, idx++, ct);
-        hash.add(plain);
+        hash?.add(plain);
         await add(plain);
         done += plain.length;
         final shown = total > 0 && done >= total ? total - 1 : done;
         onProgress?.call(shown < 0 ? 0 : shown, total == 0 ? done : total);
+        if (idx % 4 == 0) {
+          await Future<void>.delayed(Duration.zero);
+        }
       }
-      hash.close();
-      final sha = _hex(hash.hashSync().bytes);
-      try {
-        final j = jsonDecode(utf8.decode(raw));
-        if (j is Map && j['sha256'] is String) serverSha = j['sha256'] as String;
-      } catch (_) {}
-      if (serverSha.isNotEmpty && serverSha != sha) throw AuthException('文件校验失败');
-      if (expectSha256 != null && expectSha256.isNotEmpty && expectSha256 != sha) throw AuthException('文件校验失败');
+      if (!isPartial && hash != null) {
+        hash.close();
+        final sha = _hex(hash.hashSync().bytes);
+        if (serverSha.isNotEmpty && serverSha != sha) throw AuthException('文件校验失败');
+        if (expectSha256 != null && expectSha256.isNotEmpty && expectSha256 != sha) throw AuthException('文件校验失败');
+      }
       onProgress?.call(done, total == 0 ? done : total);
     } catch (e) {
       if (e is AuthException) rethrow;
@@ -516,8 +948,8 @@ String _netText(String raw, {bool upload = false, int? status}) {
       raw.contains('连接中断')) {
     return upload ? '连接被关掉了，上传没有完成。如果前面有反代，先把上传大小限制放开。' : '下载失败：连接被关掉了。';
   }
-  if (s.contains('timeout') || raw.contains('Timeout')) {
-    return upload ? '数据已经发出，服务器没有回复。请确认服务在运行；用了 Nginx 或 Caddy 的话，要允许大文件。' : '下载失败：服务器没有回复。';
+  if (s.contains('timeout') || raw.contains('Timeout') || raw.contains('超时')) {
+    return upload ? '连接超时，服务器没有回复。' : '下载超时：服务器没有回复。';
   }
   if (raw.startsWith('上传失败') || raw.startsWith('下载失败')) return raw;
   if (upload && status != null && raw.trim().isEmpty) return '上传失败（HTTP $status）';
@@ -525,12 +957,12 @@ String _netText(String raw, {bool upload = false, int? status}) {
 }
 
 class _Reader {
-  _Reader(this.stream) {
+  _Reader(this.stream, {this.stallTimeout = const Duration(seconds: 25)}) {
     _sub = stream.listen((d) {
       if (d.isEmpty) return;
       _chunks.add(d is Uint8List ? d : Uint8List.fromList(d));
       _avail += d.length;
-      if (_avail > 2 * 1024 * 1024) _sub?.pause();
+      if (_avail > 4 * 1024 * 1024) _sub?.pause();
       _wake();
     }, onError: (Object e) {
       _err = e;
@@ -542,6 +974,7 @@ class _Reader {
     });
   }
   final Stream<List<int>> stream;
+  final Duration stallTimeout;
   final List<Uint8List> _chunks = [];
   int _off = 0;
   int _avail = 0;
@@ -559,7 +992,7 @@ class _Reader {
   }
 
   void _resume() {
-    if (_avail < 1024 * 1024) _sub?.resume();
+    if (_avail < 2 * 1024 * 1024) _sub?.resume();
   }
 
   Future<void> _need(int n) async {
@@ -568,8 +1001,8 @@ class _Reader {
       if (_done) throw AuthException('连接中断');
       final c = Completer<void>();
       _wait.add(c.complete);
-      await c.future.timeout(const Duration(minutes: 2), onTimeout: () {
-        throw AuthException('连接中断');
+      await c.future.timeout(stallTimeout, onTimeout: () {
+        throw AuthException('连接超时中断');
       });
     }
   }
@@ -606,7 +1039,9 @@ class _Reader {
     while (!_done && _err == null) {
       final c = Completer<void>();
       _wait.add(c.complete);
-      await c.future;
+      await c.future.timeout(stallTimeout, onTimeout: () {
+        throw AuthException('连接超时中断');
+      });
     }
     if (_err != null) throw _err!;
     return take(_avail);
@@ -649,4 +1084,3 @@ class _Buf {
     return out;
   }
 }
-

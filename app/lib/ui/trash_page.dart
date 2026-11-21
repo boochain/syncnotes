@@ -7,6 +7,7 @@ import '../blocks/block_type.dart';
 import '../models/block.dart';
 import '../sync/sync_client.dart';
 import 'block_card.dart' show EmptyState, relTime;
+import 'context_menu.dart';
 import 'ds.dart';
 import 'glass.dart';
 
@@ -19,7 +20,7 @@ String deviceLabel(SyncClient sync, String? id) {
 
 String retentionNote(int days) => days <= 0 ? '回收站中的内容会一直保留，直到你彻底删除。' : '回收站中的内容会在删除 $days 天后自动彻底删除。';
 
-/// 回收站：列出已删除内容，可恢复 / 彻底删除 / 清空；支持多选和搜索。
+/// 回收站：列出已删除内容，可恢复 / 彻底删除 / 清空；支持多选、搜索与桌面右键上下文菜单。
 class TrashPage extends StatefulWidget {
   const TrashPage({super.key});
   @override
@@ -108,108 +109,108 @@ class _TrashPageState extends State<TrashPage> {
             if (!didPop) setState(_selected.clear);
           },
           child: CallbackShortcuts(
-          bindings: {
-            const SingleActivator(LogicalKeyboardKey.escape): () {
-              if (_selected.isNotEmpty) setState(_selected.clear);
+            bindings: {
+              const SingleActivator(LogicalKeyboardKey.escape): () {
+                if (_selected.isNotEmpty) setState(_selected.clear);
+              },
             },
-          },
-          child: Scaffold(
-          backgroundColor: bg,
-          appBar: AppBar(
-            backgroundColor: bg,
-            title: Text(selecting ? '已选择 ${_selected.length} 项' : '回收站'),
-            actions: [
-              if (selecting) ...[
-                TextButton(
-                  key: const Key('trashBatchRestore'),
-                  onPressed: () => _restore(_selected.toList()),
-                  child: const Text('恢复'),
-                ),
-                TextButton(
-                  key: const Key('trashBatchPurge'),
-                  onPressed: () => _purge(_selected.toList()),
-                  child: Text('彻底删除', style: TextStyle(color: c.danger)),
-                ),
-                IconButton(
-                  tooltip: '取消选择',
-                  icon: const Icon(CupertinoIcons.xmark),
-                  onPressed: () => setState(_selected.clear),
-                ),
-              ] else if (all.isNotEmpty)
-                TextButton(
-                  key: const Key('trashEmpty'),
-                  onPressed: _empty,
-                  child: Text('清空回收站', style: TextStyle(color: c.danger)),
-                ),
-              const SizedBox(width: Gap.m),
-            ],
-          ),
-          body: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(Gap.xl, Gap.m, Gap.xl, Gap.m),
-                child: Row(
-                  children: [
-                    Icon(CupertinoIcons.info_circle, size: Sizes.iconSm, color: c.text3),
-                    const SizedBox(width: Gap.m),
-                    Expanded(
-                      child: Text(
-                        retentionNote(s.sync.trashRetentionDays),
-                        key: const Key('trashRetention'),
-                        style: tt.bodySmall?.copyWith(color: c.text2),
-                      ),
+            child: Scaffold(
+              backgroundColor: bg,
+              appBar: AppBar(
+                backgroundColor: bg,
+                title: Text(selecting ? '已选择 ${_selected.length} 项' : '回收站'),
+                actions: [
+                  if (selecting) ...[
+                    TextButton(
+                      key: const Key('trashBatchRestore'),
+                      onPressed: () => _restore(_selected.toList()),
+                      child: const Text('恢复'),
                     ),
-                  ],
-                ),
+                    TextButton(
+                      key: const Key('trashBatchPurge'),
+                      onPressed: () => _purge(_selected.toList()),
+                      child: Text('彻底删除', style: TextStyle(color: c.danger)),
+                    ),
+                    IconButton(
+                      tooltip: '取消选择',
+                      icon: const Icon(CupertinoIcons.xmark),
+                      onPressed: () => setState(_selected.clear),
+                    ),
+                  ] else if (all.isNotEmpty)
+                    TextButton(
+                      key: const Key('trashEmpty'),
+                      onPressed: _empty,
+                      child: Text('清空回收站', style: TextStyle(color: c.danger)),
+                    ),
+                  const SizedBox(width: Gap.m),
+                ],
               ),
-              if (all.length > 5)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(Gap.xl, 0, Gap.xl, Gap.m),
-                  child: SizedBox(
-                    height: Sizes.input,
-                    child: TextField(
-                      key: const Key('trashSearch'),
-                      onChanged: (v) => setState(() => _query = v),
-                      decoration: const InputDecoration(
-                        hintText: '搜索回收站',
-                        prefixIcon: Icon(CupertinoIcons.search, size: Sizes.iconSm),
-                      ),
+              body: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(Gap.xl, Gap.m, Gap.xl, Gap.m),
+                    child: Row(
+                      children: [
+                        Icon(CupertinoIcons.info_circle, size: Sizes.iconSm, color: c.text3),
+                        const SizedBox(width: Gap.m),
+                        Expanded(
+                          child: Text(
+                            retentionNote(s.sync.trashRetentionDays),
+                            key: const Key('trashRetention'),
+                            style: tt.bodySmall?.copyWith(color: c.text2),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ),
-              Divider(height: 1, color: c.separator),
-              Expanded(
-                child: items.isEmpty
-                    ? Center(
-                        child: EmptyState(
-                          key: const Key('trashEmptyState'),
-                          icon: CupertinoIcons.trash,
-                          title: all.isEmpty ? '回收站是空的' : '没有匹配的内容',
-                          subtitle: all.isEmpty ? '删除的内容会先放在这里，可以随时恢复' : null,
-                        ),
-                      )
-                    : ListView.separated(
-                        itemCount: items.length,
-                        separatorBuilder: (_, _) =>
-                            Divider(height: 1, indent: Gap.xl + Sizes.tile + Gap.l, color: c.separator),
-                        itemBuilder: (context, i) => _TrashRow(
-                          block: items[i],
-                          title: _title(items[i]),
-                          selected: _selected.contains(items[i].id),
-                          selecting: selecting,
-                          onToggle: () => setState(() {
-                            final id = items[i].id;
-                            _selected.contains(id) ? _selected.remove(id) : _selected.add(id);
-                          }),
-                          onRestore: () => _restore([items[i].id]),
-                          onPurge: () => _purge([items[i].id]),
+                  if (all.length > 5)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(Gap.xl, 0, Gap.xl, Gap.m),
+                      child: SizedBox(
+                        height: Sizes.input,
+                        child: TextField(
+                          key: const Key('trashSearch'),
+                          onChanged: (v) => setState(() => _query = v),
+                          decoration: const InputDecoration(
+                            hintText: '搜索回收站',
+                            prefixIcon: Icon(CupertinoIcons.search, size: Sizes.iconSm),
+                          ),
                         ),
                       ),
+                    ),
+                  Divider(height: 1, color: c.separator),
+                  Expanded(
+                    child: items.isEmpty
+                        ? Center(
+                            child: EmptyState(
+                              key: const Key('trashEmptyState'),
+                              icon: CupertinoIcons.trash,
+                              title: all.isEmpty ? '回收站是空的' : '没有匹配的内容',
+                              subtitle: all.isEmpty ? '删除的内容会先放在这里，可以随时恢复' : null,
+                            ),
+                          )
+                        : ListView.separated(
+                            itemCount: items.length,
+                            separatorBuilder: (_, _) =>
+                                Divider(height: 1, indent: Gap.xl + Sizes.tile + Gap.l, color: c.separator),
+                            itemBuilder: (context, i) => _TrashRow(
+                              block: items[i],
+                              title: _title(items[i]),
+                              selected: _selected.contains(items[i].id),
+                              selecting: selecting,
+                              onToggle: () => setState(() {
+                                final id = items[i].id;
+                                _selected.contains(id) ? _selected.remove(id) : _selected.add(id);
+                              }),
+                              onRestore: () => _restore([items[i].id]),
+                              onPurge: () => _purge([items[i].id]),
+                            ),
+                          ),
+                  ),
+                ],
               ),
-            ],
-          ),
-        ),
+            ),
           ),
         );
       },
@@ -253,79 +254,96 @@ class _TrashRow extends StatelessWidget {
     ].join(' · ');
     return Material(
       color: selected ? c.selected : Colors.transparent,
-      child: InkWell(
-        key: Key('trashRow-${block.id}'),
-        onTap: selecting ? onToggle : null,
-        onLongPress: onToggle,
-        child: SizedBox(
-          height: Sizes.listRow,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: Gap.xl),
-            child: Row(
-              children: [
-                GestureDetector(
-                  onTap: onToggle,
-                  child: Container(
-                    key: Key('trashSelect-${block.id}'),
-                    width: Sizes.tile,
-                    height: Sizes.tile,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: selected ? c.accent : c.fill,
-                      borderRadius: BorderRadius.circular(AppRadius.s),
-                    ),
-                    child: Icon(
-                      selected ? CupertinoIcons.checkmark : type.icon,
-                      size: Sizes.iconSm,
-                      color: selected ? Colors.white : c.text2,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: Gap.l),
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
+      child: GestureDetector(
+        onSecondaryTapUp: (d) => showGlassContextMenu(
+          context,
+          anchor: d.globalPosition,
+          header: title,
+          items: [
+            ContextMenuItem(icon: CupertinoIcons.arrow_uturn_left, label: '恢复', onTap: onRestore),
+            ContextMenuItem(
+              icon: selected ? CupertinoIcons.xmark_circle : CupertinoIcons.checkmark_circle,
+              label: selected ? '取消选择' : '选择',
+              onTap: onToggle,
+            ),
+            const ContextMenuDivider(),
+            ContextMenuItem(icon: CupertinoIcons.delete, label: '彻底删除', danger: true, onTap: onPurge),
+          ],
+        ),
+        child: InkWell(
+          key: Key('trashRow-${block.id}'),
+          onTap: selecting ? onToggle : null,
+          onLongPress: onToggle,
+          child: SizedBox(
+            height: Sizes.listRow,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: Gap.xl),
+              child: Row(
+                children: [
+                  GestureDetector(
+                    onTap: onToggle,
+                    child: Container(
+                      key: Key('trashSelect-${block.id}'),
+                      width: Sizes.tile,
+                      height: Sizes.tile,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: selected ? c.accent : c.fill,
+                        borderRadius: BorderRadius.circular(AppRadius.s),
                       ),
-                      Text(
-                        meta,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: tt.bodySmall?.copyWith(color: c.text2),
+                      child: Icon(
+                        selected ? CupertinoIcons.checkmark : type.icon,
+                        size: Sizes.iconSm,
+                        color: selected ? Colors.white : c.text2,
                       ),
-                    ],
-                  ),
-                ),
-                if (!selecting) ...[
-                  const SizedBox(width: Gap.m),
-                  SizedBox(
-                    height: Sizes.compact,
-                    child: TextButton(
-                      key: Key('trashRestore-${block.id}'),
-                      onPressed: onRestore,
-                      child: const Text('恢复'),
                     ),
                   ),
-                  TouchTarget(
-                    size: Sizes.compact,
-                    child: IconButton(
-                      key: Key('trashPurge-${block.id}'),
-                      tooltip: '彻底删除',
-                      style: IconButton.styleFrom(fixedSize: const Size.square(Sizes.compact), minimumSize: const Size.square(Sizes.compact)),
-                      padding: EdgeInsets.zero,
-                      iconSize: Sizes.iconSm,
-                      icon: Icon(CupertinoIcons.delete, color: c.danger),
-                      onPressed: onPurge,
+                  const SizedBox(width: Gap.l),
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
+                        ),
+                        Text(
+                          meta,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: tt.bodySmall?.copyWith(color: c.text2),
+                        ),
+                      ],
                     ),
                   ),
+                  if (!selecting) ...[
+                    const SizedBox(width: Gap.m),
+                    SizedBox(
+                      height: Sizes.compact,
+                      child: TextButton(
+                        key: Key('trashRestore-${block.id}'),
+                        onPressed: onRestore,
+                        child: const Text('恢复'),
+                      ),
+                    ),
+                    TouchTarget(
+                      size: Sizes.compact,
+                      child: IconButton(
+                        key: Key('trashPurge-${block.id}'),
+                        tooltip: '彻底删除',
+                        style: IconButton.styleFrom(fixedSize: const Size.square(Sizes.compact), minimumSize: const Size.square(Sizes.compact)),
+                        padding: EdgeInsets.zero,
+                        iconSize: Sizes.iconSm,
+                        icon: Icon(CupertinoIcons.delete, color: c.danger),
+                        onPressed: onPurge,
+                      ),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ),

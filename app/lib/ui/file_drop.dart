@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import '../blocks/builtin_types.dart';
 import '../platform/desktop.dart';
 import 'ds.dart';
+import 'glass.dart';
 
 /// 桌面：把文件拖进窗口 → 上传并创建文件块（Windows / Linux / macOS）。
 class FileDropZone extends StatefulWidget {
@@ -60,20 +61,31 @@ class FileDropZoneState extends State<FileDropZone> {
         if (_over)
           Positioned.fill(
             child: IgnorePointer(
-              child: Container(
-                key: const Key('dropOverlay'),
-                margin: const EdgeInsets.all(Gap.m),
-                decoration: BoxDecoration(
-                  color: c.bg.withValues(alpha: 0.85),
-                  borderRadius: BorderRadius.circular(AppRadius.l),
-                  border: Border.all(color: c.accent, width: 2),
+              child: Padding(
+                padding: const EdgeInsets.all(Gap.m),
+                child: ClipRRect(
+                  key: const Key('dropOverlay'),
+                  borderRadius: BorderRadius.circular(AppRadius.xl),
+                  child: Frosted(
+                    color: c.bg,
+                    border: Border.all(color: c.accent.withValues(alpha: 0.85), width: 2),
+                    child: Center(
+                      child: Column(mainAxisSize: MainAxisSize.min, children: [
+                        Container(
+                          width: 56,
+                          height: 56,
+                          decoration: BoxDecoration(
+                            color: c.accent.withValues(alpha: 0.16),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(CupertinoIcons.arrow_down_doc, size: 28, color: c.accent),
+                        ),
+                        const SizedBox(height: Gap.m),
+                        Text('松开以上传文件', style: Theme.of(context).textTheme.titleMedium),
+                      ]),
+                    ),
+                  ),
                 ),
-                alignment: Alignment.center,
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(CupertinoIcons.arrow_down_doc, size: 32, color: c.accent),
-                  const SizedBox(height: Gap.m),
-                  Text('松开以上传文件', style: Theme.of(context).textTheme.titleMedium),
-                ]),
               ),
             ),
           ),

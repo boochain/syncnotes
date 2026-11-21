@@ -12,19 +12,19 @@ import 'tokens.dart';
 
 /// 浮层与导航栏材质（基于开源 `liquid_glass_widgets` 实现 Apple HIG 液态玻璃效果）。
 ///
-/// 页面内容保持高可读性对比度，切换时不会叠出上一页。
-/// 2.5x 及以上高分屏关闭重折射（避免同一页被采样出双影），但仍走液态玻璃着色器的模糊与高光。
+/// 配备实时折射、高饱和度透光、顶部镜面高光光晕与分层阴影；
+/// 2.5x 及以上高分屏关闭重折射（避免同一页被采样出双影），仍保留强模糊与高光质感。
 class Glass extends StatelessWidget {
   static bool useShader = true;
 
   /// 液态玻璃总开关。测试里默认关闭，避免着色器动画阻塞 pumpAndSettle。
   static final enabled = ValueNotifier<bool>(true);
 
-  /// 浮层不透明度（0.35 – 0.92）。
-  static final opacity = ValueNotifier<double>(0.55);
+  /// 浮层不透明度（0.22 – 0.88，默认 0.42 让折射与背景层次清晰可见）。
+  static final opacity = ValueNotifier<double>(0.42);
 
-  /// 折射率（1.00 – 1.12）。
-  static final refraction = ValueNotifier<double>(1.04);
+  /// 折射率（1.00 – 1.12，默认 1.06）。
+  static final refraction = ValueNotifier<double>(1.06);
 
   /// 着色器质量档位：standard（全平台轻量 2D 着色器）/ premium（高阶折射高光）/ minimal（纯 BackdropFilter）
   static final quality = ValueNotifier<String>('standard');
@@ -50,7 +50,7 @@ class Glass extends StatelessWidget {
   /// 真实运行时且开启液态玻璃或自定义背景图时，允许内层 Scaffold 透出底层 GlassBackdrop 壁纸。
   static bool get surfaceTranslucent => useShader && (enabled.value || hasCustomBg);
 
-  /// 内层页面 Scaffold 背景色：开启液态玻璃或壁纸时透明（由 GlassBackdrop 统一绘制壁纸与可读性遮罩），测试或关闭时保持主题底色。
+  /// 内层页面 Scaffold 背景色：开启液态玻璃或壁纸时透明（由 GlassBackdrop 统一绘制壁纸与光晕），测试或关闭时保持主题底色。
   static Color? scaffoldBg(BuildContext context) => surfaceTranslucent ? Colors.transparent : null;
 
   /// 折射只在较低缩放比上打开。3.5x 上折射会复制出第二层画面。
@@ -58,7 +58,6 @@ class Glass extends StatelessWidget {
 
   static GlassQuality resolveQuality(String q) => switch (q) {
         'premium' => GlassQuality.premium,
-        'minimal' => GlassQuality.minimal,
         _ => GlassQuality.standard,
       };
 
@@ -78,7 +77,7 @@ class Glass extends StatelessWidget {
     this.strong = true,
   });
 
-  static Color tint(BuildContext context, {required bool frosted, double alpha = 0.55}) {
+  static Color tint(BuildContext context, {required bool frosted, double alpha = 0.42}) {
     final base = AppColors.of(context).elevated;
     if (!frosted) return base;
     return base.withValues(alpha: alpha);
@@ -102,7 +101,10 @@ class Glass extends StatelessWidget {
               final bend = refractsAt(dpr);
               final dark = Theme.of(context).brightness == Brightness.dark;
               final q = resolveQuality(qName);
-              final shaderActive = useShader && on && q != GlassQuality.minimal && radius > 0;
+              final shaderActive = useShader && on && qName != 'minimal' && radius > 0;
+              final rimColor = dark
+                  ? Colors.white.withValues(alpha: 0.24)
+                  : Colors.white.withValues(alpha: 0.82);
               final Widget body;
               if (shaderActive) {
                 body = GlassContainer(
@@ -112,23 +114,52 @@ class Glass extends StatelessWidget {
                   shape: LiquidRoundedSuperellipse(borderRadius: radius),
                   settings: LiquidGlassSettings(
                     glassColor: tint(context, frosted: true, alpha: alpha),
-                    blur: bend ? 14 : 20,
-                    thickness: bend ? 6 : 0,
+                    blur: bend ? 22 : 28,
+                    thickness: bend ? 10 : 0,
                     refractiveIndex: bend ? ior : 1.0,
-                    saturation: dark ? 1.14 : 1.08,
-                    lightIntensity: dark ? 0.28 : 0.38,
-                    glowIntensity: dark ? 0.16 : 0.14,
-                    chromaticAberration: 0,
+                    saturation: dark ? 1.32 : 1.24,
+                    lightIntensity: dark ? 0.40 : 0.54,
+                    glowIntensity: dark ? 0.26 : 0.22,
+                    chromaticAberration: bend ? 0.016 : 0,
                     bodyMode: GlassBodyMode.clear,
                   ),
-                  child: inner,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.white.withValues(alpha: dark ? 0.12 : 0.42),
+                          Colors.transparent,
+                          Colors.black.withValues(alpha: dark ? 0.08 : 0.02),
+                        ],
+                        stops: const [0.0, 0.38, 1.0],
+                      ),
+                    ),
+                    child: inner,
+                  ),
                 );
               } else if (on) {
                 body = ClipRRect(
                   borderRadius: BorderRadius.circular(radius),
                   child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                    child: ColoredBox(color: tint(context, frosted: true, alpha: alpha), child: inner),
+                    filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Color.alphaBlend(
+                              Colors.white.withValues(alpha: dark ? 0.10 : 0.46),
+                              tint(context, frosted: true, alpha: alpha),
+                            ),
+                            tint(context, frosted: true, alpha: (alpha + 0.08).clamp(0.22, 0.90)),
+                          ],
+                        ),
+                      ),
+                      child: inner,
+                    ),
                   ),
                 );
               } else {
@@ -138,10 +169,9 @@ class Glass extends StatelessWidget {
                 );
               }
               if (shaderActive) {
-                // 使用与 LiquidRoundedSuperellipse 完全一致的超椭圆曲线绘制边框与阴影，消除四角双线错位
-                final seShape = RoundedSuperellipseBorder(
+                final seShape = ContinuousRectangleBorder(
                   borderRadius: BorderRadius.circular(radius),
-                  side: BorderSide(color: c.separator),
+                  side: BorderSide(color: Color.lerp(c.separator, rimColor, 0.68)!, width: 1),
                 );
                 return Padding(
                   padding: margin ?? EdgeInsets.zero,
@@ -150,7 +180,7 @@ class Glass extends StatelessWidget {
                     decoration: ShapeDecoration(shape: seShape),
                     child: DecoratedBox(
                       decoration: ShapeDecoration(
-                        shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(radius)),
+                        shape: ContinuousRectangleBorder(borderRadius: BorderRadius.circular(radius)),
                         shadows: deco.boxShadow,
                       ),
                       child: body,
@@ -164,7 +194,7 @@ class Glass extends StatelessWidget {
                   position: DecorationPosition.foreground,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(radius),
-                    border: on ? deco.border : null,
+                    border: on ? Border.all(color: Color.lerp(c.separator, rimColor, 0.58)!) : null,
                   ),
                   child: DecoratedBox(
                     decoration: BoxDecoration(
@@ -183,8 +213,9 @@ class Glass extends StatelessWidget {
   }
 }
 
-/// 窗口底色与自定义壁纸层。
-/// 支持用户自定义背景图片（带可调可读性遮罩）或 Apple 风格环境色晕渐变（白天清透银白、黑夜深邃曜石黑）。
+/// 窗口底色与 Apple 环境光场 / 自定义壁纸层。
+/// 浅色模式为柔和天蓝 + 薰衣草紫 + 暖杏桃三光晕；深色模式为深钴蓝 + 皇家紫 + 幽蓝青三光晕，
+/// 衬托液态玻璃卡片与浮岛的镜面高光与折射层次。
 class GlassBackdrop extends StatelessWidget {
   final Widget child;
   const GlassBackdrop({super.key, required this.child});
@@ -192,9 +223,9 @@ class GlassBackdrop extends StatelessWidget {
   static Color? washFor(String preset) {
     const washes = {
       'sea': Color(0xFF2F6FDB),
-      'dusk': Color(0xFF6B4C9A),
-      'paper': Color(0xFFC4A574),
-      'ink': Color(0xFF111111),
+      'dusk': Color(0xFF7B4EC9),
+      'paper': Color(0xFFC8A064),
+      'ink': Color(0xFF141820),
     };
     return washes[preset];
   }
@@ -216,23 +247,95 @@ class GlassBackdrop extends StatelessWidget {
         final dark = Theme.of(context).brightness == Brightness.dark;
         final name = Glass.preset.value;
         final wash = washFor(name);
-        final topTint = wash != null
-            ? Color.lerp(base, wash, dark ? 0.38 : 0.45)!
-            : (dark ? const Color(0xFF121824) : const Color(0xFFEEF2F8));
-        final midTint = wash != null
-            ? Color.lerp(base, wash, dark ? 0.16 : 0.18)!
-            : (dark ? const Color(0xFF17171A) : const Color(0xFFF5F5F7));
-        if (!hasImg) {
-          return DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [topTint, midTint, base],
-                stops: const [0.0, 0.52, 1.0],
+
+        // 严格对齐展示图日夜双模式的三光晕 Apple Tahoe / iOS 26 光场
+        final orb1 = wash != null
+            ? Color.lerp(wash, dark ? const Color(0xFF2563EB) : const Color(0xFF7DD3FC), 0.35)!
+            : (dark ? const Color(0xFF2563EB) : const Color(0xFF8CCBFF));
+        final orb2 = wash != null
+            ? Color.lerp(wash, dark ? const Color(0xFF7C3AED) : const Color(0xFFD8B4FE), 0.45)!
+            : (dark ? const Color(0xFF7C3AED) : const Color(0xFFD5B6FF));
+        final orb3 = wash != null
+            ? Color.lerp(wash, dark ? const Color(0xFF0D9488) : const Color(0xFFFDBA74), 0.40)!
+            : (dark ? const Color(0xFF0D9488) : const Color(0xFFFDC89E));
+
+        final ambientMesh = Stack(
+          fit: StackFit.passthrough,
+          children: [
+            Positioned.fill(
+              child: ColoredBox(
+                color: dark ? const Color(0xFF0C0F1A) : const Color(0xFFF2F5FB),
               ),
             ),
-            child: child,
+            // 左上主光晕（浅色天蓝 / 深色钴蓝）
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    center: const Alignment(-0.78, -0.72),
+                    radius: 1.05,
+                    colors: [
+                      orb1.withValues(alpha: dark ? 0.42 : 0.48),
+                      orb1.withValues(alpha: 0.0),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            // 中右柔和光晕（浅色薰衣草紫 / 深色皇家紫）
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    center: const Alignment(0.32, -0.18),
+                    radius: 0.92,
+                    colors: [
+                      orb2.withValues(alpha: dark ? 0.38 : 0.40),
+                      orb2.withValues(alpha: 0.0),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            // 右下与左下暖/青平衡光晕（浅色暖杏桃 / 深色幽蓝青）
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    center: const Alignment(0.78, 0.55),
+                    radius: 0.98,
+                    colors: [
+                      orb3.withValues(alpha: dark ? 0.34 : 0.42),
+                      orb3.withValues(alpha: 0.0),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    center: const Alignment(-0.42, 0.88),
+                    radius: 0.85,
+                    colors: [
+                      orb3.withValues(alpha: dark ? 0.18 : 0.32),
+                      orb3.withValues(alpha: 0.0),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+
+        if (!hasImg) {
+          return Stack(
+            fit: StackFit.passthrough,
+            children: [
+              Positioned.fill(child: RepaintBoundary(child: ambientMesh)),
+              child,
+            ],
           );
         }
         return Stack(
@@ -245,15 +348,7 @@ class GlassBackdrop extends StatelessWidget {
                 fit: BoxFit.cover,
                 alignment: Alignment.center,
                 filterQuality: FilterQuality.medium,
-                errorBuilder: (_, _, _) => DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [topTint, midTint, base],
-                    ),
-                  ),
-                ),
+                errorBuilder: (ctx, err, stack) => ambientMesh,
               ),
             ),
             if (dim > 0)
@@ -270,11 +365,143 @@ class GlassBackdrop extends StatelessWidget {
   }
 }
 
+/// 液态玻璃便利贴卡片表面：高斯毛玻璃 + 顶部居中镜面星芒高光 + 通透描边 + 悬停微抬升阴影。
+class SpecularGlassCard extends StatelessWidget {
+  final Widget child;
+  final double radius;
+  final bool hover;
+  final Color? tintAccent;
+
+  const SpecularGlassCard({
+    super.key,
+    required this.child,
+    this.radius = 18,
+    this.hover = false,
+    this.tintAccent,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final alpha = Glass.opacity.value;
+    final translucent = Glass.surfaceTranslucent;
+
+    if (!translucent) {
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          color: hover ? c.hover : c.elevated,
+          borderRadius: BorderRadius.circular(radius),
+          border: Border.all(color: c.separator),
+        ),
+        child: child,
+      );
+    }
+
+    final baseAlpha = dark
+        ? (hover ? (alpha * 0.78).clamp(0.28, 0.72) : (alpha * 0.56).clamp(0.20, 0.58))
+        : (hover ? (alpha * 1.15).clamp(0.42, 0.82) : (alpha * 0.92).clamp(0.32, 0.72));
+    final baseColor = tintAccent != null
+        ? Color.lerp(c.elevated, tintAccent, dark ? 0.14 : 0.08)!.withValues(alpha: baseAlpha)
+        : c.elevated.withValues(alpha: baseAlpha);
+
+    final rimColor = dark
+        ? Colors.white.withValues(alpha: hover ? 0.34 : 0.18)
+        : Colors.white.withValues(alpha: hover ? 0.92 : 0.72);
+
+    return AnimatedContainer(
+      duration: Motion.short3,
+      curve: Curves.easeOutCubic,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(radius),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: dark ? (hover ? 0.44 : 0.30) : (hover ? 0.12 : 0.07)),
+            blurRadius: hover ? 26 : 18,
+            offset: Offset(0, hover ? 10 : 6),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(radius),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(radius),
+              border: Border.all(color: rimColor, width: 1),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color.alphaBlend(
+                    Colors.white.withValues(alpha: dark ? 0.12 : 0.48),
+                    baseColor,
+                  ),
+                  baseColor,
+                  Color.alphaBlend(
+                    Colors.black.withValues(alpha: dark ? 0.14 : 0.03),
+                    baseColor,
+                  ),
+                ],
+                stops: const [0.0, 0.46, 1.0],
+              ),
+            ),
+            child: Stack(
+              fit: StackFit.passthrough,
+              children: [
+                // 顶部边缘镜面高光带（Apple Liquid Glass 标志性顶部折射光晕）
+                Positioned(
+                  top: 0,
+                  left: 16,
+                  right: 16,
+                  height: 2,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.transparent,
+                          Colors.white.withValues(alpha: dark ? (hover ? 0.72 : 0.48) : (hover ? 1.0 : 0.88)),
+                          Colors.transparent,
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: -18,
+                  left: 0,
+                  right: 0,
+                  height: 44,
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: RadialGradient(
+                          center: const Alignment(0, -0.4),
+                          radius: 0.72,
+                          colors: [
+                            Colors.white.withValues(alpha: dark ? (hover ? 0.16 : 0.10) : (hover ? 0.42 : 0.28)),
+                            Colors.transparent,
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                child,
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// 侧边栏 / 抽屉 / 顶栏 / 底栏液态玻璃容器。
 ///
-/// 针对平直通栏（`radius <= 0`）：使用无圆角 `ClipRect` + 高斯毛玻璃 + Apple HIG 高光细线，
-/// 彻底避免 `LiquidRoundedSuperellipse(borderRadius: 0)` 在直角边缘产生法线除零或裁切闪烁问题；
-/// 针对圆角卡片（`radius > 0`）：使用 `liquid_glass_widgets` 的 `GlassContainer` 与超椭圆边框。
+/// 针对平直通栏（`radius <= 0`）：使用 `ClipRect` + 强高斯毛玻璃（sigma 30）+ 顶部镜面高光渐变；
+/// 针对圆角浮岛（`radius > 0`）：使用 `liquid_glass_widgets` 的 `GlassContainer` 与真实折射高光。
 class Frosted extends StatelessWidget {
   final Widget child;
   final Color color;
@@ -291,7 +518,7 @@ class Frosted extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: Listenable.merge([Glass.enabled, Glass.opacity, Glass.quality, Glass.bgImage]),
+      listenable: Listenable.merge([Glass.enabled, Glass.opacity, Glass.refraction, Glass.quality, Glass.bgImage]),
       builder: (context, _) {
         final on = Glass.enabled.value;
         if (!on && !Glass.hasCustomBg) {
@@ -305,50 +532,67 @@ class Frosted extends StatelessWidget {
           );
         }
         final alpha = Glass.opacity.value;
+        final ior = Glass.refraction.value;
         final qName = Glass.quality.value;
         final dark = Theme.of(context).brightness == Brightness.dark;
-        final q = Glass.resolveQuality(qName);
         final dpr = MediaQuery.devicePixelRatioOf(context);
         final bend = Glass.refractsAt(dpr);
-        // 仅当 radius > 0 时启用超椭圆着色器；radius == 0 的通栏（顶栏、侧边栏、底栏）使用稳健的 ClipRect + BackdropFilter
-        if (radius > 0 && Glass.useShader && on && q != GlassQuality.minimal) {
+        final rimColor = dark
+            ? Colors.white.withValues(alpha: 0.20)
+            : Colors.white.withValues(alpha: 0.72);
+
+        if (radius > 0 && Glass.useShader && on && qName != 'minimal') {
           return DecoratedBox(
             position: DecorationPosition.foreground,
             decoration: BoxDecoration(
-              border: border,
+              border: border ?? Border.all(color: rimColor),
               borderRadius: BorderRadius.circular(radius),
             ),
             child: GlassContainer(
               useOwnLayer: true,
-              quality: GlassQuality.standard,
+              quality: Glass.resolveQuality(qName),
               clipBehavior: Clip.antiAlias,
               shape: LiquidRoundedSuperellipse(borderRadius: radius),
               settings: LiquidGlassSettings(
                 glassColor: color.withValues(alpha: alpha),
-                blur: 20,
-                thickness: bend ? 4 : 0,
-                refractiveIndex: bend ? 1.02 : 1.0,
-                saturation: dark ? 1.10 : 1.05,
-                lightIntensity: dark ? 0.20 : 0.28,
-                glowIntensity: 0.12,
-                chromaticAberration: 0,
+                blur: 26,
+                thickness: bend ? 8 : 0,
+                refractiveIndex: bend ? ior : 1.0,
+                saturation: dark ? 1.28 : 1.20,
+                lightIntensity: dark ? 0.34 : 0.46,
+                glowIntensity: dark ? 0.20 : 0.18,
+                chromaticAberration: bend ? 0.012 : 0,
                 bodyMode: GlassBodyMode.clear,
               ),
-              child: child,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.white.withValues(alpha: dark ? 0.08 : 0.30),
+                      Colors.transparent,
+                    ],
+                  ),
+                ),
+                child: child,
+              ),
             ),
           );
         }
-        final highlight = dark
-            ? Colors.white.withValues(alpha: 0.06)
-            : Colors.white.withValues(alpha: 0.42);
+
+        final topSheen = dark
+            ? Colors.white.withValues(alpha: 0.09)
+            : Colors.white.withValues(alpha: 0.52);
+        final effAlpha = (alpha * 0.92).clamp(0.22, 0.86);
         final innerBox = DecoratedBox(
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: [
-                Color.alphaBlend(highlight, color.withValues(alpha: alpha)),
-                color.withValues(alpha: (alpha + 0.06).clamp(0.35, 0.94)),
+                Color.alphaBlend(topSheen, color.withValues(alpha: effAlpha)),
+                color.withValues(alpha: (effAlpha + 0.06).clamp(0.26, 0.90)),
               ],
             ),
             border: border,
@@ -360,14 +604,14 @@ class Frosted extends StatelessWidget {
           return ClipRRect(
             borderRadius: BorderRadius.circular(radius),
             child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+              filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
               child: innerBox,
             ),
           );
         }
         return ClipRect(
           child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+            filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
             child: innerBox,
           ),
         );
@@ -384,7 +628,7 @@ Future<void> showSpotlightModal(BuildContext context, {required String title, re
     barrierLabel: '关闭全屏视图',
     barrierColor: Colors.black54,
     transitionDuration: Motion.short4,
-    pageBuilder: (ctx, _, _) {
+    pageBuilder: (ctx, a1, a2) {
       final size = MediaQuery.sizeOf(ctx);
       final c = AppColors.of(ctx);
       final tt = Theme.of(ctx).textTheme;
@@ -406,7 +650,7 @@ Future<void> showSpotlightModal(BuildContext context, {required String title, re
                       height: Sizes.bar,
                       padding: const EdgeInsets.symmetric(horizontal: Gap.l),
                       decoration: BoxDecoration(
-                        color: c.sidebar.withValues(alpha: 0.72),
+                        color: c.sidebar.withValues(alpha: 0.60),
                         border: Border(bottom: BorderSide(color: c.separator)),
                       ),
                       child: Row(
@@ -432,7 +676,7 @@ Future<void> showSpotlightModal(BuildContext context, {required String title, re
                     ),
                     Expanded(
                       child: ColoredBox(
-                        color: c.bg.withValues(alpha: Glass.surfaceTranslucent ? 0.88 : 1.0),
+                        color: c.bg.withValues(alpha: Glass.surfaceTranslucent ? 0.86 : 1.0),
                         child: child,
                       ),
                     ),
@@ -444,11 +688,12 @@ Future<void> showSpotlightModal(BuildContext context, {required String title, re
         ),
       );
     },
-    transitionBuilder: (_, animation, _, dialogChild) => MotionFade(animation: animation, child: dialogChild),
+    transitionBuilder: (ctx, animation, secondaryAnimation, dialogChild) =>
+        MotionFade(animation: animation, child: dialogChild),
   );
 }
 
-/// 页面保持不透明。透明 Scaffold 会让渐变和上一页透出来，玻璃再采样一次就叠成两层。
+/// 页面底色同步主题。
 ThemeData glassTheme(ThemeData base, bool on) {
   if (!on) return base;
   final bg = base.scaffoldBackgroundColor;

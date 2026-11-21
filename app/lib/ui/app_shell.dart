@@ -1,12 +1,11 @@
 import 'dart:async';
 
-import 'ds.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../app_scope.dart';
-import '../models/block.dart';
 import '../blocks/block_type.dart';
+import '../models/block.dart';
 import '../pages/page_nav.dart';
 import '../pages/page_screen.dart';
 import '../platform/desktop.dart';
@@ -14,6 +13,7 @@ import '../platform/notifications.dart';
 import '../platform/share_receive.dart';
 import 'back_handler.dart';
 import 'block_card.dart' show showCreateMenu;
+import 'ds.dart';
 import 'file_drop.dart';
 import 'glass.dart';
 import 'home_page.dart';
@@ -27,7 +27,7 @@ import 'trash_page.dart';
 /// 宽屏断点：≥ 720 显示常驻侧边栏，否则使用抽屉。
 const wideBreakpoint = 720.0;
 
-/// 应用外壳：侧边栏（页面树，桌面可折叠、窄屏自动抽屉）+ 内容区；Ctrl+K 快速切换。
+/// 应用外壳：侧边栏（页面树，桌面可折叠、窄屏安全区手势抽屉）+ 内容区；Ctrl+K 快速切换。
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
   @override
@@ -52,9 +52,8 @@ class AppShellState extends State<AppShell> implements PageHost {
   void _select(String? id) {
     if (!_wide) {
       _scaffold.currentState?.closeDrawer();
-      if (id == null) {
-        _navKey.currentState?.popUntil((r) => r.isFirst);
-      } else {
+      _navKey.currentState?.popUntil((r) => r.isFirst);
+      if (id != null) {
         _navKey.currentState?.push(pageRoute(PageScreen(pageId: id, standalone: true)));
       }
       setState(() => _page = id);
@@ -201,123 +200,203 @@ class AppShellState extends State<AppShell> implements PageHost {
     return RootBackScope(
       onBack: handleBack,
       child: CallbackShortcuts(
-      bindings: {
-        const SingleActivator(LogicalKeyboardKey.keyK, control: true): openSwitcher,
-        const SingleActivator(LogicalKeyboardKey.keyK, meta: true): openSwitcher,
-        const SingleActivator(LogicalKeyboardKey.keyP, control: true): openSwitcher,
-        // 桌面通用快捷键：Ctrl+F 查找、Ctrl+, 设置、Ctrl+\ 折叠/展开侧边栏
-        const SingleActivator(LogicalKeyboardKey.keyF, control: true): openSwitcher,
-        const SingleActivator(LogicalKeyboardKey.comma, control: true): _settings,
-        const SingleActivator(LogicalKeyboardKey.comma, meta: true): _settings,
-        const SingleActivator(LogicalKeyboardKey.backslash, control: true): toggleSidebar,
-        const SingleActivator(LogicalKeyboardKey.backslash, meta: true): toggleSidebar,
-        // Ctrl+N 新建；Ctrl+W 关闭当前页面（没有页面时关闭窗口）
-        const SingleActivator(LogicalKeyboardKey.keyN, control: true): newItem,
-        const SingleActivator(LogicalKeyboardKey.keyW, control: true): closeCurrent,
-      },
-      child: Focus(
-        autofocus: true,
-        child: LayoutBuilder(builder: (context, c) {
-          _wide = c.maxWidth >= wideBreakpoint;
-          // 当前页面被删除（例如在其他设备上）→ 回到收件箱
-          final page = _page == null ? null : sync.byId(_page!);
-          final pageId = page == null || sync.isHidden(page) ? null : _page;
-          final showSidebar = _wide && !_sidebarCollapsed;
-          final sidebar = Sidebar(
-            selectedPage: _inSettings || _inTrash || _inTransfers ? null : pageId,
-            inboxSelected: pageId == null && !_inSettings && !_inTrash && !_inTransfers,
-            settingsSelected: _inSettings && !_inTrash && !_inTransfers,
-            trashSelected: _inTrash,
-            transfersSelected: _inTransfers,
-            onTrash: _trash,
-            onTransfers: _transfers,
-            onSelect: _select,
-            onSearch: () {
-              _scaffold.currentState?.closeDrawer();
-              openSwitcher();
-            },
-            onSettings: _settings,
-            onToggleSidebar: _wide ? toggleSidebar : null,
-          );
-          final Widget home;
-          if (_wide) {
-            home = MotionSwitch(
-              child: pageId == null
-                  ? HomePage(
-                      key: const ValueKey('inbox'),
-                      embedded: true,
-                      onMenu: _sidebarCollapsed ? toggleSidebar : null,
-                    )
-                  : PageScreen(
-                      key: ValueKey('page-$pageId'),
-                      pageId: pageId,
-                      onMenu: _sidebarCollapsed ? toggleSidebar : null,
-                    ),
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.keyK, control: true): openSwitcher,
+          const SingleActivator(LogicalKeyboardKey.keyK, meta: true): openSwitcher,
+          const SingleActivator(LogicalKeyboardKey.keyP, control: true): openSwitcher,
+          // 桌面通用快捷键：Ctrl+F 查找、Ctrl+, 设置、Ctrl+\ 折叠/展开侧边栏
+          const SingleActivator(LogicalKeyboardKey.keyF, control: true): openSwitcher,
+          const SingleActivator(LogicalKeyboardKey.comma, control: true): _settings,
+          const SingleActivator(LogicalKeyboardKey.comma, meta: true): _settings,
+          const SingleActivator(LogicalKeyboardKey.backslash, control: true): toggleSidebar,
+          const SingleActivator(LogicalKeyboardKey.backslash, meta: true): toggleSidebar,
+          // Ctrl+N 新建；Ctrl+W 关闭当前页面（没有页面时关闭窗口）
+          const SingleActivator(LogicalKeyboardKey.keyN, control: true): newItem,
+          const SingleActivator(LogicalKeyboardKey.keyW, control: true): closeCurrent,
+        },
+        child: Focus(
+          autofocus: true,
+          child: LayoutBuilder(builder: (context, c) {
+            _wide = c.maxWidth >= wideBreakpoint;
+            // 当前页面被删除（例如在其他设备上）→ 回到收件箱
+            final page = _page == null ? null : sync.byId(_page!);
+            final pageId = page == null || sync.isHidden(page) ? null : _page;
+            final showSidebar = _wide && !_sidebarCollapsed;
+            final sidebar = Sidebar(
+              selectedPage: _inSettings || _inTrash || _inTransfers ? null : pageId,
+              inboxSelected: pageId == null && !_inSettings && !_inTrash && !_inTransfers,
+              settingsSelected: _inSettings && !_inTrash && !_inTransfers,
+              trashSelected: _inTrash,
+              transfersSelected: _inTransfers,
+              onTrash: _trash,
+              onTransfers: _transfers,
+              onSelect: _select,
+              onSearch: () {
+                _scaffold.currentState?.closeDrawer();
+                openSwitcher();
+              },
+              onSettings: _settings,
+              onToggleSidebar: _wide ? toggleSidebar : null,
             );
-          } else {
-            home = HomePage(onMenu: () => _scaffold.currentState?.openDrawer());
-          }
-          // 内容区使用嵌套 Navigator，设置/文件夹/旧笔记等页面在内容区打开
-          final content = FileDropZone(child: PageHostScope(
-            host: _wide ? this : _NarrowHost(this),
-            child: HeroControllerScope.none(
-              child: Navigator(
-                key: _navKey,
-                onGenerateRoute: (_) => MaterialPageRoute(builder: (_) => const ShellHome()),
-                onDidRemovePage: (_) {},
-              ),
-            ),
-          ));
-          final pal = AppColors.of(context);
-          return ListenableBuilder(
-            listenable: Glass.backdropListenable,
-            builder: (context, _) {
-              final glassOn = Glass.enabled.value || Glass.hasCustomBg;
-              final contentBg = Glass.hasCustomBg
-                  ? Colors.transparent
-                  : (glassOn ? pal.bg.withValues(alpha: 0.78) : pal.bg);
-              final shell = Scaffold(
-                key: _scaffold,
-                backgroundColor: glassOn ? Colors.transparent : pal.bg,
-                drawer: _wide
-                    ? null
-                    : Drawer(
-                        backgroundColor: glassOn ? Colors.transparent : pal.sidebar,
-                        child: Frosted(color: pal.sidebar, child: sidebar),
+            final Widget home;
+            if (_wide) {
+              home = MotionSwitch(
+                child: pageId == null
+                    ? HomePage(
+                        key: const ValueKey('inbox'),
+                        embedded: true,
+                        onMenu: _sidebarCollapsed ? toggleSidebar : null,
+                      )
+                    : PageScreen(
+                        key: ValueKey('page-$pageId'),
+                        pageId: pageId,
+                        onMenu: _sidebarCollapsed ? toggleSidebar : null,
                       ),
-                body: Column(children: [
-                  Expanded(
-                    child: showSidebar
-                        ? Row(children: [
-                            SizedBox(
-                              width: Sizes.sidebarWidth,
-                              child: Frosted(
-                                color: pal.sidebar,
-                                border: Border(right: BorderSide(color: pal.separator)),
-                                child: sidebar,
-                              ),
-                            ),
-                            Expanded(
-                              child: ColoredBox(
-                                color: contentBg,
-                                child: _RebuildingHome(home: home, navKey: _navKey, child: content),
-                              ),
-                            ),
-                          ])
-                        : ColoredBox(
-                            color: contentBg,
-                            child: _RebuildingHome(home: home, navKey: _navKey, child: content),
-                          ),
-                  ),
-                  TransferStrip(onOpen: _transfers),
-                ]),
               );
-              return GlassBackdrop(child: shell);
-            },
-          );
-        }),
+            } else {
+              home = HomePage(onMenu: () => _scaffold.currentState?.openDrawer());
+            }
+            // 内容区使用嵌套 Navigator，设置/文件夹/旧笔记等页面在内容区打开
+            final content = FileDropZone(
+              child: PageHostScope(
+                host: _wide ? this : _NarrowHost(this),
+                child: HeroControllerScope.none(
+                  child: Navigator(
+                    key: _navKey,
+                    onGenerateRoute: (_) => MaterialPageRoute(builder: (_) => const ShellHome()),
+                    onDidRemovePage: (_) {},
+                  ),
+                ),
+              ),
+            );
+            final pal = AppColors.of(context);
+            return ListenableBuilder(
+              listenable: Glass.backdropListenable,
+              builder: (context, _) {
+                final glassOn = Glass.enabled.value || Glass.hasCustomBg;
+                // 开启液态玻璃或自定义壁纸时不再覆盖一层灰蒙蒙的 78% 遮罩，让环境光场与壁纸真正透过液态玻璃折射
+                final contentBg = glassOn ? Colors.transparent : pal.bg;
+                final narrowBody = ColoredBox(
+                  color: contentBg,
+                  child: _RebuildingHome(home: home, navKey: _navKey, child: content),
+                );
+                final shell = Scaffold(
+                  key: _scaffold,
+                  backgroundColor: glassOn ? Colors.transparent : pal.bg,
+                  // 禁用 Flutter 默认的 20dp 边缘拖出抽屉，彻底避免与 Android 系统左右边缘返回手势冲突
+                  drawerEnableOpenDragGesture: false,
+                  drawer: _wide
+                      ? null
+                      : Drawer(
+                          backgroundColor: glassOn ? Colors.transparent : pal.sidebar,
+                          elevation: glassOn ? 0 : 16,
+                          shape: const RoundedRectangleBorder(
+                            borderRadius: BorderRadius.horizontal(right: Radius.circular(AppRadius.xl)),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: const BorderRadius.horizontal(right: Radius.circular(AppRadius.xl)),
+                            child: Frosted(
+                              color: pal.sidebar,
+                              border: Border(right: BorderSide(color: pal.separator)),
+                              child: sidebar,
+                            ),
+                          ),
+                        ),
+                  body: Column(children: [
+                    Expanded(
+                      child: showSidebar
+                          ? Row(children: [
+                              SizedBox(
+                                width: Sizes.sidebarWidth,
+                                child: Frosted(
+                                  color: pal.sidebar,
+                                  border: Border(right: BorderSide(color: pal.separator)),
+                                  child: sidebar,
+                                ),
+                              ),
+                              Expanded(
+                                child: ColoredBox(
+                                  color: contentBg,
+                                  child: _RebuildingHome(home: home, navKey: _navKey, child: content),
+                                ),
+                              ),
+                            ])
+                          : (!_wide
+                              ? _SafeZoneDrawerGesture(
+                                  canOpen: () => !(_navKey.currentState?.canPop() ?? false) && !(_scaffold.currentState?.isDrawerOpen ?? false),
+                                  onOpenDrawer: () {
+                                    HapticFeedback.selectionClick();
+                                    _scaffold.currentState?.openDrawer();
+                                  },
+                                  child: narrowBody,
+                                )
+                              : narrowBody),
+                    ),
+                    TransferStrip(onOpen: _transfers),
+                  ]),
+                );
+                return GlassBackdrop(child: shell);
+              },
+            );
+          }),
+        ),
       ),
-    ),
+    );
+  }
+}
+
+/// 窄屏（Android / iOS）安全区右滑呼出侧边栏手势：
+/// 避开左右各 44dp 的系统级边缘返回区域，仅在屏幕中部水平右滑时触发抽屉，不与系统返回冲突。
+class _SafeZoneDrawerGesture extends StatefulWidget {
+  final bool Function() canOpen;
+  final VoidCallback onOpenDrawer;
+  final Widget child;
+  const _SafeZoneDrawerGesture({
+    required this.canOpen,
+    required this.onOpenDrawer,
+    required this.child,
+  });
+
+  @override
+  State<_SafeZoneDrawerGesture> createState() => _SafeZoneDrawerGestureState();
+}
+
+class _SafeZoneDrawerGestureState extends State<_SafeZoneDrawerGesture> {
+  static const _edgeSafeZone = 44.0;
+  bool _tracking = false;
+  double _dx = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onHorizontalDragStart: (d) {
+        final w = MediaQuery.sizeOf(context).width;
+        final x = d.globalPosition.dx;
+        _tracking = widget.canOpen() && x >= _edgeSafeZone && x <= w - _edgeSafeZone;
+        _dx = 0;
+      },
+      onHorizontalDragUpdate: (d) {
+        if (!_tracking) return;
+        _dx += d.delta.dx;
+        if (_dx < -18) {
+          // 用户向左滑（例如左滑卡片删除），立刻放弃抽屉追踪
+          _tracking = false;
+        }
+      },
+      onHorizontalDragEnd: (d) {
+        if (!_tracking) return;
+        _tracking = false;
+        final vx = d.primaryVelocity ?? 0;
+        if (_dx > 52 || (vx > 380 && _dx > 16)) {
+          widget.onOpenDrawer();
+        }
+      },
+      onHorizontalDragCancel: () {
+        _tracking = false;
+        _dx = 0;
+      },
+      child: widget.child,
     );
   }
 }

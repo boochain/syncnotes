@@ -1,4 +1,4 @@
-# SyncNotes 服务器一键管理与救援脚本（Windows PowerShell）
+﻿# SyncNotes 服务器一键管理与救援脚本（Windows PowerShell）
 #
 # 用法（在管理员或普通 PowerShell 中运行）：
 #   powershell -ExecutionPolicy Bypass -File .\syncnotes-server.ps1 [命令] [参数]

@@ -138,4 +138,39 @@ void main() {
       expect(got, data);
     }
   });
+
+  test('resumable chunked upload and range download roundtrip', () async {
+    if (bin == null) {
+      markTestSkipped('SYNCNOTES_SERVER_BIN not set');
+      return;
+    }
+    final api = AuthApi();
+    final login = await api.login(addr, 'bill', 'pass1234', 'files-resume');
+    // 4.5 MiB triggers 4 MiB resumable chunked upload (put_init -> put_part x2 -> put_finish)
+    final big = List<int>.generate(4 * 1024 * 1024 + 512 * 1024, (i) => (i * 31) & 255);
+    final up = await api
+        .putFile(server: addr, token: login.token, name: 'resume.bin', bytes: big, total: big.length)
+        .timeout(const Duration(seconds: 40));
+    expect(up.sha256.length, 64);
+    expect(up.size, big.length);
+
+    // Verify range resume download starting at 1 MiB offset
+    const offset = 1024 * 1024;
+    final tail = <int>[];
+    var headerOffset = -1;
+    await api.downloadStream(
+      addr,
+      login.token,
+      up.id,
+      (plain) async => tail.addAll(plain),
+      offset: offset,
+      onHeader: (total, sha, serverOffset) {
+        expect(total, big.length);
+        expect(sha, up.sha256);
+        headerOffset = serverOffset;
+      },
+    ).timeout(const Duration(seconds: 40));
+    expect(headerOffset, offset);
+    expect(tail, big.sublist(offset));
+  });
 }

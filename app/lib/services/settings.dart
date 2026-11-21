@@ -60,6 +60,10 @@ class Settings {
     return forgotten.any((e) => _sameServer(e, raw));
   }
 
+  /// 收件箱视图模式：'grid'（模拟便利贴液态玻璃卡片） / 'list'（紧凑单列列表）
+  String get inboxViewMode => prefs.getString('inbox_view_mode') ?? 'grid';
+  set inboxViewMode(String v) => prefs.setString('inbox_view_mode', v == 'list' ? 'list' : 'grid');
+
   /// default / sea / dusk / paper / ink
   String get bgPreset => prefs.getString('bg_preset') ?? 'default';
   set bgPreset(String v) => prefs.setString('bg_preset', v);
@@ -84,21 +88,21 @@ class Settings {
 
   set bgImageDim(double v) => prefs.setDouble('bg_image_dim', v < 0.0 ? 0.0 : (v > 0.88 ? 0.88 : v));
 
-  /// 浮层玻璃的不透明度。越小越透。
+  /// 浮层玻璃的不透明度（0.22 – 0.88，默认 0.42）。越小越通透。
   double get glassOpacity {
     final v = prefs.getDouble('glass_opacity');
-    if (v == null) return 0.55;
-    if (v < 0.35) return 0.35;
-    if (v > 0.92) return 0.92;
+    if (v == null) return 0.42;
+    if (v < 0.22) return 0.22;
+    if (v > 0.88) return 0.88;
     return v;
   }
 
-  set glassOpacity(double v) => prefs.setDouble('glass_opacity', v < 0.35 ? 0.35 : (v > 0.92 ? 0.92 : v));
+  set glassOpacity(double v) => prefs.setDouble('glass_opacity', v < 0.22 ? 0.22 : (v > 0.88 ? 0.88 : v));
 
-  /// 浮层玻璃折射率（1.00 – 1.12）。
+  /// 浮层玻璃折射率（1.00 – 1.12，默认 1.06）。
   double get glassRefraction {
     final v = prefs.getDouble('glass_refraction');
-    if (v == null) return 1.04;
+    if (v == null) return 1.06;
     if (v < 1.00) return 1.00;
     if (v > 1.12) return 1.12;
     return v;

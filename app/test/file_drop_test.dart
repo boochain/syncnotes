@@ -23,10 +23,12 @@ class _FakeApi extends AuthApi {
     required String token,
     required String name,
     List<int>? bytes,
+    String? filePath,
     Stream<List<int>>? source,
     int total = 0,
     void Function(int done, int total)? onProgress,
     void Function()? onWaiting,
+    void Function(String? status)? onStatus,
     bool Function()? isCanceled,
     void Function(void Function() abort)? onCancelReady,
   }) async {

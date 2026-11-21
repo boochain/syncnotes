@@ -5,12 +5,13 @@ import '../app_scope.dart';
 import '../models/block.dart';
 import '../pages/doc.dart';
 import '../sync/sync_client.dart';
+import 'context_menu.dart';
 import 'ds.dart';
 import 'home_page.dart' show ConnectionBadge;
 import 'tokens.dart';
 
 /// 侧边栏（布局照 AppFlowy / Notion + Apple HIG 材质）：顶部用户行 44（含一键日夜切换与侧边栏收起），导航与页面树每行 32，分组标题行 32；
-/// 选中 / 悬停都用中性灰叠加，不用强调色铺底。
+/// 选中 / 悬停都用中性灰叠加，不用强调色铺底；桌面端页面树支持原生右键上下文菜单。
 class Sidebar extends StatelessWidget {
   final String? selectedPage; // null = 收件箱
   final bool inboxSelected;
@@ -256,6 +257,7 @@ class SidebarRow extends StatefulWidget {
   final Widget? trailing;
   final Widget? hoverTrailing;
   final VoidCallback onTap;
+  final GestureTapUpCallback? onSecondaryTapUp;
   final double indent;
   final Widget? prefix; // 展开箭头
   final Color? highlight;
@@ -267,6 +269,7 @@ class SidebarRow extends StatefulWidget {
     this.trailing,
     this.hoverTrailing,
     required this.onTap,
+    this.onSecondaryTapUp,
     this.indent = 0,
     this.prefix,
     this.highlight,
@@ -284,11 +287,14 @@ class _SidebarRowState extends State<SidebarRow> {
     final touch = Theme.of(context).platform == TargetPlatform.android || Theme.of(context).platform == TargetPlatform.iOS;
     final trailing = (_hover || touch) && widget.hoverTrailing != null ? widget.hoverTrailing : widget.trailing;
     return MouseRegion(
-      onEnter: (e) { if (isMouseHover(e)) setState(() => _hover = true); },
+      onEnter: (e) {
+        if (isMouseHover(e)) setState(() => _hover = true);
+      },
       onExit: (_) => setState(() => _hover = false),
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: widget.onTap,
+        onSecondaryTapUp: widget.onSecondaryTapUp,
         child: AnimatedContainer(
           duration: Motion.short2,
           height: Sizes.control,
@@ -345,7 +351,7 @@ String createPage(SyncClient sync, String? parent, {String title = ''}) => sync
     )
     .id;
 
-/// 页面树节点：展开 / 收起、悬停新建子页面、拖动排序（拖到行的上 / 下沿 → 前 / 后；中间 → 成为子页面）
+/// 页面树节点：展开 / 收起、悬停新建子页面、桌面右键上下文菜单、拖动排序
 class PageTreeTile extends StatefulWidget {
   final Block page;
   final int depth;
@@ -392,6 +398,29 @@ class _PageTreeTileState extends State<PageTreeTile> {
     movePage(sync, id, p.parentId, order);
   }
 
+  Future<void> _renamePage(BuildContext context, SyncClient sync) async {
+    final ctrl = TextEditingController(text: widget.page.title);
+    final next = await showDialog<String>(
+      context: context,
+      builder: (d) => AlertDialog(
+        title: const Text('重命名页面'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: '页面标题'),
+          onSubmitted: (v) => Navigator.pop(d, v.trim()),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(d), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(d, ctrl.text.trim()), child: const Text('确定')),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (next == null) return;
+    sync.update(widget.page.id, title: next);
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = AppScope.of(context);
@@ -400,7 +429,7 @@ class _PageTreeTileState extends State<PageTreeTile> {
     final sel = widget.selected == widget.page.id;
     final icon = (widget.page.payload['icon'] ?? 'doc') as String;
     final title = widget.page.title.isEmpty ? '无标题' : widget.page.title;
-    final indent = 16.0 * widget.depth; // AppFlowy HomeSpaceViewSizes.leftPadding 16
+    final indent = 16.0 * widget.depth;
     final row = SidebarRow(
       key: ValueKey('tree-${widget.page.id}'),
       indent: indent - Gap.xs,
@@ -432,6 +461,49 @@ class _PageTreeTileState extends State<PageTreeTile> {
         },
       ),
       onTap: () => widget.onSelect(widget.page.id),
+      onSecondaryTapUp: (d) => showGlassContextMenu(
+        context,
+        anchor: d.globalPosition,
+        header: title,
+        items: [
+          ContextMenuItem(
+            icon: CupertinoIcons.doc_text,
+            label: '打开页面',
+            onTap: () => widget.onSelect(widget.page.id),
+          ),
+          ContextMenuItem(
+            icon: CupertinoIcons.add,
+            label: '新建子页面',
+            onTap: () {
+              final id = createPage(s.sync, widget.page.id);
+              setState(() => _expanded = true);
+              widget.onSelect(id);
+            },
+          ),
+          ContextMenuItem(
+            icon: CupertinoIcons.pencil,
+            label: '重命名',
+            onTap: () => _renamePage(context, s.sync),
+          ),
+          const ContextMenuDivider(),
+          ContextMenuItem(
+            icon: CupertinoIcons.trash,
+            label: '移入回收站',
+            danger: true,
+            onTap: () {
+              final messenger = ScaffoldMessenger.maybeOf(context);
+              final ids = s.sync.delete(widget.page.id);
+              showToast(
+                context,
+                '已移到回收站：“$title”',
+                messenger: messenger,
+                actionLabel: '撤销',
+                onAction: () => s.sync.restoreAll(ids),
+              );
+            },
+          ),
+        ],
+      ),
     );
     final line = Container(height: 2, margin: EdgeInsets.only(left: Gap.m + indent + 20, right: Gap.m), color: c.accent);
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -455,7 +527,7 @@ class _PageTreeTileState extends State<PageTreeTile> {
             child: Container(
               height: Sizes.control,
               padding: const EdgeInsets.symmetric(horizontal: Gap.m),
-              decoration: BoxDecoration(color: c.elevated, borderRadius: BorderRadius.circular(AppRadius.s), border: Border.all(color: c.separator)),
+              decoration: BoxDecoration(color: c.elevated.withValues(alpha: 0.88), borderRadius: BorderRadius.circular(AppRadius.m), border: Border.all(color: c.separator)),
               child: Row(mainAxisSize: MainAxisSize.min, children: [
                 Emoji(icon, size: Sizes.iconMd),
                 const SizedBox(width: Gap.m),

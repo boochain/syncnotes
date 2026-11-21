@@ -2,8 +2,6 @@ import 'dart:async';
 import 'dart:io';
 import '../ui/custom_icons.dart';
 import '../ui/ds.dart';
-import '../ui/motion.dart';
-import '../ui/tokens.dart';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
@@ -20,7 +18,9 @@ import '../pages/inline_md.dart';
 import '../pages/page_nav.dart';
 import '../models/block.dart';
 import '../ui/folder_page.dart';
+import '../ui/motion.dart';
 import '../ui/note_editor_page.dart';
+import '../ui/tokens.dart';
 import 'block_type.dart';
 
 /// 清理来自其他设备的文件名：去掉路径分隔符和 Windows 非法字符，防止写到下载目录之外。

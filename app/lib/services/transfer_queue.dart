@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:cryptography/cryptography.dart';
 import 'package:flutter/foundation.dart';
 
 import 'auth_api.dart';
@@ -44,6 +45,8 @@ class TransferJob {
   double speed = 0;
   TransferStatus status = TransferStatus.queued;
   String? error;
+  /// 运行中的实时状态提示（如"网络波动，正在续传分片…" / "正在校验文件完整性…"），不覆盖失败原因。
+  String? statusNote;
   bool cancelRequested = false;
   /// 字节已经交给网络，在等服务器确认。这时候不能显示 100%。
   bool confirming = false;
@@ -59,8 +62,9 @@ class TransferJob {
 
 /// 内存里的双通道上传/下载队列：
 /// - 上传与下载独立并发（1 路上传 + 2 路下载），大文件上传不阻塞图片预览与附件下载；
-/// - 本地文件路径直接通过 stat 获取长度，避免全量预读；
-/// - EMA 速率平滑 + 网络抖动自动静默重试（最多 2 次）+ 取消即时断连。
+/// - 本地文件路径直接通过 stat 获取长度并自动启用 4 MiB 分片断点续传；
+/// - 大文件下载断连/超时自动从 `.part` 断点续传并做端到端 SHA-256 校验；
+/// - EMA 速率平滑 + 网络抖动自动静默续传 + 取消即时断连。
 class TransferQueue extends ChangeNotifier {
   TransferQueue({required this.api, required this.settings});
 
@@ -68,7 +72,8 @@ class TransferQueue extends ChangeNotifier {
   final Settings settings;
   static const maxUploadConcurrent = 1;
   static const maxDownloadConcurrent = 2;
-  static const maxAutoRetries = 2;
+  static const maxAutoRetries = 3;
+  static const _maxDownloadResumeRetries = 8;
 
   /// 字节进度。侧边栏不听这个，只听任务状态。
   final ValueNotifier<int> progress = ValueNotifier<int>(0);
@@ -170,6 +175,7 @@ class TransferQueue extends ChangeNotifier {
     if (j.status == TransferStatus.queued) {
       j.status = TransferStatus.canceled;
       j.error = '已取消';
+      j.statusNote = null;
       if (!j.completer.isCompleted) j.completer.completeError(AuthException('已取消'));
       notifyListeners();
       return;
@@ -190,6 +196,7 @@ class TransferQueue extends ChangeNotifier {
     j.done = 0;
     j.speed = 0;
     j.error = null;
+    j.statusNote = null;
     j.attempts = 0;
     j.cancelRequested = false;
     j.confirming = false;
@@ -269,6 +276,9 @@ class TransferQueue extends ChangeNotifier {
         final inst = db * 1000 / dt;
         // EMA 指数滑动平均，消除速率与 ETA 抖动
         j.speed = j.speed <= 0 ? inst : (j.speed * 0.65 + inst * 0.35);
+      } else if (dt >= 2500) {
+        // 超过 2.5 秒无新字节，让速率平滑回落避免误导
+        j.speed = j.speed * 0.5;
       }
       j.sampleAt = now;
       j.sampleDone = done;
@@ -280,16 +290,148 @@ class TransferQueue extends ChangeNotifier {
 
   static bool _isTransientError(Object e) {
     final s = '$e'.toLowerCase();
-    if (s.contains('已取消') || s.contains('未登录') || s.contains('413') || s.contains('文件过大') || s.contains('文件不存在') || s.contains('无效令牌') || s.contains('校验失败')) {
+    if (s.contains('已取消') ||
+        s.contains('未登录') ||
+        s.contains('413') ||
+        s.contains('文件过大') ||
+        s.contains('文件不存在') ||
+        s.contains('无效令牌') ||
+        s.contains('校验失败')) {
       return false;
     }
-    return s.contains('连接') || s.contains('timeout') || s.contains('超时') || s.contains('reset') || s.contains('broken pipe') || s.contains('没有回复');
+    return s.contains('连接') ||
+        s.contains('timeout') ||
+        s.contains('超时') ||
+        s.contains('reset') ||
+        s.contains('broken pipe') ||
+        s.contains('没有回复') ||
+        s.contains('socket');
+  }
+
+  static String _hex(List<int> b) => b.map((x) => x.toRadixString(16).padLeft(2, '0')).join();
+
+  Future<String> _sha256File(File file) async {
+    final sink = Sha256().toSync().newHashSink();
+    var chunks = 0;
+    await for (final part in file.openRead()) {
+      sink.add(part);
+      chunks++;
+      if (chunks % 16 == 0) {
+        await Future<void>.delayed(Duration.zero);
+      }
+    }
+    sink.close();
+    return _hex(sink.hashSync().bytes);
+  }
+
+  Future<void> _downloadToFileResumable(TransferJob j, String server, String token) async {
+    final dest = j.dest!;
+    final part = File('$dest.part');
+    await part.parent.create(recursive: true);
+
+    var downloaded = 0;
+    var serverTotal = j.total;
+    var serverSha = '';
+    var usedResume = false;
+    var consecutiveErrors = 0;
+
+    final raf = await part.open(mode: FileMode.write);
+    try {
+      while (true) {
+        if (j.cancelRequested) throw AuthException('已取消');
+        final startOffset = downloaded;
+        await raf.setPosition(startOffset);
+        var wroteInAttempt = 0;
+        try {
+          await api.downloadStream(
+            server,
+            token,
+            j.fileId!,
+            (plain) async {
+              await raf.writeFrom(plain);
+              downloaded += plain.length;
+              wroteInAttempt += plain.length;
+            },
+            offset: startOffset,
+            onHeader: (total, sha, serverOffset) {
+              if (total > 0) serverTotal = total;
+              if (sha.isNotEmpty) serverSha = sha;
+              // 若旧版服务器忽略了 offset 并从 0 开始下发，则重置本地写入指针到 0
+              if (startOffset > 0 && serverOffset == 0) {
+                downloaded = 0;
+                raf.setPositionSync(0);
+                raf.truncateSync(0);
+              }
+            },
+            onProgress: (d, t) {
+              if (j.statusNote != null && wroteInAttempt > 0) {
+                j.statusNote = null;
+              }
+              _progress(j, d, t);
+            },
+            isCanceled: () => j.cancelRequested,
+            expectSha256: startOffset == 0 ? j.sha256 : null,
+            onCancelReady: (abort) => j.abortHook = abort,
+          );
+          break;
+        } catch (e) {
+          j.abortHook = null;
+          if (j.cancelRequested || !_isTransientError(e)) rethrow;
+          if (wroteInAttempt > 0) {
+            // 本轮有实际字节推进，重置连续失败计数，允许长传输多次抗抖动续传
+            consecutiveErrors = 0;
+          }
+          consecutiveErrors++;
+          if (consecutiveErrors > _maxDownloadResumeRetries) rethrow;
+          usedResume = true;
+          j.speed = 0;
+          j.sampleAt = DateTime.now();
+          j.sampleDone = downloaded;
+          j.statusNote = '网络波动，正在断点续传 ($consecutiveErrors/$_maxDownloadResumeRetries)…';
+          progress.value++;
+          final waitSec = consecutiveErrors.clamp(1, 5);
+          await Future<void>.delayed(Duration(seconds: waitSec));
+        }
+      }
+      await raf.flush();
+    } finally {
+      await raf.close();
+    }
+
+    if (j.cancelRequested) throw AuthException('已取消');
+    if (serverTotal > 0 && downloaded != serverTotal) {
+      throw AuthException('文件长度不符（$downloaded / $serverTotal）');
+    }
+
+    // 触发过断点续传时，对拼装完成的 `.part` 做一次端到端 SHA-256 校验
+    final expect = (j.sha256 != null && j.sha256!.isNotEmpty) ? j.sha256! : serverSha;
+    if (usedResume && expect.isNotEmpty) {
+      j.confirming = true;
+      j.statusNote = '正在校验文件完整性…';
+      progress.value++;
+      final actual = await _sha256File(part);
+      if (actual != expect) {
+        throw AuthException('文件校验失败');
+      }
+    }
+
+    final finalFile = File(dest);
+    if (await finalFile.exists()) await finalFile.delete();
+    await part.rename(dest);
+    j.confirming = false;
+    j.statusNote = null;
+    j.done = downloaded;
+    if (serverTotal > 0) j.total = serverTotal;
+    j.status = TransferStatus.done;
+    j.speed = 0;
+    if (!j.completer.isCompleted) j.completer.complete(dest);
   }
 
   Future<void> _runOnce(TransferJob j, String server, String token) async {
     j.done = 0;
     j.speed = 0;
     j.confirming = false;
+    j.statusNote = null;
     j.sampleAt = DateTime.now();
     j.sampleDone = 0;
     j.abortHook = null;
@@ -317,11 +459,21 @@ class TransferQueue extends ChangeNotifier {
         token: token,
         name: j.name,
         bytes: j.bytes,
-        source: j.bytes != null ? null : (j.open?.call() ?? (j.path == null ? null : File(j.path!).openRead())),
+        filePath: j.path,
+        source: (j.bytes != null || j.path != null) ? null : j.open?.call(),
         total: j.total,
         onProgress: (d, t) => _progress(j, d, t),
         onWaiting: () {
           j.confirming = true;
+          progress.value++;
+        },
+        onStatus: (note) {
+          j.statusNote = note;
+          if (note != null) {
+            j.speed = 0;
+            j.sampleAt = DateTime.now();
+            j.sampleDone = j.done;
+          }
           progress.value++;
         },
         isCanceled: () => j.cancelRequested,
@@ -332,6 +484,7 @@ class TransferQueue extends ChangeNotifier {
       j.done = up.size;
       j.total = up.size;
       j.confirming = false;
+      j.statusNote = null;
       j.status = TransferStatus.done;
       j.speed = 0;
       try {
@@ -354,37 +507,12 @@ class TransferQueue extends ChangeNotifier {
       );
       j.mem = b.takeBytes();
       j.done = j.mem!.length;
+      j.statusNote = null;
       j.status = TransferStatus.done;
       j.speed = 0;
       if (!j.completer.isCompleted) j.completer.complete('');
     } else {
-      final dest = j.dest!;
-      final part = File('$dest.part');
-      await part.parent.create(recursive: true);
-      final raf = await part.open(mode: FileMode.write);
-      try {
-        await api.downloadStream(
-          server,
-          token,
-          j.fileId!,
-          (plain) async {
-            await raf.writeFrom(plain);
-          },
-          onProgress: (d, t) => _progress(j, d, t),
-          isCanceled: () => j.cancelRequested,
-          expectSha256: j.sha256,
-          onCancelReady: (abort) => j.abortHook = abort,
-        );
-      } finally {
-        await raf.close();
-      }
-      if (j.cancelRequested) throw AuthException('已取消');
-      final finalFile = File(dest);
-      if (await finalFile.exists()) await finalFile.delete();
-      await part.rename(dest);
-      j.status = TransferStatus.done;
-      j.speed = 0;
-      if (!j.completer.isCompleted) j.completer.complete(dest);
+      await _downloadToFileResumable(j, server, token);
     }
   }
 
@@ -405,17 +533,19 @@ class TransferQueue extends ChangeNotifier {
             rethrow;
           }
           j.attempts++;
-          j.error = '网络波动，正在自动重试 (${j.attempts}/$maxAutoRetries)…';
+          j.statusNote = '网络波动，正在自动重试 (${j.attempts}/$maxAutoRetries)…';
+          j.speed = 0;
           progress.value++;
           await Future<void>.delayed(Duration(seconds: j.attempts));
           if (j.cancelRequested) throw AuthException('已取消');
-          j.error = null;
+          j.statusNote = null;
         }
       }
     } catch (e) {
       final canceled = j.cancelRequested || '$e'.contains('已取消');
       j.status = canceled ? TransferStatus.canceled : TransferStatus.failed;
       j.confirming = false;
+      j.statusNote = null;
       j.error = canceled ? '已取消' : '$e';
       j.speed = 0;
       j.abortHook = null;

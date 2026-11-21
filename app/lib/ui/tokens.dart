@@ -81,6 +81,7 @@ abstract final class FontTokens {
   /// CJK 回退链：系统自带（微软雅黑 / 苹方）→ 免费开源/免费商用字体
   /// （HarmonyOS Sans SC、MiSans、Noto Sans CJK SC / 思源黑体）。
   static const cjkFallback = <String>[
+    'Segoe UI',
     'Microsoft YaHei UI',
     'PingFang SC',
     'HarmonyOS Sans SC',

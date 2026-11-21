@@ -17,6 +17,8 @@ G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
 
 static void method_call_cb(FlMethodChannel* channel, FlMethodCall* method_call,
                            gpointer user_data) {
+  (void)channel;
+  (void)user_data;
   const gchar* method = fl_method_call_get_name(method_call);
   if (g_strcmp0(method, "setDarkTitleBar") == 0) {
     FlValue* args = fl_method_call_get_args(method_call);

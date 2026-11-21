@@ -9,6 +9,7 @@
 
 #include "flutter/generated_plugin_registrant.h"
 #include "resource.h"
+#include "utils.h"
 
 #ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
 #define DWMWA_USE_IMMERSIVE_DARK_MODE 20
@@ -49,8 +50,11 @@ void DisableBackgroundPowerThrottling() {
 #if defined(PROCESS_POWER_THROTTLING_CURRENT_VERSION)
   PROCESS_POWER_THROTTLING_STATE state{};
   state.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
-  state.ControlMask = PROCESS_POWER_THROTTLING_EXECUTION_SPEED |
-                      PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION;
+  state.ControlMask = PROCESS_POWER_THROTTLING_EXECUTION_SPEED
+#if defined(PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION)
+                      | PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION
+#endif
+      ;
   state.StateMask = 0;
   SetProcessInformation(GetCurrentProcess(), ProcessPowerThrottling, &state,
                         sizeof(state));
@@ -60,7 +64,7 @@ void DisableBackgroundPowerThrottling() {
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {
-  for (const auto& arg : project_.dart_entrypoint_arguments()) {
+  for (const auto& arg : GetCommandLineArguments()) {
     if (arg == "--hidden") {
       start_hidden_ = true;
       hidden_to_tray_ = true;
