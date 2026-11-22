@@ -131,6 +131,10 @@ class Settings {
   bool get liquidGlass => prefs.getBool('liquid_glass') ?? true;
   set liquidGlass(bool v) => prefs.setBool('liquid_glass', v);
 
+  /// 流体动态背景（多光晕实时流动折射）。默认开。
+  bool get fluidBackground => prefs.getBool('fluid_background') ?? true;
+  set fluidBackground(bool v) => prefs.setBool('fluid_background', v);
+
   bool get autoStart => prefs.getBool('auto_start') ?? false;
   set autoStart(bool v) => prefs.setBool('auto_start', v);
 

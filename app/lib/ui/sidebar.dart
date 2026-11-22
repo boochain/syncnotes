@@ -7,6 +7,7 @@ import '../pages/doc.dart';
 import '../sync/sync_client.dart';
 import 'context_menu.dart';
 import 'ds.dart';
+import 'glass.dart';
 import 'home_page.dart' show ConnectionBadge;
 import 'tokens.dart';
 
@@ -56,51 +57,107 @@ class Sidebar extends StatelessWidget {
             return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               SizedBox(
                 key: const Key('sidebarHeader'),
-                height: Sizes.bar,
+                height: Glass.surfaceTranslucent ? 54 : Sizes.bar,
                 child: Padding(
-                  padding: const EdgeInsets.only(left: Gap.xl, right: Gap.l),
+                  padding: const EdgeInsets.only(left: Gap.l, right: Gap.m),
                   child: Row(children: [
                     Container(
-                      width: Sizes.iconMd,
-                      height: Sizes.iconMd,
+                      width: 30,
+                      height: 30,
                       alignment: Alignment.center,
-                      decoration: BoxDecoration(color: c.accent, borderRadius: BorderRadius.circular(AppRadius.s)),
-                      child: Text(name.isEmpty ? '?' : name.characters.first.toUpperCase(),
-                          textScaler: TextScaler.noScaling,
-                          style: const TextStyle(fontSize: 12, height: 1.0, fontWeight: FontWeight.w600, color: Colors.white)),
+                      decoration: BoxDecoration(
+                        color: c.text2.withValues(alpha: 0.20),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: c.separator.withValues(alpha: 0.6)),
+                      ),
+                      child: name.isEmpty
+                          ? Icon(CupertinoIcons.person_fill, size: 15, color: c.text2)
+                          : Text(
+                              name.characters.first.toUpperCase(),
+                              textScaler: TextScaler.noScaling,
+                              style: TextStyle(fontSize: 13, height: 1.0, fontWeight: FontWeight.w600, color: c.text),
+                            ),
                     ),
                     const SizedBox(width: Gap.m),
-                    Expanded(child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: tt.labelLarge)),
-                    const SizedBox(width: Gap.xs),
-                    ConnectionBadge(sync: s.sync, dotOnly: true),
-                    const SizedBox(width: Gap.xs),
+                    Expanded(
+                      child: MediaQuery.withClampedTextScaling(
+                        maxScaleFactor: 1.2,
+                        child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            name.isEmpty ? 'Account' : name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: tt.labelLarge?.copyWith(fontSize: 13.5, fontWeight: FontWeight.w600, height: 1.15),
+                          ),
+                          const SizedBox(height: 1),
+                          Row(
+                            children: [
+                              Flexible(child: ConnectionBadge(sync: s.sync, dotOnly: true)),
+                              const SizedBox(width: 2),
+                              Flexible(
+                                child: Text(
+                                  'SyncNotes',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: tt.bodySmall?.copyWith(fontSize: 11, color: c.text3, height: 1.1),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                        ),
+                      ),
+                    ),
                     ValueListenableBuilder<ThemeMode>(
                       valueListenable: s.themeMode,
                       builder: (context, mode, _) {
                         final dark = Theme.of(context).brightness == Brightness.dark;
-                        final icon = switch (mode) {
-                          ThemeMode.light => CupertinoIcons.sun_max_fill,
-                          ThemeMode.dark => CupertinoIcons.moon_stars_fill,
-                          ThemeMode.system => dark ? CupertinoIcons.moon_circle : CupertinoIcons.sun_max,
-                        };
-                        final label = switch (mode) {
-                          ThemeMode.light => '浅色模式（点击切换深色）',
-                          ThemeMode.dark => '深色模式（点击切换跟随系统）',
-                          ThemeMode.system => '跟随系统（点击切换浅色）',
-                        };
-                        return SmallIconButton(
-                          key: const Key('sidebarThemeToggle'),
-                          tooltip: label,
-                          icon: icon,
-                          onPressed: () {
-                            final next = switch (mode) {
-                              ThemeMode.system => ThemeMode.light,
-                              ThemeMode.light => ThemeMode.dark,
-                              ThemeMode.dark => ThemeMode.system,
-                            };
-                            s.themeMode.value = next;
-                            s.settings.themeMode = next.name;
-                          },
+                        return Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Tooltip(
+                              message: '浅色模式',
+                              child: InkWell(
+                                key: const Key('sidebarThemeToggle'),
+                                borderRadius: BorderRadius.circular(AppRadius.xs),
+                                onTap: () {
+                                  final next = mode == ThemeMode.light ? ThemeMode.dark : ThemeMode.light;
+                                  s.themeMode.value = next;
+                                  s.settings.themeMode = next.name;
+                                },
+                                child: SizedBox.square(
+                                  dimension: 24,
+                                  child: Icon(
+                                    CupertinoIcons.sun_max_fill,
+                                    size: 14,
+                                    color: !dark ? c.text : c.text3,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Tooltip(
+                              message: '深色模式',
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(AppRadius.xs),
+                                onTap: () {
+                                  final next = mode == ThemeMode.dark ? ThemeMode.system : ThemeMode.dark;
+                                  s.themeMode.value = next;
+                                  s.settings.themeMode = next.name;
+                                },
+                                child: SizedBox.square(
+                                  dimension: 24,
+                                  child: Icon(
+                                    CupertinoIcons.moon_fill,
+                                    size: 13.5,
+                                    color: dark ? c.text : c.text3,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                         );
                       },
                     ),
@@ -116,16 +173,37 @@ class Sidebar extends StatelessWidget {
                   ]),
                 ),
               ),
-              SidebarRow(
-                key: const Key('sidebarSearch'),
-                leading: const Icon(CupertinoIcons.search),
-                label: '搜索',
-                trailing: Text('Ctrl K', maxLines: 1, style: tt.bodySmall?.copyWith(color: c.text3)),
-                onTap: onSearch,
+              // 概念图同款圆角毛玻璃搜索框胶囊
+              Padding(
+                padding: const EdgeInsets.fromLTRB(Gap.m, Gap.xs, Gap.m, Gap.m),
+                child: InkWell(
+                  key: const Key('sidebarSearch'),
+                  borderRadius: BorderRadius.circular(9),
+                  onTap: onSearch,
+                  child: Container(
+                    height: Sizes.control,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    decoration: BoxDecoration(
+                      color: c.fill.withValues(alpha: 0.72),
+                      borderRadius: BorderRadius.circular(9),
+                      border: Border.all(color: c.separator.withValues(alpha: 0.55), width: 0.8),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(CupertinoIcons.search, size: 13.5, color: c.text3),
+                        const SizedBox(width: 7),
+                        Expanded(
+                          child: Text('搜索', style: tt.bodySmall?.copyWith(color: c.text3, fontSize: 12.5)),
+                        ),
+                        Text('Ctrl K', maxLines: 1, style: tt.bodySmall?.copyWith(color: c.text3, fontSize: 10.5)),
+                      ],
+                    ),
+                  ),
+                ),
               ),
               SidebarRow(
                 key: const Key('sidebarInbox'),
-                leading: const Icon(CupertinoIcons.tray),
+                leading: Icon(CupertinoIcons.tray_fill, color: c.accent),
                 label: '收件箱',
                 selected: inboxSelected,
                 trailing: s.sync.unreadCount > 0 ? CountBadge(s.sync.unreadCount) : null,
@@ -133,7 +211,7 @@ class Sidebar extends StatelessWidget {
               ),
               SidebarRow(
                 key: const Key('sidebarSettings'),
-                leading: const Icon(CupertinoIcons.gear),
+                leading: Icon(CupertinoIcons.gear_alt_fill, color: c.accent),
                 label: '设置',
                 selected: settingsSelected,
                 onTap: onSettings,
@@ -141,7 +219,7 @@ class Sidebar extends StatelessWidget {
               if (onTrash != null)
                 SidebarRow(
                   key: const Key('sidebarTrash'),
-                  leading: const Icon(CupertinoIcons.trash),
+                  leading: Icon(CupertinoIcons.trash_fill, color: c.accent),
                   label: '回收站',
                   selected: trashSelected,
                   trailing: s.sync.trash.isNotEmpty
@@ -152,7 +230,7 @@ class Sidebar extends StatelessWidget {
               if (onTransfers != null)
                 SidebarRow(
                   key: const Key('sidebarTransfers'),
-                  leading: const Icon(CupertinoIcons.arrow_up_arrow_down),
+                  leading: Icon(CupertinoIcons.arrow_up_arrow_down, color: c.accent),
                   label: '传输',
                   selected: transfersSelected,
                   trailing: ListenableBuilder(

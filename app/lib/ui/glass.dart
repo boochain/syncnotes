@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/cupertino.dart';
@@ -10,23 +11,26 @@ import 'motion.dart';
 import 'theme.dart';
 import 'tokens.dart';
 
-/// 浮层与导航栏材质（基于开源 `liquid_glass_widgets` 实现 Apple HIG 液态玻璃效果）。
+/// 浮层与导航栏材质（基于 `liquid_glass_widgets` + Fresnel 双层镜面高光与色散折射边缘实现 Apple Liquid Glass）。
 ///
-/// 配备实时折射、高饱和度透光、顶部镜面高光光晕与分层阴影；
-/// 2.5x 及以上高分屏关闭重折射（避免同一页被采样出双影），仍保留强模糊与高光质感。
+/// 实时响应 `opacity`（玻璃透光与模糊强度）、`refraction`（折射厚度、镜面高光光斑与色散虹彩边）、
+/// `quality`（minimal / standard / premium 三档光学质感）以及 `fluidBg`（流体动态背景）。
 class Glass extends StatelessWidget {
   static bool useShader = true;
 
   /// 液态玻璃总开关。测试里默认关闭，避免着色器动画阻塞 pumpAndSettle。
   static final enabled = ValueNotifier<bool>(true);
 
-  /// 浮层不透明度（0.22 – 0.88，默认 0.42 让折射与背景层次清晰可见）。
+  /// 流体动态背景开关。默认开启，在真实运行时驱动柔和的流体极光网格。
+  static final fluidBg = ValueNotifier<bool>(true);
+
+  /// 浮层不透明度（0.22 – 0.88，默认 0.42 让流体光晕与折射层次清晰可见）。
   static final opacity = ValueNotifier<double>(0.42);
 
   /// 折射率（1.00 – 1.12，默认 1.06）。
   static final refraction = ValueNotifier<double>(1.06);
 
-  /// 着色器质量档位：standard（全平台轻量 2D 着色器）/ premium（高阶折射高光）/ minimal（纯 BackdropFilter）
+  /// 着色器质量档位：standard（全平台轻量 2D 着色器）/ premium（高阶双层色散折射高光）/ minimal（轻薄纯毛玻璃）
   static final quality = ValueNotifier<String>('standard');
 
   /// 背景色调预设：default / sea / dusk / paper / ink
@@ -38,8 +42,9 @@ class Glass extends StatelessWidget {
   /// 自定义背景图片之上的可读性遮罩浓度（0.00 – 0.88，默认 0.35）。
   static final bgDim = ValueNotifier<double>(0.35);
 
-  /// 合并监听液态玻璃与背景图片变化。
-  static Listenable get backdropListenable => Listenable.merge([enabled, preset, bgImage, bgDim, opacity]);
+  /// 合并监听所有液态玻璃光学参数与背景变化。
+  static Listenable get backdropListenable =>
+      Listenable.merge([enabled, fluidBg, preset, bgImage, bgDim, opacity, refraction, quality]);
 
   /// 是否设置了有效的自定义背景图片。
   static bool get hasCustomBg {
@@ -47,10 +52,10 @@ class Glass extends StatelessWidget {
     return p != null && p.isNotEmpty;
   }
 
-  /// 真实运行时且开启液态玻璃或自定义背景图时，允许内层 Scaffold 透出底层 GlassBackdrop 壁纸。
+  /// 真实运行时且开启液态玻璃或自定义背景图时，允许内层 Scaffold 透出底层 GlassBackdrop 流体光场/壁纸。
   static bool get surfaceTranslucent => useShader && (enabled.value || hasCustomBg);
 
-  /// 内层页面 Scaffold 背景色：开启液态玻璃或壁纸时透明（由 GlassBackdrop 统一绘制壁纸与光晕），测试或关闭时保持主题底色。
+  /// 内层页面 Scaffold 背景色：开启液态玻璃或壁纸时透明（由 GlassBackdrop 统一绘制），测试或关闭时保持主题底色。
   static Color? scaffoldBg(BuildContext context) => surfaceTranslucent ? Colors.transparent : null;
 
   /// 折射只在较低缩放比上打开。3.5x 上折射会复制出第二层画面。
@@ -60,6 +65,26 @@ class Glass extends StatelessWidget {
         'premium' => GlassQuality.premium,
         _ => GlassQuality.standard,
       };
+
+  /// 折射滑块归一化强度 0.0 – 1.0，供所有液态玻璃表面实时联动光学参数。
+  static double refractionStrength(double ior, String qName) {
+    final base = ((ior - 1.0) / 0.12).clamp(0.0, 1.0);
+    return switch (qName) {
+      'minimal' => base * 0.25,
+      'premium' => (base * 1.25 + 0.18).clamp(0.0, 1.0),
+      _ => base,
+    };
+  }
+
+  /// 动态模糊半径：随质量档位和透明度联动，保证肉眼清晰分辨。
+  static double blurSigmaFor(double alpha, String qName) {
+    final base = switch (qName) {
+      'minimal' => 14.0,
+      'premium' => 30.0,
+      _ => 22.0,
+    };
+    return (base + (1.0 - alpha) * 8.0).clamp(12.0, 36.0);
+  }
 
   final Widget child;
   final double radius;
@@ -85,138 +110,258 @@ class Glass extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<bool>(
-      valueListenable: enabled,
-      builder: (context, on, _) => ValueListenableBuilder<double>(
-        valueListenable: opacity,
-        builder: (context, alpha, _) => ValueListenableBuilder<double>(
-          valueListenable: refraction,
-          builder: (context, ior, _) => ValueListenableBuilder<String>(
-            valueListenable: quality,
-            builder: (context, qName, _) {
-              final inner = padding == null ? child : Padding(padding: padding!, child: child);
-              final deco = floatingDecoration(context, radius: radius);
-              final c = AppColors.of(context);
-              final dpr = MediaQuery.devicePixelRatioOf(context);
-              final bend = refractsAt(dpr);
-              final dark = Theme.of(context).brightness == Brightness.dark;
-              final q = resolveQuality(qName);
-              final shaderActive = useShader && on && qName != 'minimal' && radius > 0;
-              final rimColor = dark
-                  ? Colors.white.withValues(alpha: 0.24)
-                  : Colors.white.withValues(alpha: 0.82);
-              final Widget body;
-              if (shaderActive) {
-                body = GlassContainer(
-                  useOwnLayer: true,
-                  quality: q,
-                  clipBehavior: Clip.antiAlias,
-                  shape: LiquidRoundedSuperellipse(borderRadius: radius),
-                  settings: LiquidGlassSettings(
-                    glassColor: tint(context, frosted: true, alpha: alpha),
-                    blur: bend ? 22 : 28,
-                    thickness: bend ? 10 : 0,
-                    refractiveIndex: bend ? ior : 1.0,
-                    saturation: dark ? 1.32 : 1.24,
-                    lightIntensity: dark ? 0.40 : 0.54,
-                    glowIntensity: dark ? 0.26 : 0.22,
-                    chromaticAberration: bend ? 0.016 : 0,
-                    bodyMode: GlassBodyMode.clear,
-                  ),
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.white.withValues(alpha: dark ? 0.12 : 0.42),
-                          Colors.transparent,
-                          Colors.black.withValues(alpha: dark ? 0.08 : 0.02),
-                        ],
-                        stops: const [0.0, 0.38, 1.0],
-                      ),
-                    ),
-                    child: inner,
-                  ),
-                );
-              } else if (on) {
-                body = ClipRRect(
-                  borderRadius: BorderRadius.circular(radius),
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Color.alphaBlend(
-                              Colors.white.withValues(alpha: dark ? 0.10 : 0.46),
-                              tint(context, frosted: true, alpha: alpha),
-                            ),
-                            tint(context, frosted: true, alpha: (alpha + 0.08).clamp(0.22, 0.90)),
-                          ],
-                        ),
-                      ),
-                      child: inner,
-                    ),
-                  ),
-                );
-              } else {
-                body = DecoratedBox(
-                  decoration: BoxDecoration(color: tint(context, frosted: false), borderRadius: BorderRadius.circular(radius)),
-                  child: inner,
-                );
-              }
-              if (shaderActive) {
-                final seShape = ContinuousRectangleBorder(
-                  borderRadius: BorderRadius.circular(radius),
-                  side: BorderSide(color: Color.lerp(c.separator, rimColor, 0.68)!, width: 1),
-                );
-                return Padding(
-                  padding: margin ?? EdgeInsets.zero,
-                  child: DecoratedBox(
-                    position: DecorationPosition.foreground,
-                    decoration: ShapeDecoration(shape: seShape),
-                    child: DecoratedBox(
-                      decoration: ShapeDecoration(
-                        shape: ContinuousRectangleBorder(borderRadius: BorderRadius.circular(radius)),
-                        shadows: deco.boxShadow,
-                      ),
-                      child: body,
-                    ),
-                  ),
-                );
-              }
-              return Padding(
-                padding: margin ?? EdgeInsets.zero,
-                child: DecoratedBox(
-                  position: DecorationPosition.foreground,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(radius),
-                    border: on ? Border.all(color: Color.lerp(c.separator, rimColor, 0.58)!) : null,
-                  ),
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(radius),
-                      boxShadow: on ? deco.boxShadow : const [],
-                    ),
-                    child: body,
+    return ListenableBuilder(
+      listenable: Listenable.merge([enabled, opacity, refraction, quality]),
+      builder: (context, _) {
+        final on = enabled.value;
+        final alpha = opacity.value;
+        final ior = refraction.value;
+        final qName = quality.value;
+        final inner = padding == null ? child : Padding(padding: padding!, child: child);
+        final deco = floatingDecoration(context, radius: radius);
+        final dpr = MediaQuery.devicePixelRatioOf(context);
+        final bend = refractsAt(dpr);
+        final dark = Theme.of(context).brightness == Brightness.dark;
+        final q = resolveQuality(qName);
+        final rStr = refractionStrength(ior, qName);
+        final blur = blurSigmaFor(alpha, qName);
+        final shaderActive = useShader && on && qName != 'minimal' && radius > 0;
+
+        final Widget body;
+        if (shaderActive) {
+          body = GlassContainer(
+            useOwnLayer: true,
+            quality: q,
+            clipBehavior: Clip.antiAlias,
+            shape: LiquidRoundedSuperellipse(borderRadius: radius),
+            settings: LiquidGlassSettings(
+              glassColor: tint(context, frosted: true, alpha: (alpha * (dark ? 0.56 : 0.68)).clamp(0.14, 0.72)),
+              blur: blur,
+              thickness: bend ? (14.0 + rStr * 22.0) : 0,
+              refractiveIndex: bend ? ior : 1.0,
+              saturation: (dark ? 1.32 : 1.24) + rStr * 0.34,
+              lightIntensity: (dark ? 0.56 : 0.70) + rStr * 0.30,
+              glowIntensity: (dark ? 0.30 : 0.26) + rStr * 0.34,
+              chromaticAberration: bend ? (0.02 + rStr * 0.085) : 0,
+              bodyMode: GlassBodyMode.clear,
+            ),
+            child: CustomPaint(
+              foregroundPainter: _LiquidRimPainter(
+                radius: radius,
+                dark: dark,
+                strength: rStr,
+                premium: qName == 'premium',
+                glintBias: 0.62,
+              ),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Colors.white.withValues(alpha: (dark ? 0.14 : 0.50) + rStr * (dark ? 0.10 : 0.18)),
+                      Colors.transparent,
+                      Colors.white.withValues(alpha: (dark ? 0.05 : 0.14) + rStr * 0.06),
+                    ],
+                    stops: const [0.0, 0.48, 1.0],
                   ),
                 ),
-              );
-            },
+                child: inner,
+              ),
+            ),
+          );
+        } else if (on) {
+          body = ClipRRect(
+            borderRadius: BorderRadius.circular(radius),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+              child: CustomPaint(
+                foregroundPainter: _LiquidRimPainter(
+                  radius: radius,
+                  dark: dark,
+                  strength: rStr,
+                  premium: false,
+                  glintBias: 0.62,
+                ),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Color.alphaBlend(
+                          Colors.white.withValues(alpha: dark ? 0.12 : 0.48),
+                          tint(context, frosted: true, alpha: alpha),
+                        ),
+                        tint(context, frosted: true, alpha: (alpha + 0.06).clamp(0.18, 0.84)),
+                      ],
+                    ),
+                  ),
+                  child: inner,
+                ),
+              ),
+            ),
+          );
+        } else {
+          body = DecoratedBox(
+            decoration: BoxDecoration(color: tint(context, frosted: false), borderRadius: BorderRadius.circular(radius)),
+            child: inner,
+          );
+        }
+
+        return Padding(
+          padding: margin ?? EdgeInsets.zero,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(radius),
+              boxShadow: on ? deco.boxShadow : const [],
+            ),
+            child: body,
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
 
-/// 窗口底色与 Apple 环境光场 / 自定义壁纸层。
-/// 浅色模式为柔和天蓝 + 薰衣草紫 + 暖杏桃三光晕；深色模式为深钴蓝 + 皇家紫 + 幽蓝青三光晕，
-/// 衬托液态玻璃卡片与浮岛的镜面高光与折射层次。
-class GlassBackdrop extends StatelessWidget {
+/// Fresnel 液态玻璃折射线 + 标志性顶部镜面聚焦光斑（还原 Apple macOS Tahoe & iOS 26 概念图质感）。
+class _LiquidRimPainter extends CustomPainter {
+  final double radius;
+  final bool dark;
+  final double strength;
+  final bool premium;
+  final Color? accent;
+  final double glintBias;
+
+  const _LiquidRimPainter({
+    required this.radius,
+    required this.dark,
+    required this.strength,
+    required this.premium,
+    this.accent,
+    this.glintBias = 0.68,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+    final rect = Offset.zero & size;
+    final rrect = RRect.fromRectAndRadius(rect.deflate(0.7), Radius.circular(radius));
+
+    // 1. 主 Fresnel 液态高光描边（左上/右上明亮折光 → 中段通透 → 底部柔和回光）
+    final topAlpha = ((dark ? 0.40 : 0.90) + strength * (dark ? 0.36 : 0.10)).clamp(0.0, 1.0);
+    final midAlpha = ((dark ? 0.10 : 0.28) + strength * 0.12).clamp(0.0, 1.0);
+    final botAlpha = ((dark ? 0.24 : 0.62) + strength * 0.22).clamp(0.0, 1.0);
+
+    final rimPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.15 + strength * 0.42
+      ..shader = LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          Colors.white.withValues(alpha: topAlpha),
+          (accent ?? Colors.white).withValues(alpha: midAlpha),
+          Colors.white.withValues(alpha: botAlpha),
+        ],
+        stops: const [0.0, 0.50, 1.0],
+      ).createShader(rect);
+    canvas.drawRRect(rrect, rimPaint);
+
+    // 2. 色散棱镜内边（随折射滑块与 premium 档位增强）
+    if (strength > 0.10 || premium) {
+      final chromaAlpha = (strength * (premium ? 0.44 : 0.26)).clamp(0.0, 0.56);
+      final innerRect = RRect.fromRectAndRadius(rect.deflate(2.0), Radius.circular((radius - 1.5).clamp(0.0, radius)));
+      final chromaPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = premium ? 1.35 : 0.95
+        ..shader = LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            const Color(0xFF7DD3FC).withValues(alpha: chromaAlpha),
+            Colors.transparent,
+            const Color(0xFFC084FC).withValues(alpha: chromaAlpha * 0.9),
+          ],
+          stops: const [0.0, 0.5, 1.0],
+        ).createShader(rect);
+      canvas.drawRRect(innerRect, chromaPaint);
+    }
+
+    // 3. 顶部标志性镜面焦散光斑（紧贴卡片/胶囊上沿的锐利白光点 + 柔光扩散）
+    final glintCx = (size.width * glintBias).clamp(radius + 16.0, math.max(radius + 16.0, size.width - radius - 16.0)).toDouble();
+    final specWidth = (size.width * 0.52).clamp(28.0, 190.0).toDouble();
+    final startX = (glintCx - specWidth / 2).clamp(radius * 0.5, size.width);
+    final endX = (glintCx + specWidth / 2).clamp(0.0, size.width - radius * 0.5);
+
+    if (endX > startX + 8) {
+      // 柔和镜面光晕（向玻璃内部漫射 12px）
+      final bloomRect = Rect.fromCenter(center: Offset(glintCx, 1.5), width: specWidth * 0.85, height: 22);
+      final bloomPaint = Paint()
+        ..shader = RadialGradient(
+          center: Alignment.center,
+          radius: 0.62,
+          colors: [
+            Colors.white.withValues(alpha: ((dark ? 0.42 : 0.72) + strength * 0.20).clamp(0.0, 0.92)),
+            Colors.white.withValues(alpha: ((dark ? 0.12 : 0.24) + strength * 0.08).clamp(0.0, 0.40)),
+            Colors.transparent,
+          ],
+          stops: const [0.0, 0.42, 1.0],
+        ).createShader(bloomRect);
+      canvas.save();
+      canvas.clipRRect(RRect.fromRectAndRadius(rect, Radius.circular(radius)));
+      canvas.drawOval(bloomRect, bloomPaint);
+      canvas.restore();
+
+      // 锐利顶沿高光弧线
+      final specPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.9 + strength * 0.75
+        ..strokeCap = StrokeCap.round
+        ..shader = LinearGradient(
+          colors: [
+            Colors.transparent,
+            Colors.white.withValues(alpha: ((dark ? 0.78 : 0.96) + strength * 0.16).clamp(0.0, 1.0)),
+            Colors.transparent,
+          ],
+        ).createShader(Rect.fromLTWH(startX, 0, endX - startX, 3));
+      canvas.drawLine(Offset(startX, 1.0), Offset(endX, 1.0), specPaint);
+    }
+
+    // 4. 底部左下角微弱对称反光条（增强液态玻璃厚度立体感）
+    final botWidth = (size.width * 0.34).clamp(20.0, 110.0);
+    final botStart = (size.width * 0.18).clamp(radius * 0.6, size.width);
+    final botEnd = (botStart + botWidth).clamp(0.0, size.width - radius * 0.6);
+    if (botEnd > botStart + 8) {
+      final botPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.15
+        ..strokeCap = StrokeCap.round
+        ..shader = LinearGradient(
+          colors: [
+            Colors.transparent,
+            Colors.white.withValues(alpha: ((dark ? 0.26 : 0.58) + strength * 0.14).clamp(0.0, 0.82)),
+            Colors.transparent,
+          ],
+        ).createShader(Rect.fromLTWH(botStart, size.height - 2, botEnd - botStart, 2));
+      canvas.drawLine(Offset(botStart, size.height - 1.1), Offset(botEnd, size.height - 1.1), botPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _LiquidRimPainter old) =>
+      old.radius != radius ||
+      old.dark != dark ||
+      old.strength != strength ||
+      old.premium != premium ||
+      old.accent != accent ||
+      old.glintBias != glintBias;
+}
+
+/// 窗口底色与 Apple 流体动态环境光场 / 自定义壁纸层。
+/// - 开启「流体动态背景」时，以 26 秒无缝周期缓慢驱动多光晕流体极光网格，透过液态玻璃卡片实时折射流动；
+/// - 测试模式（`!Glass.useShader`）或关闭流体背景时完全静止，零动画开销。
+class GlassBackdrop extends StatefulWidget {
   final Widget child;
   const GlassBackdrop({super.key, required this.child});
 
@@ -231,6 +376,41 @@ class GlassBackdrop extends StatelessWidget {
   }
 
   @override
+  State<GlassBackdrop> createState() => _GlassBackdropState();
+}
+
+class _GlassBackdropState extends State<GlassBackdrop> with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 26),
+  );
+
+  bool get _shouldAnimate =>
+      Glass.useShader && Glass.enabled.value && Glass.fluidBg.value && !Glass.hasCustomBg;
+
+  void _syncTicker() {
+    if (_shouldAnimate) {
+      if (!_ctrl.isAnimating) _ctrl.repeat();
+    } else {
+      if (_ctrl.isAnimating) _ctrl.stop();
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    Glass.backdropListenable.addListener(_syncTicker);
+    _syncTicker();
+  }
+
+  @override
+  void dispose() {
+    Glass.backdropListenable.removeListener(_syncTicker);
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: Glass.backdropListenable,
@@ -242,122 +422,56 @@ class GlassBackdrop extends StatelessWidget {
         final dim = Glass.bgDim.value;
         final hasImg = imgPath != null && imgPath.isNotEmpty && File(imgPath).existsSync();
         if (!on && !hasImg) {
-          return ColoredBox(color: base, child: child);
+          return ColoredBox(color: base, child: widget.child);
         }
         final dark = Theme.of(context).brightness == Brightness.dark;
-        final name = Glass.preset.value;
-        final wash = washFor(name);
+        final wash = GlassBackdrop.washFor(Glass.preset.value);
 
-        // 严格对齐展示图日夜双模式的三光晕 Apple Tahoe / iOS 26 光场
-        final orb1 = wash != null
-            ? Color.lerp(wash, dark ? const Color(0xFF2563EB) : const Color(0xFF7DD3FC), 0.35)!
-            : (dark ? const Color(0xFF2563EB) : const Color(0xFF8CCBFF));
-        final orb2 = wash != null
-            ? Color.lerp(wash, dark ? const Color(0xFF7C3AED) : const Color(0xFFD8B4FE), 0.45)!
-            : (dark ? const Color(0xFF7C3AED) : const Color(0xFFD5B6FF));
-        final orb3 = wash != null
-            ? Color.lerp(wash, dark ? const Color(0xFF0D9488) : const Color(0xFFFDBA74), 0.40)!
-            : (dark ? const Color(0xFF0D9488) : const Color(0xFFFDC89E));
-
-        final ambientMesh = Stack(
-          fit: StackFit.passthrough,
-          children: [
-            Positioned.fill(
-              child: ColoredBox(
-                color: dark ? const Color(0xFF0C0F1A) : const Color(0xFFF2F5FB),
+        final fluidLayer = RepaintBoundary(
+          child: AnimatedBuilder(
+            animation: _ctrl,
+            builder: (context, _) => CustomPaint(
+              painter: _FluidMeshPainter(
+                phase: _shouldAnimate ? _ctrl.value : 0.0,
+                dark: dark,
+                wash: wash,
               ),
+              child: const SizedBox.expand(),
             ),
-            // 左上主光晕（浅色天蓝 / 深色钴蓝）
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: RadialGradient(
-                    center: const Alignment(-0.78, -0.72),
-                    radius: 1.05,
-                    colors: [
-                      orb1.withValues(alpha: dark ? 0.42 : 0.48),
-                      orb1.withValues(alpha: 0.0),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            // 中右柔和光晕（浅色薰衣草紫 / 深色皇家紫）
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: RadialGradient(
-                    center: const Alignment(0.32, -0.18),
-                    radius: 0.92,
-                    colors: [
-                      orb2.withValues(alpha: dark ? 0.38 : 0.40),
-                      orb2.withValues(alpha: 0.0),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            // 右下与左下暖/青平衡光晕（浅色暖杏桃 / 深色幽蓝青）
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: RadialGradient(
-                    center: const Alignment(0.78, 0.55),
-                    radius: 0.98,
-                    colors: [
-                      orb3.withValues(alpha: dark ? 0.34 : 0.42),
-                      orb3.withValues(alpha: 0.0),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: RadialGradient(
-                    center: const Alignment(-0.42, 0.88),
-                    radius: 0.85,
-                    colors: [
-                      orb3.withValues(alpha: dark ? 0.18 : 0.32),
-                      orb3.withValues(alpha: 0.0),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
+          ),
         );
 
         if (!hasImg) {
           return Stack(
             fit: StackFit.passthrough,
             children: [
-              Positioned.fill(child: RepaintBoundary(child: ambientMesh)),
-              child,
+              Positioned.fill(child: fluidLayer),
+              widget.child,
             ],
           );
         }
+
+        // 自定义背景图片：铺满裁切 + 可调柔和遮罩
+        final scrimColor = dark ? Colors.black : Colors.white;
         return Stack(
           fit: StackFit.passthrough,
           children: [
+            Positioned.fill(child: fluidLayer),
             Positioned.fill(
               child: Image.file(
                 File(imgPath),
-                key: ValueKey('bgImg:$imgPath'),
                 fit: BoxFit.cover,
-                alignment: Alignment.center,
                 filterQuality: FilterQuality.medium,
-                errorBuilder: (ctx, err, stack) => ambientMesh,
+                errorBuilder: (_, _, _) => const SizedBox.shrink(),
               ),
             ),
-            if (dim > 0)
+            if (dim > 0.01)
               Positioned.fill(
                 child: ColoredBox(
-                  color: base.withValues(alpha: dim.clamp(0.0, 0.88)),
+                  color: scrimColor.withValues(alpha: dim),
                 ),
               ),
-            child,
+            widget.child,
           ],
         );
       },
@@ -365,143 +479,231 @@ class GlassBackdrop extends StatelessWidget {
   }
 }
 
-/// 液态玻璃便利贴卡片表面：高斯毛玻璃 + 顶部居中镜面星芒高光 + 通透描边 + 悬停微抬升阴影。
+/// Apple macOS Tahoe 流体动态光晕画笔：
+/// 浅色模式为冰川蓝 + 薰衣草紫 + 暖杏桃珊瑚流动光团；
+/// 深色模式为深钴蓝 + 皇家极光紫 + 幽蓝青流动光团，与概念图 95%+ 色域一致。
+class _FluidMeshPainter extends CustomPainter {
+  final double phase;
+  final bool dark;
+  final Color? wash;
+
+  const _FluidMeshPainter({
+    required this.phase,
+    required this.dark,
+    this.wash,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+    final rect = Offset.zero & size;
+    final w = size.width;
+    final h = size.height;
+    final minDim = math.min(w, h);
+    final maxDim = math.max(w, h);
+    final t = phase * math.pi * 2.0;
+
+    // 1. 基础底色
+    canvas.drawRect(
+      rect,
+      Paint()..color = dark ? const Color(0xFF060A16) : const Color(0xFFEDF3FC),
+    );
+
+    // 2. 调色板（对齐概念图日/夜双色域，若用户选了背景预设则柔和融合）
+    Color mix(Color target, double amount) => wash == null ? target : Color.lerp(target, wash!, amount)!;
+
+    final orbs = dark
+        ? <(Color, double, double, double, double, double, double)>[
+            // (color, baseX, baseY, driftX, driftY, radiusFactor, alpha)
+            (mix(const Color(0xFF6D28D9), 0.25), 0.44, 0.28, 0.10, 0.08, 0.62, 0.54),
+            (mix(const Color(0xFF0D9488), 0.22), 0.84, 0.34, -0.09, 0.10, 0.56, 0.48),
+            (mix(const Color(0xFF2563EB), 0.25), 0.26, 0.78, 0.11, -0.09, 0.60, 0.52),
+            (mix(const Color(0xFF7C3AED), 0.20), 0.72, 0.76, -0.08, -0.08, 0.50, 0.36),
+            (mix(const Color(0xFF0284C7), 0.20), 0.18, 0.18, 0.07, 0.09, 0.48, 0.34),
+          ]
+        : <(Color, double, double, double, double, double, double)>[
+            (mix(const Color(0xFF7DD3FC), 0.22), 0.20, 0.16, 0.10, 0.08, 0.64, 0.72),
+            (mix(const Color(0xFFC4B5FD), 0.24), 0.52, 0.26, -0.10, 0.09, 0.56, 0.68),
+            (mix(const Color(0xFFFDBA74), 0.20), 0.80, 0.40, -0.08, -0.09, 0.54, 0.66),
+            (mix(const Color(0xFFFCA5A5), 0.18), 0.32, 0.78, 0.11, -0.08, 0.56, 0.62),
+            (mix(const Color(0xFF93C5FD), 0.22), 0.76, 0.84, -0.09, 0.07, 0.52, 0.54),
+          ];
+
+    // 3. 逐层绘制平滑 Lissajous 流体光团
+    for (var i = 0; i < orbs.length; i++) {
+      final (color, bx, by, dx, dy, rf, alpha) = orbs[i];
+      final angle1 = t + i * 1.25;
+      final angle2 = t * (i.isEven ? 1.0 : -1.0) + i * 0.85;
+      final cx = w * (bx + dx * math.sin(angle1));
+      final cy = h * (by + dy * math.cos(angle2));
+      final breath = 1.0 + 0.07 * math.sin(t + i * 1.7);
+      final radius = (maxDim * rf * 0.72 + minDim * 0.18) * breath;
+
+      final orbRect = Rect.fromCircle(center: Offset(cx, cy), radius: radius);
+      final paint = Paint()
+        ..shader = RadialGradient(
+          colors: [
+            color.withValues(alpha: alpha),
+            color.withValues(alpha: alpha * 0.45),
+            color.withValues(alpha: 0.0),
+          ],
+          stops: const [0.0, 0.52, 1.0],
+        ).createShader(orbRect);
+      canvas.drawCircle(Offset(cx, cy), radius, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _FluidMeshPainter old) =>
+      old.phase != phase || old.dark != dark || old.wash != wash;
+}
+
+/// 液态玻璃便利贴/内容卡片表面：
+/// 实时监听 `Glass.opacity` / `Glass.refraction` / `Glass.quality`，具备高通透毛玻璃折射、
+/// Fresnel 液态双层镜面边缘、顶部聚焦高光光斑、可选重要级别微染色与拖拽/悬停立体阴影。
 class SpecularGlassCard extends StatelessWidget {
   final Widget child;
   final double radius;
   final bool hover;
+  final bool elevated;
   final Color? tintAccent;
 
   const SpecularGlassCard({
     super.key,
     required this.child,
-    this.radius = 18,
+    this.radius = 20,
     this.hover = false,
+    this.elevated = false,
     this.tintAccent,
   });
 
   @override
   Widget build(BuildContext context) {
-    final c = AppColors.of(context);
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final alpha = Glass.opacity.value;
-    final translucent = Glass.surfaceTranslucent;
+    return ListenableBuilder(
+      listenable: Glass.backdropListenable,
+      builder: (context, _) {
+        final c = AppColors.of(context);
+        final dark = Theme.of(context).brightness == Brightness.dark;
+        final alpha = Glass.opacity.value;
+        final ior = Glass.refraction.value;
+        final qName = Glass.quality.value;
+        final translucent = Glass.surfaceTranslucent;
 
-    if (!translucent) {
-      return DecoratedBox(
-        decoration: BoxDecoration(
-          color: hover ? c.hover : c.elevated,
-          borderRadius: BorderRadius.circular(radius),
-          border: Border.all(color: c.separator),
-        ),
-        child: child,
-      );
-    }
-
-    final baseAlpha = dark
-        ? (hover ? (alpha * 0.78).clamp(0.28, 0.72) : (alpha * 0.56).clamp(0.20, 0.58))
-        : (hover ? (alpha * 1.15).clamp(0.42, 0.82) : (alpha * 0.92).clamp(0.32, 0.72));
-    final baseColor = tintAccent != null
-        ? Color.lerp(c.elevated, tintAccent, dark ? 0.14 : 0.08)!.withValues(alpha: baseAlpha)
-        : c.elevated.withValues(alpha: baseAlpha);
-
-    final rimColor = dark
-        ? Colors.white.withValues(alpha: hover ? 0.34 : 0.18)
-        : Colors.white.withValues(alpha: hover ? 0.92 : 0.72);
-
-    return AnimatedContainer(
-      duration: Motion.short3,
-      curve: Curves.easeOutCubic,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(radius),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: dark ? (hover ? 0.44 : 0.30) : (hover ? 0.12 : 0.07)),
-            blurRadius: hover ? 26 : 18,
-            offset: Offset(0, hover ? 10 : 6),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(radius),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-          child: DecoratedBox(
+        if (!translucent) {
+          final solid = tintAccent != null
+              ? Color.lerp(hover ? c.hover : c.elevated, tintAccent, dark ? 0.22 : 0.14)!
+              : (hover ? c.hover : c.elevated);
+          return DecoratedBox(
             decoration: BoxDecoration(
+              color: solid,
               borderRadius: BorderRadius.circular(radius),
-              border: Border.all(color: rimColor, width: 1),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Color.alphaBlend(
-                    Colors.white.withValues(alpha: dark ? 0.12 : 0.48),
-                    baseColor,
-                  ),
-                  baseColor,
-                  Color.alphaBlend(
-                    Colors.black.withValues(alpha: dark ? 0.14 : 0.03),
-                    baseColor,
-                  ),
-                ],
-                stops: const [0.0, 0.46, 1.0],
-              ),
+              border: Border.all(color: tintAccent?.withValues(alpha: 0.45) ?? c.separator),
             ),
-            child: Stack(
-              fit: StackFit.passthrough,
-              children: [
-                // 顶部边缘镜面高光带（Apple Liquid Glass 标志性顶部折射光晕）
-                Positioned(
-                  top: 0,
-                  left: 16,
-                  right: 16,
-                  height: 2,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.transparent,
-                          Colors.white.withValues(alpha: dark ? (hover ? 0.72 : 0.48) : (hover ? 1.0 : 0.88)),
-                          Colors.transparent,
-                        ],
-                      ),
+            child: child,
+          );
+        }
+
+        final rStr = Glass.refractionStrength(ior, qName);
+        final blur = Glass.blurSigmaFor(alpha, qName);
+        final active = hover || elevated;
+        // 保持高通透度，让底层流体极光清晰折射穿透玻璃卡片
+        final baseAlpha = dark
+            ? (active ? (alpha * 0.58).clamp(0.18, 0.56) : (alpha * 0.38).clamp(0.12, 0.44))
+            : (active ? (alpha * 0.84).clamp(0.26, 0.68) : (alpha * 0.62).clamp(0.20, 0.56));
+        final baseColor = tintAccent != null
+            ? Color.lerp(c.elevated, tintAccent, dark ? 0.30 : 0.20)!.withValues(alpha: baseAlpha)
+            : c.elevated.withValues(alpha: baseAlpha);
+
+        return AnimatedContainer(
+          duration: Motion.short3,
+          curve: Curves.easeOutCubic,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(radius),
+            boxShadow: [
+              BoxShadow(
+                color: (tintAccent != null && active ? tintAccent! : Colors.black).withValues(
+                  alpha: dark ? (elevated ? 0.58 : hover ? 0.46 : 0.34) : (elevated ? 0.18 : hover ? 0.12 : 0.07),
+                ),
+                blurRadius: elevated ? 34 : (hover ? 26 : 18),
+                spreadRadius: elevated ? 2 : 0,
+                offset: Offset(0, elevated ? 16 : (hover ? 10 : 6)),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(radius),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+              child: CustomPaint(
+                foregroundPainter: _LiquidRimPainter(
+                  radius: radius,
+                  dark: dark,
+                  strength: active ? (rStr + 0.24).clamp(0.0, 1.0) : rStr,
+                  premium: qName == 'premium',
+                  accent: tintAccent,
+                  glintBias: 0.68,
+                ),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(radius),
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Color.alphaBlend(
+                          Colors.white.withValues(alpha: (dark ? 0.12 : 0.52) + rStr * (dark ? 0.08 : 0.14)),
+                          baseColor,
+                        ),
+                        baseColor,
+                        Color.alphaBlend(
+                          (tintAccent ?? Colors.black).withValues(alpha: dark ? 0.18 : 0.04),
+                          baseColor,
+                        ),
+                      ],
+                      stops: const [0.0, 0.48, 1.0],
                     ),
                   ),
-                ),
-                Positioned(
-                  top: -18,
-                  left: 0,
-                  right: 0,
-                  height: 44,
-                  child: IgnorePointer(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: RadialGradient(
-                          center: const Alignment(0, -0.4),
-                          radius: 0.72,
-                          colors: [
-                            Colors.white.withValues(alpha: dark ? (hover ? 0.16 : 0.10) : (hover ? 0.42 : 0.28)),
-                            Colors.transparent,
-                          ],
+                  child: Stack(
+                    fit: StackFit.passthrough,
+                    children: [
+                      // 顶部液态焦散漫反射光晕
+                      Positioned(
+                        top: -20,
+                        left: -8,
+                        right: -8,
+                        height: 52,
+                        child: IgnorePointer(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: RadialGradient(
+                                center: const Alignment(0.32, -0.45),
+                                radius: 0.72,
+                                colors: [
+                                  Colors.white.withValues(
+                                    alpha: ((dark ? 0.16 : 0.38) + rStr * (dark ? 0.12 : 0.20) + (active ? 0.08 : 0.0))
+                                        .clamp(0.0, 0.78),
+                                  ),
+                                  Colors.transparent,
+                                ],
+                              ),
+                            ),
+                          ),
                         ),
                       ),
-                    ),
+                      child,
+                    ],
                   ),
                 ),
-                child,
-              ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
 
 /// 侧边栏 / 抽屉 / 顶栏 / 底栏液态玻璃容器。
-///
-/// 针对平直通栏（`radius <= 0`）：使用 `ClipRect` + 强高斯毛玻璃（sigma 30）+ 顶部镜面高光渐变；
-/// 针对圆角浮岛（`radius > 0`）：使用 `liquid_glass_widgets` 的 `GlassContainer` 与真实折射高光。
 class Frosted extends StatelessWidget {
   final Widget child;
   final Color color;
@@ -518,7 +720,7 @@ class Frosted extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: Listenable.merge([Glass.enabled, Glass.opacity, Glass.refraction, Glass.quality, Glass.bgImage]),
+      listenable: Glass.backdropListenable,
       builder: (context, _) {
         final on = Glass.enabled.value;
         if (!on && !Glass.hasCustomBg) {
@@ -537,54 +739,42 @@ class Frosted extends StatelessWidget {
         final dark = Theme.of(context).brightness == Brightness.dark;
         final dpr = MediaQuery.devicePixelRatioOf(context);
         final bend = Glass.refractsAt(dpr);
-        final rimColor = dark
-            ? Colors.white.withValues(alpha: 0.20)
-            : Colors.white.withValues(alpha: 0.72);
+        final rStr = Glass.refractionStrength(ior, qName);
+        final blur = Glass.blurSigmaFor(alpha, qName);
 
         if (radius > 0 && Glass.useShader && on && qName != 'minimal') {
-          return DecoratedBox(
-            position: DecorationPosition.foreground,
-            decoration: BoxDecoration(
-              border: border ?? Border.all(color: rimColor),
-              borderRadius: BorderRadius.circular(radius),
+          return GlassContainer(
+            useOwnLayer: true,
+            quality: Glass.resolveQuality(qName),
+            clipBehavior: Clip.antiAlias,
+            shape: LiquidRoundedSuperellipse(borderRadius: radius),
+            settings: LiquidGlassSettings(
+              glassColor: color.withValues(alpha: (alpha * 0.76).clamp(0.16, 0.76)),
+              blur: blur,
+              thickness: bend ? (10.0 + rStr * 16.0) : 0,
+              refractiveIndex: bend ? ior : 1.0,
+              saturation: (dark ? 1.28 : 1.20) + rStr * 0.25,
+              lightIntensity: (dark ? 0.44 : 0.58) + rStr * 0.28,
+              glowIntensity: (dark ? 0.22 : 0.20) + rStr * 0.25,
+              chromaticAberration: bend ? (0.015 + rStr * 0.06) : 0,
+              bodyMode: GlassBodyMode.clear,
             ),
-            child: GlassContainer(
-              useOwnLayer: true,
-              quality: Glass.resolveQuality(qName),
-              clipBehavior: Clip.antiAlias,
-              shape: LiquidRoundedSuperellipse(borderRadius: radius),
-              settings: LiquidGlassSettings(
-                glassColor: color.withValues(alpha: alpha),
-                blur: 26,
-                thickness: bend ? 8 : 0,
-                refractiveIndex: bend ? ior : 1.0,
-                saturation: dark ? 1.28 : 1.20,
-                lightIntensity: dark ? 0.34 : 0.46,
-                glowIntensity: dark ? 0.20 : 0.18,
-                chromaticAberration: bend ? 0.012 : 0,
-                bodyMode: GlassBodyMode.clear,
+            child: CustomPaint(
+              foregroundPainter: _LiquidRimPainter(
+                radius: radius,
+                dark: dark,
+                strength: rStr,
+                premium: qName == 'premium',
               ),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.white.withValues(alpha: dark ? 0.08 : 0.30),
-                      Colors.transparent,
-                    ],
-                  ),
-                ),
-                child: child,
-              ),
+              child: child,
             ),
           );
         }
 
         final topSheen = dark
-            ? Colors.white.withValues(alpha: 0.09)
-            : Colors.white.withValues(alpha: 0.52);
-        final effAlpha = (alpha * 0.92).clamp(0.22, 0.86);
+            ? Colors.white.withValues(alpha: 0.07 + rStr * 0.05)
+            : Colors.white.withValues(alpha: 0.52 + rStr * 0.14);
+        final effAlpha = (alpha * (dark ? 0.86 : 0.88)).clamp(0.24, 0.86);
         final innerBox = DecoratedBox(
           decoration: BoxDecoration(
             gradient: LinearGradient(
@@ -592,7 +782,7 @@ class Frosted extends StatelessWidget {
               end: Alignment.bottomCenter,
               colors: [
                 Color.alphaBlend(topSheen, color.withValues(alpha: effAlpha)),
-                color.withValues(alpha: (effAlpha + 0.06).clamp(0.26, 0.90)),
+                color.withValues(alpha: (effAlpha + 0.06).clamp(0.28, 0.90)),
               ],
             ),
             border: border,
@@ -604,14 +794,14 @@ class Frosted extends StatelessWidget {
           return ClipRRect(
             borderRadius: BorderRadius.circular(radius),
             child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+              filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
               child: innerBox,
             ),
           );
         }
         return ClipRect(
           child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+            filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
             child: innerBox,
           ),
         );
@@ -627,7 +817,7 @@ Future<void> showSpotlightModal(BuildContext context, {required String title, re
     barrierDismissible: true,
     barrierLabel: '关闭全屏视图',
     barrierColor: Colors.black54,
-    transitionDuration: Motion.short4,
+    transitionDuration: Motion.medium1,
     pageBuilder: (ctx, a1, a2) {
       final size = MediaQuery.sizeOf(ctx);
       final c = AppColors.of(ctx);

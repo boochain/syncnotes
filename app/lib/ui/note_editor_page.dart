@@ -1,20 +1,26 @@
 import 'dart:async';
-import 'tokens.dart';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-
-import 'glass.dart';
-import 'motion.dart';
-import 'ds.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 
 import '../app_scope.dart';
 import '../blocks/block_type.dart';
 import '../models/block.dart';
 import '../sync/sync_client.dart';
+import 'ds.dart';
+import 'glass.dart';
+import 'motion.dart';
+import 'tokens.dart';
 
-/// Markdown 笔记编辑器：编辑 / 预览，自动保存（防抖）并实时同步。
+enum _NoteViewMode { edit, split, preview }
+
+/// 现代化液态玻璃 Markdown 笔记编辑器：
+/// - 零卡顿输入：使用局部 ValueNotifier 与 250ms 防抖预览，打字时零全页 rebuild；
+/// - 符合直觉：打开即写，桌面宽屏默认左右实时分栏，窄屏一键帧模糊切换编辑/预览；
+/// - 常用 Markdown 快捷格式工具栏 + Ctrl+B / Ctrl+I / Ctrl+S 快捷键；
+/// - 保存时完整保留原 payload 中的便签颜色与坐标元数据。
 class NoteEditorPage extends StatefulWidget {
   final String? blockId;
   final String? parentId;
@@ -24,13 +30,21 @@ class NoteEditorPage extends StatefulWidget {
   State<NoteEditorPage> createState() => _NoteEditorPageState();
 }
 
-class _NoteEditorPageState extends State<NoteEditorPage> with SingleTickerProviderStateMixin {
+class _NoteEditorPageState extends State<NoteEditorPage> {
   late final TextEditingController _title;
   late final TextEditingController _body;
-  late final TabController _tabs;
+  final _bodyFocus = FocusNode();
+  final _dirtyNotifier = ValueNotifier<bool>(false);
+  final _previewText = ValueNotifier<String>('');
+  final _statsText = ValueNotifier<String>('0 字');
+
   String? _id;
-  Timer? _debounce;
-  bool _dirty = false;
+  Timer? _saveDebounce;
+  Timer? _previewDebounce;
+  _NoteViewMode? _mode;
+
+  SyncClient? _sync;
+  bool _loaded = false;
 
   @override
   void initState() {
@@ -38,11 +52,8 @@ class _NoteEditorPageState extends State<NoteEditorPage> with SingleTickerProvid
     _id = widget.blockId;
     _title = TextEditingController();
     _body = TextEditingController();
-    _tabs = TabController(length: 2, vsync: this, initialIndex: widget.blockId == null ? 0 : 1);
   }
 
-  SyncClient? _sync;
-  bool _loaded = false;
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -53,13 +64,22 @@ class _NoteEditorPageState extends State<NoteEditorPage> with SingleTickerProvid
       _title.text = b?.title ?? '';
       _body.text = b == null ? '' : (b.payload['markdown'] ?? '') as String;
     }
+    _previewText.value = _body.text;
+    _updateStats();
     _sync = AppScope.of(context).sync;
     _sync!.addListener(_onRemote);
   }
 
-  /// 远程编辑到达且本地无未保存修改时，刷新内容。
+  void _updateStats() {
+    final text = _body.text;
+    final chars = text.replaceAll(RegExp(r'\s+'), '').length;
+    final lines = text.isEmpty ? 0 : text.split('\n').length;
+    _statsText.value = '$chars 字 · $lines 行';
+  }
+
+  /// 远程编辑到达且本地无未保存修改时，静默刷新内容。
   void _onRemote() {
-    if (_id == null || _dirty || !mounted) return;
+    if (_id == null || _dirtyNotifier.value || !mounted) return;
     final b = _sync!.byId(_id!);
     if (b == null) return;
     final md = (b.payload['markdown'] ?? '') as String;
@@ -67,16 +87,27 @@ class _NoteEditorPageState extends State<NoteEditorPage> with SingleTickerProvid
       final sel = _body.selection;
       _body.text = md;
       if (sel.end <= md.length) _body.selection = sel;
+      _previewText.value = md;
+      _updateStats();
     }
     if (b.title != _title.text) _title.text = b.title;
-    setState(() {});
   }
 
   void _changed() {
-    _dirty = true;
-    _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 600), _save);
-    setState(() {});
+    if (!_dirtyNotifier.value) _dirtyNotifier.value = true;
+    _updateStats();
+    _previewDebounce?.cancel();
+    _previewDebounce = Timer(const Duration(milliseconds: 240), () {
+      if (mounted) _previewText.value = _body.text;
+    });
+    _saveDebounce?.cancel();
+    _saveDebounce = Timer(const Duration(milliseconds: 600), _save);
+  }
+
+  Map<String, dynamic> _mergedPayload(SyncClient sync, String? id, String md) {
+    final existing = id == null ? null : sync.byId(id)?.payload;
+    if (existing == null) return {'markdown': md};
+    return {...existing, 'markdown': md};
   }
 
   void _save() {
@@ -97,23 +128,65 @@ class _NoteEditorPageState extends State<NoteEditorPage> with SingleTickerProvid
           )
           .id;
     } else {
-      sync.update(_id!, title: title.isEmpty ? '新笔记' : title, payload: {'markdown': _body.text});
+      sync.update(
+        _id!,
+        title: title.isEmpty ? '新笔记' : title,
+        payload: _mergedPayload(sync, _id, _body.text),
+      );
     }
-    _dirty = false;
+    _dirtyNotifier.value = false;
+  }
+
+  void _wrapSelection(String prefix, [String suffix = '']) {
+    final val = _body.value;
+    final text = val.text;
+    final sel = val.selection.isValid ? val.selection : TextSelection.collapsed(offset: text.length);
+    final start = sel.start.clamp(0, text.length);
+    final end = sel.end.clamp(0, text.length);
+    final selected = text.substring(start, end);
+    final replacement = '$prefix$selected$suffix';
+    final nextText = text.replaceRange(start, end, replacement);
+    final cursorStart = start + prefix.length;
+    final cursorEnd = cursorStart + selected.length;
+    _body.value = TextEditingValue(
+      text: nextText,
+      selection: selected.isEmpty
+          ? TextSelection.collapsed(offset: cursorStart)
+          : TextSelection(baseOffset: cursorStart, extentOffset: cursorEnd),
+    );
+    _bodyFocus.requestFocus();
+    _changed();
+  }
+
+  void _prefixLine(String prefix) {
+    final val = _body.value;
+    final text = val.text;
+    final pos = val.selection.isValid ? val.selection.start.clamp(0, text.length) : text.length;
+    final lineStart = pos == 0 ? 0 : text.lastIndexOf('\n', pos - 1) + 1;
+    final nextText = text.replaceRange(lineStart, lineStart, prefix);
+    _body.value = TextEditingValue(
+      text: nextText,
+      selection: TextSelection.collapsed(offset: pos + prefix.length),
+    );
+    _bodyFocus.requestFocus();
+    _changed();
   }
 
   @override
   void dispose() {
-    _debounce?.cancel();
+    _saveDebounce?.cancel();
+    _previewDebounce?.cancel();
     _sync?.removeListener(_onRemote);
-    if (_dirty) {
-      // dispose 期间不能触发 notifyListeners（树已锁定），推迟到微任务保存。
+    if (_dirtyNotifier.value) {
       final sync = _sync, id = _id, title = _title.text, body = _body.text, parent = widget.parentId;
       Future.microtask(() => _saveDetached(sync, id, title, body, parent));
     }
     _title.dispose();
     _body.dispose();
-    _tabs.dispose();
+    _bodyFocus.dispose();
+    _dirtyNotifier.dispose();
+    _previewText.dispose();
+    _statsText.dispose();
     super.dispose();
   }
 
@@ -122,73 +195,251 @@ class _NoteEditorPageState extends State<NoteEditorPage> with SingleTickerProvid
     return ListenableBuilder(
       listenable: Glass.backdropListenable,
       builder: (context, _) {
+        final c = AppColors.of(context);
+        final tt = Theme.of(context).textTheme;
         final bg = Glass.scaffoldBg(context);
-        return PopScope(
-          onPopInvokedWithResult: (didPop, _) {
-            if (_dirty) _save();
-          },
-          child: Scaffold(
-            backgroundColor: bg,
-            appBar: AppBar(
-              backgroundColor: bg,
-              title: TextField(
-                controller: _title,
-                onChanged: (_) => _changed(),
-                style: Theme.of(context).textTheme.titleMedium,
-                decoration: const InputDecoration(
-                    hintText: '标题', filled: false, border: InputBorder.none, enabledBorder: InputBorder.none, focusedBorder: InputBorder.none),
+        final wide = MediaQuery.sizeOf(context).width >= 820;
+        final activeMode = _mode ?? (wide ? _NoteViewMode.split : _NoteViewMode.edit);
+
+        Widget fmtBtn(String tip, IconData icon, VoidCallback onTap) => Tooltip(
+              message: tip,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(AppRadius.s),
+                onTap: onTap,
+                child: SizedBox(
+                  width: 34,
+                  height: 32,
+                  child: Icon(icon, size: 16, color: c.text2),
+                ),
               ),
-              actions: [
-                MotionSwitch(
-                  child: _dirty
-                      ? const SizedBox.square(
-                          key: ValueKey('saving'),
-                          dimension: Sizes.bar,
-                          child: Center(child: SizedBox.square(dimension: Sizes.iconSm, child: CircularProgressIndicator(strokeWidth: 2))))
-                      : Tooltip(
-                          key: const ValueKey('saved'),
-                          message: '已保存',
-                          child: SizedBox.square(
-                              dimension: Sizes.bar, child: Icon(CupertinoIcons.checkmark_alt_circle, size: Sizes.iconMd, color: AppColors.of(context).text3)),
-                        ),
-                ),
-              ],
-              bottom: PreferredSize(
-                preferredSize: const Size.fromHeight(Sizes.bar),
-                child: TabBar(
-                  controller: _tabs,
-                  labelColor: AppColors.of(context).text,
-                  unselectedLabelColor: AppColors.of(context).text2,
-                  labelStyle: Theme.of(context).textTheme.labelLarge,
-                  unselectedLabelStyle: Theme.of(context).textTheme.bodyMedium,
-                  indicatorColor: AppColors.of(context).text,
-                  indicatorSize: TabBarIndicatorSize.label,
-                  dividerColor: AppColors.of(context).separator,
-                  tabs: const [Tab(height: Sizes.bar, text: '编辑'), Tab(height: Sizes.bar, text: '预览')],
-                ),
+            );
+
+        final formatBar = Glass(
+          radius: 16,
+          padding: const EdgeInsets.symmetric(horizontal: Gap.s, vertical: 3),
+          child: Material(
+            type: MaterialType.transparency,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  fmtBtn('一级标题', CupertinoIcons.textformat_size, () => _prefixLine('# ')),
+                  fmtBtn('粗体 (Ctrl+B)', CupertinoIcons.bold, () => _wrapSelection('**', '**')),
+                  fmtBtn('斜体 (Ctrl+I)', CupertinoIcons.italic, () => _wrapSelection('*', '*')),
+                  fmtBtn('待办事项', CupertinoIcons.checkmark_square, () => _prefixLine('- [ ] ')),
+                  fmtBtn('无序列表', CupertinoIcons.list_bullet, () => _prefixLine('- ')),
+                  fmtBtn('引用', CupertinoIcons.quote_bubble, () => _prefixLine('> ')),
+                  fmtBtn('行内代码', CupertinoIcons.chevron_left_slash_chevron_right, () => _wrapSelection('`', '`')),
+                  fmtBtn('代码块', CupertinoIcons.doc_plaintext, () => _wrapSelection('\n```\n', '\n```\n')),
+                  fmtBtn('链接', CupertinoIcons.link, () => _wrapSelection('[', '](https://)')),
+                ],
               ),
             ),
-            body: TabBarView(controller: _tabs, children: [
-              Padding(
-                padding: const EdgeInsets.all(Gap.xl),
+          ),
+        );
+
+        final editorPane = Padding(
+          padding: const EdgeInsets.fromLTRB(Gap.xl, Gap.m, Gap.xl, Gap.xl),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextField(
+                controller: _title,
+                onChanged: (_) => _changed(),
+                style: tt.headlineSmall?.copyWith(fontWeight: FontWeight.w700, color: c.text),
+                decoration: InputDecoration(
+                  hintText: '无标题笔记',
+                  hintStyle: tt.headlineSmall?.copyWith(fontWeight: FontWeight.w600, color: c.text3),
+                  filled: false,
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  contentPadding: const EdgeInsets.only(bottom: Gap.s),
+                ),
+              ),
+              Divider(height: 1, color: c.separator.withValues(alpha: 0.6)),
+              const SizedBox(height: Gap.m),
+              Expanded(
                 child: TextField(
                   key: const Key('noteBody'),
                   controller: _body,
+                  focusNode: _bodyFocus,
                   onChanged: (_) => _changed(),
                   maxLines: null,
                   expands: true,
                   textAlignVertical: TextAlignVertical.top,
-                  style: EditorType.code.style.copyWith(fontFamily: FontTokens.mono, fontFamilyFallback: FontTokens.monoFallback, height: 1.5),
-                  decoration: const InputDecoration(
-                      hintText: '支持 Markdown：# 标题、**粗体**、- 列表、`代码`…',
-                      filled: false,
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none),
+                  style: tt.bodyLarge?.copyWith(fontSize: 15.5, height: 1.7, color: c.text),
+                  decoration: InputDecoration(
+                    hintText: '直接开始写作… 支持 Markdown（# 标题、**粗体**、- [ ] 待办、`代码`）',
+                    hintStyle: tt.bodyMedium?.copyWith(color: c.text3),
+                    filled: false,
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                  ),
                 ),
               ),
-              Markdown(data: _body.text, selectable: true, padding: const EdgeInsets.all(Gap.xl)),
-            ]),
+            ],
+          ),
+        );
+
+        final previewPane = ValueListenableBuilder<String>(
+          valueListenable: _previewText,
+          builder: (context, md, _) => Markdown(
+            data: md.trim().isEmpty ? '*暂无正文内容*' : md,
+            selectable: true,
+            padding: const EdgeInsets.all(Gap.xl),
+          ),
+        );
+
+        final Widget bodyContent;
+        if (activeMode == _NoteViewMode.split && wide) {
+          bodyContent = Row(
+            key: const ValueKey('mode-split'),
+            children: [
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(Gap.l, Gap.s, Gap.s, Gap.l),
+                  child: SpecularGlassCard(radius: 20, child: editorPane),
+                ),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(Gap.s, Gap.s, Gap.l, Gap.l),
+                  child: SpecularGlassCard(radius: 20, child: previewPane),
+                ),
+              ),
+            ],
+          );
+        } else if (activeMode == _NoteViewMode.preview) {
+          bodyContent = Center(
+            key: const ValueKey('mode-preview'),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 800),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(Gap.l, Gap.s, Gap.l, Gap.l),
+                child: SpecularGlassCard(radius: 20, child: previewPane),
+              ),
+            ),
+          );
+        } else {
+          bodyContent = Center(
+            key: const ValueKey('mode-edit'),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 800),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(Gap.l, Gap.s, Gap.l, Gap.l),
+                child: SpecularGlassCard(radius: 20, child: editorPane),
+              ),
+            ),
+          );
+        }
+
+        Widget modeChip(_NoteViewMode m, String label) {
+          final sel = activeMode == m;
+          return GestureDetector(
+            onTap: () {
+              _previewText.value = _body.text;
+              setState(() => _mode = m);
+            },
+            child: AnimatedContainer(
+              duration: Motion.short2,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: sel ? c.accent.withValues(alpha: 0.18) : Colors.transparent,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Text(
+                label,
+                style: tt.labelMedium?.copyWith(
+                  color: sel ? c.accent : c.text2,
+                  fontWeight: sel ? FontWeight.w600 : FontWeight.w500,
+                ),
+              ),
+            ),
+          );
+        }
+
+        return CallbackShortcuts(
+          bindings: {
+            const SingleActivator(LogicalKeyboardKey.keyS, control: true): _save,
+            const SingleActivator(LogicalKeyboardKey.keyS, meta: true): _save,
+            const SingleActivator(LogicalKeyboardKey.keyB, control: true): () => _wrapSelection('**', '**'),
+            const SingleActivator(LogicalKeyboardKey.keyI, control: true): () => _wrapSelection('*', '*'),
+          },
+          child: PopScope(
+            onPopInvokedWithResult: (didPop, _) {
+              if (_dirtyNotifier.value) _save();
+            },
+            child: Scaffold(
+              backgroundColor: bg,
+              appBar: AppBar(
+                backgroundColor: bg,
+                titleSpacing: Gap.s,
+                title: Row(
+                  children: [
+                    Glass(
+                      radius: 18,
+                      padding: const EdgeInsets.all(3),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          modeChip(_NoteViewMode.edit, '编辑'),
+                          if (wide) modeChip(_NoteViewMode.split, '分栏'),
+                          modeChip(_NoteViewMode.preview, '预览'),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: Gap.m),
+                    if (wide && activeMode != _NoteViewMode.preview) Expanded(child: Align(alignment: Alignment.centerLeft, child: formatBar)),
+                  ],
+                ),
+                actions: [
+                  Center(
+                    child: ValueListenableBuilder<String>(
+                      valueListenable: _statsText,
+                      builder: (context, s, _) => Padding(
+                        padding: const EdgeInsets.only(right: Gap.s),
+                        child: Text(s, style: tt.bodySmall?.copyWith(color: c.text3)),
+                      ),
+                    ),
+                  ),
+                  ValueListenableBuilder<bool>(
+                    valueListenable: _dirtyNotifier,
+                    builder: (context, dirty, _) => Tooltip(
+                      message: dirty ? '正在同步保存…' : '已自动保存 (Ctrl+S)',
+                      child: IconButton(
+                        onPressed: _save,
+                        icon: dirty
+                            ? const SizedBox.square(
+                                key: ValueKey('saving'),
+                                dimension: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : Icon(
+                                CupertinoIcons.checkmark_alt_circle,
+                                key: const ValueKey('saved'),
+                                size: Sizes.iconMd,
+                                color: c.accent,
+                              ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: Gap.xs),
+                ],
+              ),
+              body: Column(
+                children: [
+                  if (!wide && activeMode != _NoteViewMode.preview)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(Gap.l, Gap.xs, Gap.l, Gap.xs),
+                      child: formatBar,
+                    ),
+                  Expanded(child: MotionSwitch(child: bodyContent)),
+                ],
+              ),
+            ),
           ),
         );
       },
@@ -203,6 +454,8 @@ void _saveDetached(SyncClient? sync, String? id, String title, String body, Stri
     if (body.trim().isEmpty && title.trim().isEmpty) return;
     sync.create(kind: BlockKind.note, title: t.isEmpty ? '新笔记' : t, payload: {'markdown': body}, parentId: parentId);
   } else {
-    sync.update(id, title: t.isEmpty ? '新笔记' : t, payload: {'markdown': body});
+    final existing = sync.byId(id)?.payload;
+    final payload = existing == null ? {'markdown': body} : {...existing, 'markdown': body};
+    sync.update(id, title: t.isEmpty ? '新笔记' : t, payload: payload);
   }
 }

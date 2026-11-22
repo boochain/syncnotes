@@ -103,6 +103,8 @@ void main() {
     await tester.tap(find.byKey(const Key('homeSettings')));
     await tester.pumpAndSettle();
     final sw = find.byKey(const Key('notifySwitch'));
+    await tester.scrollUntilVisible(sw, 300, scrollable: find.byType(Scrollable).first);
+    await tester.pumpAndSettle();
     final before = tester.widget<AppSwitch>(sw).value;
     await tester.tap(sw);
     await tester.pumpAndSettle();

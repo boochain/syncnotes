@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -10,6 +12,7 @@ import '../sync/sync_client.dart';
 import 'context_menu.dart';
 import 'ds.dart';
 import 'glass.dart';
+import 'motion.dart';
 import 'tokens.dart';
 
 String relTime(int ms) {
@@ -22,12 +25,189 @@ String relTime(int ms) {
   return '${t.month}月${t.day}日';
 }
 
-/// 模拟便利贴风格的液态玻璃卡片（网格视图使用）：
-/// - 顶部镜面高光条 + 毛玻璃透光 + 柔和类型色微染
-/// - 多行摘要展示、底部同步云状态、悬停快捷操作与桌面端右键光标上下文菜单
+/// 便签颜色与重要级别预设（同步保存在 `block.payload['sticky_color']`）。
+class StickyColorOption {
+  final String key;
+  final String label;
+  final String tag;
+  final Color? color;
+  const StickyColorOption(this.key, this.label, this.tag, this.color);
+}
+
+const stickyColorOptions = <StickyColorOption>[
+  StickyColorOption('default', '默认 · 透明水晶', '', null),
+  StickyColorOption('red', '紧急 · 珊瑚红', '紧急', Color(0xFFEF4444)),
+  StickyColorOption('amber', '重要 · 琥珀金', '重要', Color(0xFFF59E0B)),
+  StickyColorOption('blue', '待办 · 晴空蓝', '待办', Color(0xFF3B82F6)),
+  StickyColorOption('purple', '灵感 · 薰衣草', '灵感', Color(0xFFA855F7)),
+  StickyColorOption('green', '完成 · 翡翠绿', '完成', Color(0xFF10B981)),
+];
+
+StickyColorOption stickyColorOf(Block block) {
+  final key = block.payload['sticky_color'] as String? ?? 'default';
+  for (final opt in stickyColorOptions) {
+    if (opt.key == key) return opt;
+  }
+  return stickyColorOptions.first;
+}
+
+void setStickyColor(SyncClient sync, Block block, String colorKey) {
+  final next = Map<String, dynamic>.from(block.payload);
+  if (colorKey == 'default') {
+    next.remove('sticky_color');
+  } else {
+    next['sticky_color'] = colorKey;
+  }
+  sync.update(block.id, payload: next);
+}
+
+double? _numField(Map<String, dynamic> payload, String key) {
+  final v = payload[key];
+  if (v is num) return v.toDouble();
+  return null;
+}
+
+/// 弹出便签颜色 / 重要级别选择浮窗（支持桌面光标定位与移动端居中）。
+Future<void> showStickyColorPicker(BuildContext context, Block block, {Offset? anchor}) async {
+  final sync = AppScope.of(context).sync;
+  final current = stickyColorOf(block).key;
+  await showGeneralDialog<void>(
+    context: context,
+    barrierDismissible: true,
+    barrierLabel: '选择便签颜色',
+    barrierColor: Colors.transparent,
+    transitionDuration: Motion.short3,
+    pageBuilder: (ctx, a1, a2) {
+      final size = MediaQuery.sizeOf(ctx);
+      final c = AppColors.of(ctx);
+      final tt = Theme.of(ctx).textTheme;
+      const panelW = 248.0;
+      const panelH = 122.0;
+      double left = anchor != null ? anchor.dx - panelW / 2 : (size.width - panelW) / 2;
+      double top = anchor != null ? anchor.dy + 8 : (size.height - panelH) / 2;
+      left = left.clamp(12.0, math.max(12.0, size.width - panelW - 12.0));
+      top = top.clamp(12.0, math.max(12.0, size.height - panelH - 12.0));
+
+      return Stack(
+        children: [
+          Positioned(
+            left: left,
+            top: top,
+            width: panelW,
+            child: Glass(
+              radius: 18,
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+              child: Material(
+                type: MaterialType.transparency,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '颜色与重要级别',
+                      style: tt.labelMedium?.copyWith(color: c.text2, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final opt in stickyColorOptions)
+                          _ColorSwatchChip(
+                            option: opt,
+                            selected: opt.key == current,
+                            onTap: () {
+                              setStickyColor(sync, block, opt.key);
+                              Navigator.of(ctx).pop();
+                            },
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    },
+    transitionBuilder: (ctx, animation, secondaryAnimation, child) =>
+        MotionFade(animation: animation, child: child),
+  );
+}
+
+class _ColorSwatchChip extends StatelessWidget {
+  final StickyColorOption option;
+  final bool selected;
+  final VoidCallback onTap;
+  const _ColorSwatchChip({required this.option, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final swatch = option.color;
+    return Tooltip(
+      message: option.label,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: AnimatedContainer(
+          duration: Motion.short2,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          decoration: BoxDecoration(
+            color: selected
+                ? (swatch ?? c.accent).withValues(alpha: dark ? 0.28 : 0.18)
+                : c.fill.withValues(alpha: 0.48),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: selected ? (swatch ?? c.accent) : c.separator.withValues(alpha: 0.6),
+              width: selected ? 1.5 : 1.0,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 12,
+                height: 12,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: swatch ?? (dark ? Colors.white.withValues(alpha: 0.28) : Colors.white.withValues(alpha: 0.9)),
+                  border: Border.all(
+                    color: swatch != null ? Colors.white.withValues(alpha: 0.7) : c.text3.withValues(alpha: 0.6),
+                    width: 1,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 5),
+              Text(
+                option.tag.isEmpty ? '默认' : option.tag,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontSize: 11.5,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                      color: c.text,
+                    ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 模拟便利贴风格的液态玻璃卡片（支持自由拖拽抬升阴影、重要级别染色与右键菜单）。
 class StickyNoteCard extends StatefulWidget {
   final Block block;
-  const StickyNoteCard({super.key, required this.block});
+  final bool dragging;
+  final VoidCallback? onBringToFront;
+  const StickyNoteCard({
+    super.key,
+    required this.block,
+    this.dragging = false,
+    this.onBringToFront,
+  });
 
   @override
   State<StickyNoteCard> createState() => _StickyNoteCardState();
@@ -54,8 +234,8 @@ class _StickyNoteCardState extends State<StickyNoteCard> {
   Color? _kindTint(BlockKind kind) => switch (kind) {
         BlockKind.folder => const Color(0xFFF59E0B),
         BlockKind.file => const Color(0xFF38BDF8),
-        BlockKind.page || BlockKind.note || BlockKind.text => const Color(0xFFA855F7),
-        BlockKind.message || BlockKind.unknown => null,
+        BlockKind.page || BlockKind.note => const Color(0xFF8B5CF6),
+        BlockKind.message || BlockKind.text || BlockKind.unknown => null,
       };
 
   @override
@@ -66,6 +246,8 @@ class _StickyNoteCardState extends State<StickyNoteCard> {
     final tt = Theme.of(context).textTheme;
     final type = BlockTypes.of(block.kind);
     final unread = !block.isViewed && block.kind != BlockKind.folder;
+    final stickyColor = stickyColorOf(block);
+    final effectiveTint = stickyColor.color ?? _kindTint(block.kind);
     final emoji = block.kind == BlockKind.page
         ? (block.payload['icon'] ?? '') as String
         : block.kind == BlockKind.folder
@@ -86,7 +268,7 @@ class _StickyNoteCardState extends State<StickyNoteCard> {
       button: true,
       label: '${block.title}，$bodyText${unread ? '，未读' : ''}',
       child: MouseRegion(
-        cursor: SystemMouseCursors.click,
+        cursor: widget.dragging ? SystemMouseCursors.grabbing : SystemMouseCursors.grab,
         onEnter: (e) {
           if (isMouseHover(e)) setState(() => _hover = true);
         },
@@ -96,16 +278,18 @@ class _StickyNoteCardState extends State<StickyNoteCard> {
           onTap: () => type.execute(context, block),
           onLongPress: () {
             Feedback.forLongPress(context);
-            showBlockMenu(context, block);
+            showBlockMenu(context, block, onBringToFront: widget.onBringToFront);
           },
-          onSecondaryTapUp: (d) => showBlockMenu(context, block, anchor: d.globalPosition),
+          onSecondaryTapUp: (d) =>
+              showBlockMenu(context, block, anchor: d.globalPosition, onBringToFront: widget.onBringToFront),
           child: SpecularGlassCard(
             key: ValueKey('card-${block.id}'),
-            radius: 18,
+            radius: 20,
             hover: _hover,
-            tintAccent: _kindTint(block.kind),
+            elevated: widget.dragging,
+            tintAccent: effectiveTint,
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 12, 12),
+              padding: const EdgeInsets.fromLTRB(17, 15, 13, 12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -117,12 +301,12 @@ class _StickyNoteCardState extends State<StickyNoteCard> {
                         height: 24,
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
-                          color: c.fill.withValues(alpha: 0.72),
+                          color: (stickyColor.color ?? c.fill).withValues(alpha: stickyColor.color != null ? 0.22 : 0.72),
                           borderRadius: BorderRadius.circular(AppRadius.s),
                         ),
                         child: emoji.isNotEmpty
                             ? Emoji(emoji, size: 15)
-                            : Icon(type.icon, size: 13, color: c.text2),
+                            : Icon(type.icon, size: 13, color: stickyColor.color ?? c.text2),
                       ),
                       const SizedBox(width: Gap.s),
                       Expanded(
@@ -131,48 +315,104 @@ class _StickyNoteCardState extends State<StickyNoteCard> {
                           key: const Key('cardTitle'),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: tt.titleSmall?.copyWith(fontSize: 15, fontWeight: FontWeight.w600, color: c.text),
+                          style: tt.titleSmall?.copyWith(fontSize: 15.2, fontWeight: FontWeight.w600, letterSpacing: -0.2, color: c.text),
                         ),
                       ),
                       if (unread) ...[
                         const SizedBox(width: Gap.xs),
                         Container(
                           key: const Key('unreadDot'),
-                          width: 8,
-                          height: 8,
+                          width: 7,
+                          height: 7,
                           decoration: BoxDecoration(color: c.accent, shape: BoxShape.circle),
                         ),
                       ],
+                      const SizedBox(width: 4),
+                      // 便签重要级别色点快捷入口
+                      Builder(
+                        builder: (dotCtx) => Tooltip(
+                          message: stickyColor.tag.isEmpty ? '设置重要级别颜色' : '${stickyColor.label}（点击切换）',
+                          child: InkWell(
+                            key: ValueKey('stickyColorBtn-${block.id}'),
+                            borderRadius: BorderRadius.circular(10),
+                            onTap: () {
+                              Offset? anchor;
+                              final box = dotCtx.findRenderObject() as RenderBox?;
+                              if (box != null) anchor = box.localToGlobal(Offset(box.size.width / 2, box.size.height));
+                              showStickyColorPicker(context, block, anchor: anchor);
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.all(4),
+                              child: Container(
+                                width: 11,
+                                height: 11,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: stickyColor.color ?? c.text3.withValues(alpha: 0.24),
+                                  border: Border.all(
+                                    color: stickyColor.color != null
+                                        ? Colors.white.withValues(alpha: 0.85)
+                                        : c.text3.withValues(alpha: 0.45),
+                                    width: 1.2,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
-                  const SizedBox(height: Gap.m),
+                  const SizedBox(height: 10),
                   Expanded(
                     child: Text(
                       bodyText,
                       key: const Key('cardPreview'),
                       maxLines: 5,
                       overflow: TextOverflow.ellipsis,
-                      style: tt.bodySmall?.copyWith(color: c.text2, fontSize: 13, height: 1.48),
+                      style: tt.bodySmall?.copyWith(color: c.text2, fontSize: 12.8, height: 1.5),
                     ),
                   ),
-                  const SizedBox(height: Gap.s),
+                  const SizedBox(height: 6),
                   Row(
                     children: [
-                      Icon(
-                        block.pending ? CupertinoIcons.cloud_upload : CupertinoIcons.cloud,
-                        size: 13,
-                        color: block.pending ? c.warning : c.text3,
-                      ),
-                      const SizedBox(width: 5),
+                      if (stickyColor.tag.isNotEmpty && stickyColor.color != null) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                          decoration: BoxDecoration(
+                            color: stickyColor.color!.withValues(alpha: 0.18),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: stickyColor.color!.withValues(alpha: 0.42), width: 0.8),
+                          ),
+                          child: Text(
+                            stickyColor.tag,
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: stickyColor.color,
+                              height: 1.2,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                      ],
                       Expanded(
                         child: Text(
-                          relTime(block.updatedAt),
+                          block.pending ? '等待同步 · ${relTime(block.updatedAt)}' : '已同步 · ${relTime(block.updatedAt)}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: tt.bodySmall?.copyWith(color: c.text3, fontSize: 11),
                         ),
                       ),
-                      if (isDesktop && _hover) ...[
+                      if (!(isDesktop && _hover && !widget.dragging)) ...[
+                        Icon(
+                          block.pending ? CupertinoIcons.cloud_upload : CupertinoIcons.cloud,
+                          size: 14,
+                          color: block.pending ? c.warning : c.text3.withValues(alpha: 0.85),
+                        ),
+                        const SizedBox(width: 2),
+                      ],
+                      if (isDesktop && _hover && !widget.dragging) ...[
                         _CardHoverAction(
                           tooltip: block.isViewed ? '标为未读' : '标为已读',
                           icon: block.isViewed ? CupertinoIcons.circle : CupertinoIcons.checkmark_circle,
@@ -192,15 +432,15 @@ class _StickyNoteCardState extends State<StickyNoteCard> {
                       ],
                       Builder(
                         builder: (btnCtx) => SizedBox.square(
-                          dimension: Sizes.compact,
+                          dimension: 26,
                           child: IconButton(
                             key: const Key('cardMore'),
                             style: IconButton.styleFrom(
-                              fixedSize: const Size.square(Sizes.compact),
-                              minimumSize: const Size.square(Sizes.compact),
+                              fixedSize: const Size.square(26),
+                              minimumSize: const Size.square(26),
                               padding: EdgeInsets.zero,
                             ),
-                            iconSize: Sizes.iconSm,
+                            iconSize: 15,
                             icon: Icon(CupertinoIcons.ellipsis, color: c.text2),
                             tooltip: '更多',
                             onPressed: () {
@@ -209,7 +449,7 @@ class _StickyNoteCardState extends State<StickyNoteCard> {
                                 final box = btnCtx.findRenderObject() as RenderBox?;
                                 if (box != null) anchor = box.localToGlobal(Offset(box.size.width, box.size.height + 4));
                               }
-                              showBlockMenu(context, block, anchor: anchor);
+                              showBlockMenu(context, block, anchor: anchor, onBringToFront: widget.onBringToFront);
                             },
                           ),
                         ),
@@ -227,6 +467,7 @@ class _StickyNoteCardState extends State<StickyNoteCard> {
 }
 
 /// 收件箱 / 文件夹的列表行（普通列表视图）：
+/// - 保留便签重要级别色条标识，与便签画布双向同步
 /// - 桌面端支持鼠标右键原生 Apple Liquid Glass 上下文菜单 + 悬停一键快捷操作（已读/编辑/删除）
 /// - 移动端支持左滑移入回收站（带撤销提示，不与系统边缘返回冲突）与长按底部菜单
 class BlockCard extends StatefulWidget {
@@ -262,6 +503,7 @@ class _BlockCardState extends State<BlockCard> {
     final tt = Theme.of(context).textTheme;
     final type = BlockTypes.of(block.kind);
     final unread = !block.isViewed && block.kind != BlockKind.folder;
+    final stickyColor = stickyColorOf(block);
     final emoji = block.kind == BlockKind.page
         ? (block.payload['icon'] ?? '') as String
         : block.kind == BlockKind.folder
@@ -272,9 +514,12 @@ class _BlockCardState extends State<BlockCard> {
 
     final dark = Theme.of(context).brightness == Brightness.dark;
     final translucent = Glass.surfaceTranslucent;
+    final baseGlass = stickyColor.color != null && translucent
+        ? Color.lerp(c.elevated, stickyColor.color, dark ? 0.22 : 0.12)!
+        : c.elevated;
     final cardBg = _hover
-        ? (translucent ? c.elevated.withValues(alpha: dark ? 0.56 : 0.78) : c.hover)
-        : (translucent ? c.elevated.withValues(alpha: dark ? 0.28 : 0.44) : Colors.transparent);
+        ? (translucent ? baseGlass.withValues(alpha: dark ? 0.56 : 0.78) : c.hover)
+        : (translucent ? baseGlass.withValues(alpha: dark ? 0.30 : 0.48) : Colors.transparent);
 
     final rowWidget = Semantics(
       button: true,
@@ -304,9 +549,11 @@ class _BlockCardState extends State<BlockCard> {
               borderRadius: BorderRadius.circular(translucent ? AppRadius.l : AppRadius.m),
               border: translucent
                   ? Border.all(
-                      color: _hover
-                          ? (dark ? Colors.white.withValues(alpha: 0.28) : Colors.white.withValues(alpha: 0.92))
-                          : (dark ? Colors.white.withValues(alpha: 0.12) : Colors.white.withValues(alpha: 0.65)),
+                      color: stickyColor.color != null
+                          ? stickyColor.color!.withValues(alpha: _hover ? 0.55 : 0.34)
+                          : (_hover
+                              ? (dark ? Colors.white.withValues(alpha: 0.28) : Colors.white.withValues(alpha: 0.92))
+                              : (dark ? Colors.white.withValues(alpha: 0.14) : Colors.white.withValues(alpha: 0.68))),
                     )
                   : null,
               boxShadow: translucent
@@ -320,6 +567,17 @@ class _BlockCardState extends State<BlockCard> {
                   : const [],
             ),
             child: Row(children: [
+              if (stickyColor.color != null) ...[
+                Container(
+                  width: 3.5,
+                  height: 26,
+                  decoration: BoxDecoration(
+                    color: stickyColor.color,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(width: Gap.s),
+              ],
               Container(
                 width: Sizes.tile,
                 height: Sizes.tile,
@@ -335,6 +593,20 @@ class _BlockCardState extends State<BlockCard> {
                       child: Text(block.title.isEmpty ? '无标题' : block.title,
                           key: const Key('cardTitle'), maxLines: 1, overflow: TextOverflow.ellipsis, style: tt.labelLarge),
                     ),
+                    if (stickyColor.tag.isNotEmpty && stickyColor.color != null) ...[
+                      const SizedBox(width: Gap.xs),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: stickyColor.color!.withValues(alpha: 0.16),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          stickyColor.tag,
+                          style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: stickyColor.color),
+                        ),
+                      ),
+                    ],
                     if (block.pending) ...[
                       const SizedBox(width: Gap.s),
                       Tooltip(
@@ -459,11 +731,11 @@ class _CardHoverAction extends StatelessWidget {
       message: tooltip,
       child: IconButton(
         style: IconButton.styleFrom(
-          fixedSize: const Size.square(Sizes.compact),
-          minimumSize: const Size.square(Sizes.compact),
+          fixedSize: const Size.square(26),
+          minimumSize: const Size.square(26),
           padding: EdgeInsets.zero,
         ),
-        iconSize: Sizes.iconSm,
+        iconSize: 14.5,
         icon: Icon(icon, color: danger ? c.danger : c.text2),
         onPressed: onPressed,
       ),
@@ -510,7 +782,12 @@ class MenuRow extends StatelessWidget {
 }
 
 /// 块的上下文菜单：桌面右键 / 传 anchor 时弹出光标跟随 Apple Liquid Glass 上下文菜单；移动端弹出底部表单。
-Future<void> showBlockMenu(BuildContext context, Block block, {Offset? anchor}) async {
+Future<void> showBlockMenu(
+  BuildContext context,
+  Block block, {
+  Offset? anchor,
+  VoidCallback? onBringToFront,
+}) async {
   final s = AppScope.of(context);
   final type = BlockTypes.of(block.kind);
   final extra = type.extraActions(context, block);
@@ -520,6 +797,7 @@ Future<void> showBlockMenu(BuildContext context, Block block, {Offset? anchor}) 
       .toList();
   final messenger = ScaffoldMessenger.maybeOf(context);
   final title = block.title.isEmpty ? '无标题' : block.title;
+  final currentColor = stickyColorOf(block);
 
   Future<void> moveToFolder() async {
     final target = await showDialog<String>(
@@ -568,6 +846,17 @@ Future<void> showBlockMenu(BuildContext context, Block block, {Offset? anchor}) 
         for (final a in extra) ContextMenuItem(icon: a.icon, label: a.label, onTap: a.run),
         const ContextMenuDivider(),
         ContextMenuItem(
+          icon: CupertinoIcons.paintbrush,
+          label: currentColor.tag.isEmpty ? '颜色与重要级别…' : '颜色：${currentColor.tag}…',
+          onTap: () => showStickyColorPicker(context, block, anchor: anchor),
+        ),
+        if (onBringToFront != null)
+          ContextMenuItem(
+            icon: CupertinoIcons.square_stack_3d_up,
+            label: '置顶到最前',
+            onTap: onBringToFront,
+          ),
+        ContextMenuItem(
           icon: block.isViewed ? CupertinoIcons.circle_fill : CupertinoIcons.checkmark_circle,
           label: block.isViewed ? '标为未读' : '标为已读',
           onTap: () => s.sync.setViewed(block.id, !block.isViewed),
@@ -605,8 +894,27 @@ Future<void> showBlockMenu(BuildContext context, Block block, {Offset? anchor}) 
         padding: const EdgeInsets.fromLTRB(Gap.m, 0, Gap.m, Gap.m),
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(Gap.l, 0, Gap.l, Gap.m),
+            padding: const EdgeInsets.fromLTRB(Gap.l, 0, Gap.l, Gap.s),
             child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: tt.titleMedium),
+          ),
+          // 便签重要级别颜色快捷条
+          Padding(
+            padding: const EdgeInsets.fromLTRB(Gap.l, 0, Gap.l, Gap.m),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final opt in stickyColorOptions)
+                  _ColorSwatchChip(
+                    option: opt,
+                    selected: opt.key == currentColor.key,
+                    onTap: () {
+                      setStickyColor(s.sync, block, opt.key);
+                      Navigator.pop(c);
+                    },
+                  ),
+              ],
+            ),
           ),
           MenuRow(icon: type.icon, label: type.executeLabel, onTap: () {
             Navigator.pop(c);
@@ -616,6 +924,11 @@ Future<void> showBlockMenu(BuildContext context, Block block, {Offset? anchor}) 
             Navigator.pop(c);
             type.edit(context, block);
           }),
+          if (onBringToFront != null)
+            MenuRow(icon: CupertinoIcons.square_stack_3d_up, label: '置顶到最前', onTap: () {
+              Navigator.pop(c);
+              onBringToFront();
+            }),
           for (final a in extra)
             MenuRow(icon: a.icon, label: a.label, onTap: () {
               Navigator.pop(c);
@@ -692,7 +1005,263 @@ class EmptyState extends StatelessWidget {
   }
 }
 
-/// 动画块列表（支持模拟便利贴玻璃卡片网格视图与普通紧凑列表视图自由切换）。
+/// 自由拖拽、可堆叠、可分色标记重要级别的液态玻璃便签画布。
+class _StickyBoardCanvas extends StatefulWidget {
+  final List<Block> items;
+  final String? enterId;
+  final double topPadding;
+  final double bottomPadding;
+  const _StickyBoardCanvas({
+    super.key,
+    required this.items,
+    required this.enterId,
+    required this.topPadding,
+    required this.bottomPadding,
+  });
+
+  @override
+  State<_StickyBoardCanvas> createState() => _StickyBoardCanvasState();
+}
+
+class _StickyBoardCanvasState extends State<_StickyBoardCanvas> {
+  static const double _cardW = 256.0;
+  static const double _cardH = 208.0;
+  static const double _gapX = 18.0;
+  static const double _gapY = 18.0;
+
+  final Map<String, Offset> _livePos = {};
+  final Map<String, double> _liveZ = {};
+  String? _draggingId;
+
+  Offset _defaultPos(int index, double boardWidth) {
+    final usableW = math.max(_cardW, boardWidth - 40.0);
+    final cols = math.max(1, math.min(5, ((usableW + _gapX) / (_cardW + _gapX)).floor()));
+    final totalRowW = cols * _cardW + (cols - 1) * _gapX;
+    final startX = math.max(20.0, (boardWidth - totalRowW) / 2);
+    final col = index % cols;
+    final row = index ~/ cols;
+    final staggerY = col.isOdd ? 12.0 : 0.0;
+    return Offset(
+      startX + col * (_cardW + _gapX),
+      widget.topPadding + 36.0 + row * (_cardH + _gapY) + staggerY,
+    );
+  }
+
+  Offset _posOf(Block b, int index, double boardWidth) {
+    final live = _livePos[b.id];
+    if (live != null) return live;
+    final sx = _numField(b.payload, 'sticky_x');
+    final sy = _numField(b.payload, 'sticky_y');
+    if (sx != null && sy != null) {
+      final maxX = math.max(16.0, boardWidth - _cardW - 16.0);
+      return Offset(sx.clamp(16.0, maxX), math.max(widget.topPadding + 10.0, sy));
+    }
+    return _defaultPos(index, boardWidth);
+  }
+
+  double _zOf(Block b, int index) {
+    return _liveZ[b.id] ?? _numField(b.payload, 'sticky_z') ?? index.toDouble();
+  }
+
+  double _maxZ(List<Block> items) {
+    double m = 0;
+    for (var i = 0; i < items.length; i++) {
+      m = math.max(m, _zOf(items[i], i));
+    }
+    return m;
+  }
+
+  void _bringToFront(SyncClient sync, Block b, List<Block> items, {bool persist = true}) {
+    final nextZ = _maxZ(items) + 1.0;
+    setState(() => _liveZ[b.id] = nextZ);
+    if (persist) {
+      sync.update(b.id, payload: {...b.payload, 'sticky_z': nextZ.round()});
+    }
+  }
+
+  void _tidyAll(SyncClient sync, List<Block> items, double boardWidth) {
+    for (var i = 0; i < items.length; i++) {
+      final b = items[i];
+      final p = _defaultPos(i, boardWidth);
+      sync.update(
+        b.id,
+        payload: {
+          ...b.payload,
+          'sticky_x': p.dx.round(),
+          'sticky_y': p.dy.round(),
+          'sticky_z': i + 1,
+        },
+      );
+    }
+    setState(() {
+      _livePos.clear();
+      _liveZ.clear();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final sync = AppScope.of(context).sync;
+    final c = AppColors.of(context);
+    final items = widget.items;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final boardW = constraints.maxWidth;
+
+        // 窄屏手机：自动采用自适应双列/单列液态便签网格，保留颜色标记与触屏舒适度
+        if (boardW < 520) {
+          return GridView.builder(
+            key: const Key('blockGridView'),
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            padding: EdgeInsets.fromLTRB(Gap.l, widget.topPadding, Gap.l, widget.bottomPadding),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: boardW >= 360 ? 2 : 1,
+              mainAxisSpacing: 12,
+              crossAxisSpacing: 12,
+              childAspectRatio: boardW >= 360 ? 0.94 : 1.55,
+            ),
+            itemCount: items.length,
+            itemBuilder: (context, i) {
+              final card = StickyNoteCard(block: items[i]);
+              if (items[i].id != widget.enterId) return card;
+              return _FadeIn(key: ValueKey('enter-${items[i].id}'), child: card);
+            },
+          );
+        }
+
+        // 桌面 / 平板：真正自由拖拽 + 层叠 Z 轴 + 1 键整理排列的液态便签画布
+        final indexed = <(Block, int, Offset, double)>[];
+        double maxBottom = constraints.maxHeight;
+        for (var i = 0; i < items.length; i++) {
+          final b = items[i];
+          final pos = _posOf(b, i, boardW);
+          final z = _zOf(b, i);
+          indexed.add((b, i, pos, z));
+          maxBottom = math.max(maxBottom, pos.dy + _cardH + widget.bottomPadding + 40.0);
+        }
+        indexed.sort((a, b) => a.$4.compareTo(b.$4));
+
+        return Stack(
+          children: [
+            SingleChildScrollView(
+              key: const Key('blockGridView'),
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: SizedBox(
+                width: boardW,
+                height: maxBottom,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    for (final entry in indexed)
+                      Builder(
+                        builder: (context) {
+                          final b = entry.$1;
+                          final pos = entry.$3;
+                          final isDragging = _draggingId == b.id;
+                          Widget card = StickyNoteCard(
+                            block: b,
+                            dragging: isDragging,
+                            onBringToFront: () => _bringToFront(sync, b, items),
+                          );
+                          if (b.id == widget.enterId) {
+                            card = _FadeIn(key: ValueKey('enter-${b.id}'), child: card);
+                          }
+                          return Positioned(
+                            key: ValueKey('sticky-pos-${b.id}'),
+                            left: pos.dx,
+                            top: pos.dy,
+                            width: _cardW,
+                            height: _cardH,
+                            child: GestureDetector(
+                              onPanStart: (_) {
+                                final nextZ = _maxZ(items) + 1.0;
+                                setState(() {
+                                  _draggingId = b.id;
+                                  _livePos[b.id] = pos;
+                                  _liveZ[b.id] = nextZ;
+                                });
+                              },
+                              onPanUpdate: (d) {
+                                final cur = _livePos[b.id] ?? pos;
+                                final maxX = math.max(16.0, boardW - _cardW - 16.0);
+                                final nx = (cur.dx + d.delta.dx).clamp(16.0, maxX);
+                                final ny = math.max(widget.topPadding + 8.0, cur.dy + d.delta.dy);
+                                setState(() => _livePos[b.id] = Offset(nx, ny));
+                              },
+                              onPanEnd: (_) {
+                                final finalPos = _livePos[b.id] ?? pos;
+                                final finalZ = _liveZ[b.id] ?? entry.$4;
+                                setState(() => _draggingId = null);
+                                sync.update(
+                                  b.id,
+                                  payload: {
+                                    ...b.payload,
+                                    'sticky_x': finalPos.dx.round(),
+                                    'sticky_y': finalPos.dy.round(),
+                                    'sticky_z': finalZ.round(),
+                                  },
+                                );
+                              },
+                              onPanCancel: () => setState(() => _draggingId = null),
+                              child: AnimatedScale(
+                                scale: isDragging ? 1.035 : 1.0,
+                                duration: Motion.short2,
+                                curve: Curves.easeOutCubic,
+                                child: card,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            // 右上角轻量化「整理排列」悬浮玻璃胶囊
+            Positioned(
+              top: widget.topPadding + 2,
+              right: 20,
+              child: Tooltip(
+                message: '按网格重新整齐排列所有便签',
+                child: Glass(
+                  radius: 14,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  child: Material(
+                    type: MaterialType.transparency,
+                    child: InkWell(
+                      key: const Key('tidyStickyButton'),
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () => _tidyAll(sync, items, boardW),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(CupertinoIcons.square_grid_2x2, size: 13, color: c.text2),
+                          const SizedBox(width: 5),
+                          Text(
+                            '整理排列',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w500,
+                                  color: c.text2,
+                                ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// 动画块列表（支持自由拖拽堆叠的液态便签画布与普通紧凑列表视图之间帧模糊丝滑切换）。
 class BlockList extends StatelessWidget {
   final String? parentId;
   final String filter;
@@ -700,7 +1269,7 @@ class BlockList extends StatelessWidget {
   /// 只显示这些类型（null = 全部）
   final Set<BlockKind>? kinds;
 
-  /// true = 模拟便利贴液态玻璃卡片网格；false = 普通单列列表
+  /// true = 自由拖拽堆叠液态玻璃便签画布；false = 普通单列列表
   final bool gridMode;
   final double topPadding;
   final double bottomPadding;
@@ -747,8 +1316,12 @@ class BlockList extends StatelessWidget {
           _known.add(enterId);
         }
         _ready = true;
+
+        final kindKey = kinds == null ? 'all' : kinds!.map((k) => k.name).join('-');
+        final Widget content;
         if (items.isEmpty) {
-          return LayoutBuilder(
+          content = LayoutBuilder(
+            key: ValueKey('empty-$kindKey-$gridMode'),
             builder: (context, c) => SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
               padding: EdgeInsets.only(top: topPadding, bottom: bottomPadding),
@@ -765,38 +1338,38 @@ class BlockList extends StatelessWidget {
               ),
             ),
           );
-        }
-
-        if (gridMode) {
-          return GridView.builder(
-            key: const Key('blockGridView'),
+        } else if (gridMode) {
+          content = _StickyBoardCanvas(
+            key: ValueKey('board-$kindKey'),
+            items: items,
+            enterId: enterId,
+            topPadding: topPadding,
+            bottomPadding: bottomPadding,
+          );
+        } else {
+          content = ListView.builder(
+            key: const Key('blockListView'),
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-            padding: EdgeInsets.fromLTRB(Gap.xl, topPadding, Gap.xl, bottomPadding),
-            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-              maxCrossAxisExtent: 268,
-              mainAxisSpacing: 14,
-              crossAxisSpacing: 14,
-              childAspectRatio: 0.96,
-            ),
+            padding: EdgeInsets.only(top: topPadding, bottom: bottomPadding),
             itemCount: items.length,
             itemBuilder: (context, i) {
-              final card = StickyNoteCard(block: items[i]);
+              final card = BlockCard(block: items[i]);
               if (items[i].id != enterId) return card;
               return _FadeIn(key: ValueKey('enter-${items[i].id}'), child: card);
             },
           );
         }
 
-        return ListView.builder(
-          key: const Key('blockListView'),
-          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          padding: EdgeInsets.only(top: topPadding, bottom: bottomPadding),
-          itemCount: items.length,
-          itemBuilder: (context, i) {
-            final card = BlockCard(block: items[i]);
-            if (items[i].id != enterId) return card;
-            return _FadeIn(key: ValueKey('enter-${items[i].id}'), child: card);
-          },
+        // 在测试/无着色器模式下直出，避免额外 AnimatedSwitcher 干扰瞬时 widget 断言
+        if (!Glass.useShader) return content;
+
+        return MotionSwitch(
+          duration: Motion.medium1,
+          maxBlur: 10.0,
+          child: KeyedSubtree(
+            key: ValueKey('${items.isEmpty ? "empty" : (gridMode ? "board" : "list")}-$kindKey'),
+            child: content,
+          ),
         );
       },
     );

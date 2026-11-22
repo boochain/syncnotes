@@ -222,6 +222,20 @@ class _SettingsPageState extends State<SettingsPage> {
                     setState(() {});
                   }),
                 ),
+                if (st.liquidGlass)
+                  SettingsRow(
+                    key: const Key('settingsFluidBg'),
+                    icon: CupertinoIcons.sparkles,
+                    title: '流体动态背景',
+                    subtitle: st.fluidBackground
+                        ? '多光晕柔和流动，透过液态玻璃卡片产生实时折射光影。'
+                        : '静态环境光场（更省电）',
+                    trailing: sw(st.fluidBackground, (v) {
+                      st.fluidBackground = v;
+                      Glass.fluidBg.value = v;
+                      setState(() {});
+                    }),
+                  ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: Gap.xl, vertical: Gap.s),
                   child: ValueListenableBuilder<ThemeMode>(
@@ -549,7 +563,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 }
 
-const appVersion = '0.6.17';
+const appVersion = '0.7.0';
 
 /// 设置分组标题：12/500 次级色，上 24 下 4（Notion 设置分组）
 class SettingsSection extends StatelessWidget {
