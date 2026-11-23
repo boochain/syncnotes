@@ -58,36 +58,42 @@ class _HomePageState extends State<HomePage> {
       });
     }
 
-    final searchField = SizedBox(
-      height: 32,
-      child: CallbackShortcuts(
-        bindings: {
-          const SingleActivator(LogicalKeyboardKey.escape): () => setState(() {
-                _searching = false;
-                _filter = '';
-              }),
-        },
-        child: TextField(
-          key: const ValueKey('search'),
-          autofocus: true,
-          style: tt.bodyMedium?.copyWith(fontSize: 13.5),
-          onChanged: (v) => setState(() => _filter = v),
-          decoration: const InputDecoration(
-            hintText: '搜索笔记、消息、文件…',
-            prefixIcon: Icon(CupertinoIcons.search, size: 15),
-            prefixIconConstraints: BoxConstraints(minWidth: 32, minHeight: 32),
-            contentPadding: EdgeInsets.symmetric(horizontal: Gap.m, vertical: 6),
-            isDense: true,
+    Widget buildSearchField({bool pill = false}) => SizedBox(
+          height: pill ? 30 : 32,
+          child: CallbackShortcuts(
+            bindings: {
+              const SingleActivator(LogicalKeyboardKey.escape): () => setState(() {
+                    _searching = false;
+                    _filter = '';
+                  }),
+            },
+            child: TextField(
+              key: const ValueKey('search'),
+              autofocus: true,
+              style: tt.bodyMedium?.copyWith(fontSize: 13.5),
+              onChanged: (v) => setState(() => _filter = v),
+              decoration: InputDecoration(
+                hintText: '搜索笔记、消息、文件…',
+                filled: !pill,
+                fillColor: pill ? Colors.transparent : null,
+                prefixIcon: const Icon(CupertinoIcons.search, size: 15),
+                prefixIconConstraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                contentPadding: EdgeInsets.symmetric(horizontal: Gap.m, vertical: pill ? 5 : 6),
+                isDense: true,
+                border: pill ? InputBorder.none : null,
+                enabledBorder: pill ? InputBorder.none : null,
+                focusedBorder: pill ? InputBorder.none : null,
+              ),
+            ),
           ),
-        ),
-      ),
-    );
+        );
 
-    final compactIconStyle = IconButton.styleFrom(
-      fixedSize: const Size.square(32),
-      minimumSize: const Size.square(32),
-      padding: EdgeInsets.zero,
-    );
+    ButtonStyle compactStyle(double dim) => IconButton.styleFrom(
+          fixedSize: Size.square(dim),
+          minimumSize: Size.square(dim),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          padding: EdgeInsets.zero,
+        );
 
     // 软件标题居中，连接状态位于标题正下方
     final centeredTitle = MediaQuery.withClampedTextScaling(
@@ -187,7 +193,7 @@ class _HomePageState extends State<HomePage> {
             child: _searching
                 ? Padding(
                     padding: const EdgeInsets.only(left: Gap.l, right: Gap.xs),
-                    child: searchField,
+                    child: buildSearchField(),
                   )
                 : ListView(
                     key: const Key('filterRow'),
@@ -252,7 +258,7 @@ class _HomePageState extends State<HomePage> {
     // 悬浮液态玻璃分类胶囊（4 个切换项），搜索时平滑切换为搜索框
     Widget buildFloatingCategoryPill(double maxW) {
       return Glass(
-        radius: 21,
+        radius: 18,
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
         child: Material(
           type: MaterialType.transparency,
@@ -261,8 +267,8 @@ class _HomePageState extends State<HomePage> {
             child: _searching
                 ? SizedBox(
                     key: const ValueKey('pill-search'),
-                    width: (maxW - 16).clamp(160.0, 300.0),
-                    child: searchField,
+                    width: (maxW - 12).clamp(160.0, 300.0),
+                    child: buildSearchField(pill: true),
                   )
                 : ConstrainedBox(
                     key: const Key('filterRow'),
@@ -340,11 +346,19 @@ class _HomePageState extends State<HomePage> {
           // 3. 底部栏：常驻消息发送框 + 右侧独立圆形新建按钮。
           return LayoutBuilder(builder: (context, constraints) {
             final mediaPad = MediaQuery.paddingOf(context);
-            final topInset = mediaPad.top + 106.0 + (s.sync.sealBlocked ? 48.0 : 0.0);
+            final topInset = mediaPad.top + 102.0 + (s.sync.sealBlocked ? 48.0 : 0.0);
             final bottomInset = mediaPad.bottom + 78.0;
+            final hPad = constraints.maxWidth >= 660 ? Gap.xl : Gap.m;
+            final leftBtnDim = constraints.maxWidth < 460 ? 30.0 : 32.0;
+            final leftBtnStyle = compactStyle(leftBtnDim);
+            final searchBtnStyle = compactStyle(32.0);
+            final leftBtnCount =
+                (widget.onMenu != null ? 1 : 0) + 1 + (isDesktop ? 1 : 0) + (!widget.embedded ? 1 : 0);
+            final leftPillW = leftBtnCount * leftBtnDim + 6.0;
+            final canCenterInStack = (constraints.maxWidth - hPad * 2) / 2 - 54.0 > leftPillW;
 
             final leftGlassButtons = Glass(
-              radius: 19,
+              radius: 18,
               padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
               child: Material(
                 type: MaterialType.transparency,
@@ -354,10 +368,10 @@ class _HomePageState extends State<HomePage> {
                     if (widget.onMenu != null)
                       IconButton(
                         key: const Key('menuButton'),
-                        style: compactIconStyle,
+                        style: leftBtnStyle,
                         icon: Icon(
                           widget.embedded ? CupertinoIcons.sidebar_left : CupertinoIcons.person_crop_circle_fill,
-                          size: widget.embedded ? 17 : 21,
+                          size: widget.embedded ? 17 : 20,
                           color: c.text2,
                         ),
                         tooltip: widget.embedded ? '展开侧边栏' : '菜单与侧边栏',
@@ -365,7 +379,7 @@ class _HomePageState extends State<HomePage> {
                       ),
                     IconButton(
                       key: const Key('viewModeToggle'),
-                      style: compactIconStyle,
+                      style: leftBtnStyle,
                       tooltip: isGrid ? '切换为普通列表视图' : '切换为自由便签画布',
                       icon: Icon(
                         isGrid ? CupertinoIcons.list_bullet : CupertinoIcons.square_grid_2x2,
@@ -378,7 +392,7 @@ class _HomePageState extends State<HomePage> {
                       ValueListenableBuilder<bool>(
                         valueListenable: DesktopShell.instance.expanded,
                         builder: (c, ex, _) => IconButton(
-                          style: compactIconStyle,
+                          style: leftBtnStyle,
                           tooltip: ex ? '收起为小窗' : '展开窗口',
                           icon: Icon(
                             ex
@@ -393,7 +407,7 @@ class _HomePageState extends State<HomePage> {
                     if (!widget.embedded)
                       IconButton(
                         key: const Key('homeSettings'),
-                        style: compactIconStyle,
+                        style: leftBtnStyle,
                         tooltip: '设置',
                         icon: Icon(CupertinoIcons.gear, size: 16.5, color: c.text2),
                         onPressed: () => Navigator.of(context).push(fadeRoute(const SettingsPage())),
@@ -404,17 +418,17 @@ class _HomePageState extends State<HomePage> {
             );
 
             final searchCircleButton = Glass(
-              radius: 19,
+              radius: 18,
               padding: const EdgeInsets.all(2),
               child: Material(
                 type: MaterialType.transparency,
                 child: IconButton(
                   key: const Key('homeSearch'),
-                  style: compactIconStyle,
+                  style: searchBtnStyle,
                   tooltip: _searching ? '关闭搜索' : '搜索',
                   icon: Icon(
                     _searching ? CupertinoIcons.xmark : CupertinoIcons.search,
-                    size: 16.5,
+                    size: 16,
                     color: c.text2,
                   ),
                   onPressed: toggleSearch,
@@ -425,18 +439,13 @@ class _HomePageState extends State<HomePage> {
             final floatingTopBar = SafeArea(
               bottom: false,
               child: Padding(
-                padding: EdgeInsets.fromLTRB(
-                  constraints.maxWidth >= 660 ? Gap.xl : Gap.m,
-                  Gap.s,
-                  constraints.maxWidth >= 660 ? Gap.xl : Gap.m,
-                  Gap.xs,
-                ),
+                padding: EdgeInsets.fromLTRB(hPad, Gap.s, hPad, Gap.xs),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     SizedBox(
-                      height: 44,
-                      child: constraints.maxWidth >= 340
+                      height: 40,
+                      child: canCenterInStack
                           ? Stack(
                               alignment: Alignment.center,
                               children: [
@@ -452,12 +461,12 @@ class _HomePageState extends State<HomePage> {
                             ),
                     ),
                     const SizedBox(height: 6),
-                    // 四个切换项 + 右侧独立圆形搜索按钮
+                    // 四个切换项 + 右侧等高独立圆形搜索按钮
                     Center(
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          buildFloatingCategoryPill(constraints.maxWidth - 76),
+                          buildFloatingCategoryPill(constraints.maxWidth - 64),
                           const SizedBox(width: 8),
                           searchCircleButton,
                         ],

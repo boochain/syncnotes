@@ -93,20 +93,7 @@ class Sidebar extends StatelessWidget {
                             style: tt.labelLarge?.copyWith(fontSize: 13.5, fontWeight: FontWeight.w600, height: 1.15),
                           ),
                           const SizedBox(height: 1),
-                          Row(
-                            children: [
-                              Flexible(child: ConnectionBadge(sync: s.sync, dotOnly: true)),
-                              const SizedBox(width: 2),
-                              Flexible(
-                                child: Text(
-                                  'SyncNotes',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: tt.bodySmall?.copyWith(fontSize: 11, color: c.text3, height: 1.1),
-                                ),
-                              ),
-                            ],
-                          ),
+                          ConnectionBadge(sync: s.sync, compact: true),
                         ],
                         ),
                       ),

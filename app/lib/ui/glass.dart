@@ -288,44 +288,46 @@ class _LiquidRimPainter extends CustomPainter {
       canvas.drawRRect(innerRect, chromaPaint);
     }
 
-    // 3. 顶部标志性镜面焦散光斑（紧贴卡片/胶囊上沿的锐利白光点 + 柔光扩散）
-    final glintCx = (size.width * glintBias).clamp(radius + 16.0, math.max(radius + 16.0, size.width - radius - 16.0)).toDouble();
-    final specWidth = (size.width * 0.52).clamp(28.0, 190.0).toDouble();
-    final startX = (glintCx - specWidth / 2).clamp(radius * 0.5, size.width);
-    final endX = (glintCx + specWidth / 2).clamp(0.0, size.width - radius * 0.5);
+    // 3. 顶部微弱镜面高光（仅在宽卡片/胶囊上绘制，避免在小圆形按钮上产生白斑）
+    if (size.width >= 96 && size.height >= 28) {
+      final glintCx = (size.width * glintBias)
+          .clamp(radius + 18.0, math.max(radius + 18.0, size.width - radius - 18.0))
+          .toDouble();
+      final specWidth = (size.width * 0.44).clamp(32.0, 160.0).toDouble();
+      final startX = (glintCx - specWidth / 2).clamp(radius * 0.65, size.width);
+      final endX = (glintCx + specWidth / 2).clamp(0.0, size.width - radius * 0.65);
 
-    if (endX > startX + 8) {
-      // 柔和镜面光晕（向玻璃内部漫射 12px）
-      final bloomRect = Rect.fromCenter(center: Offset(glintCx, 1.5), width: specWidth * 0.85, height: 22);
-      final bloomPaint = Paint()
-        ..shader = RadialGradient(
-          center: Alignment.center,
-          radius: 0.62,
-          colors: [
-            Colors.white.withValues(alpha: ((dark ? 0.42 : 0.72) + strength * 0.20).clamp(0.0, 0.92)),
-            Colors.white.withValues(alpha: ((dark ? 0.12 : 0.24) + strength * 0.08).clamp(0.0, 0.40)),
-            Colors.transparent,
-          ],
-          stops: const [0.0, 0.42, 1.0],
-        ).createShader(bloomRect);
-      canvas.save();
-      canvas.clipRRect(RRect.fromRectAndRadius(rect, Radius.circular(radius)));
-      canvas.drawOval(bloomRect, bloomPaint);
-      canvas.restore();
+      if (endX > startX + 12) {
+        final bloomRect = Rect.fromCenter(center: Offset(glintCx, 1.0), width: specWidth * 0.85, height: 10);
+        final bloomPaint = Paint()
+          ..shader = RadialGradient(
+            center: Alignment.center,
+            radius: 0.62,
+            colors: [
+              Colors.white.withValues(alpha: ((dark ? 0.22 : 0.40) + strength * 0.12).clamp(0.0, 0.56)),
+              Colors.white.withValues(alpha: ((dark ? 0.06 : 0.12) + strength * 0.04).clamp(0.0, 0.22)),
+              Colors.transparent,
+            ],
+            stops: const [0.0, 0.45, 1.0],
+          ).createShader(bloomRect);
+        canvas.save();
+        canvas.clipRRect(RRect.fromRectAndRadius(rect, Radius.circular(radius)));
+        canvas.drawOval(bloomRect, bloomPaint);
+        canvas.restore();
 
-      // 锐利顶沿高光弧线
-      final specPaint = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.9 + strength * 0.75
-        ..strokeCap = StrokeCap.round
-        ..shader = LinearGradient(
-          colors: [
-            Colors.transparent,
-            Colors.white.withValues(alpha: ((dark ? 0.78 : 0.96) + strength * 0.16).clamp(0.0, 1.0)),
-            Colors.transparent,
-          ],
-        ).createShader(Rect.fromLTWH(startX, 0, endX - startX, 3));
-      canvas.drawLine(Offset(startX, 1.0), Offset(endX, 1.0), specPaint);
+        final specPaint = Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.35 + strength * 0.45
+          ..strokeCap = StrokeCap.round
+          ..shader = LinearGradient(
+            colors: [
+              Colors.transparent,
+              Colors.white.withValues(alpha: ((dark ? 0.55 : 0.82) + strength * 0.12).clamp(0.0, 0.94)),
+              Colors.transparent,
+            ],
+          ).createShader(Rect.fromLTWH(startX, 0, endX - startX, 2));
+        canvas.drawLine(Offset(startX, 0.9), Offset(endX, 0.9), specPaint);
+      }
     }
 
     // 4. 底部左下角微弱对称反光条（增强液态玻璃厚度立体感）

@@ -2,11 +2,11 @@
 
 一个可自部署的多设备实时同步笔记、便签、消息与文件工具：在任意一台设备上发消息、写笔记、整理便签或传文件，其他设备**立即**同步。
 
-> **当前版本**：[v0.7.1](https://github.com/boochain/syncnotes/releases/latest) · [更新日志](docs/release-notes/v0.7.1.md) · [设计系统](docs/design-system.md) · [服务端管理脚本](docs/server-script.md) · [密码找回与数据救援](docs/password-recovery.md)
+> **当前版本**：[v0.7.2](https://github.com/boochain/syncnotes/releases/latest) · [更新日志](docs/release-notes/v0.7.2.md) · [设计系统](docs/design-system.md) · [服务端管理脚本](docs/server-script.md) · [密码找回与数据救援](docs/password-recovery.md)
 
 ---
 
-## 核心特性（v0.7.1）
+## 核心特性（v0.7.2）
 
 - **全新液态玻璃与流体动态背景**
   - 重做的 Liquid Glass 光学材质：支持折射、Fresnel 高光描边、色散棱镜内边与顶部聚焦光斑；设置页拖动透明度、折射率、画质档位实时生效。

@@ -115,6 +115,7 @@ class _QuickSendBarState extends State<QuickSendBar> {
         style: IconButton.styleFrom(
           fixedSize: Size.square(ctrlH),
           minimumSize: Size.square(ctrlH),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           padding: EdgeInsets.zero,
           shape: const CircleBorder(),
           backgroundColor: empty ? c.fill : c.accent,
@@ -157,6 +158,7 @@ class _QuickSendBarState extends State<QuickSendBar> {
                 style: IconButton.styleFrom(
                   fixedSize: Size.square(ctrlH),
                   minimumSize: Size.square(ctrlH),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   padding: EdgeInsets.zero,
                   shape: const CircleBorder(),
                 ),
@@ -216,6 +218,7 @@ class _QuickSendBarState extends State<QuickSendBar> {
                         style: IconButton.styleFrom(
                           fixedSize: const Size.square(Sizes.input),
                           minimumSize: const Size.square(Sizes.input),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           padding: EdgeInsets.zero,
                           shape: CircleBorder(side: BorderSide(color: c.separator)),
                           backgroundColor: c.elevated,

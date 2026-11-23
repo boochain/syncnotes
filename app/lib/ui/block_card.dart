@@ -439,7 +439,7 @@ class _StickyNoteCardState extends State<StickyNoteCard> {
             elevated: widget.dragging,
             tintAccent: effectiveTint,
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(17, 15, 13, 12),
+              padding: const EdgeInsets.fromLTRB(14, 13, 11, 11),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -575,7 +575,7 @@ class _StickyNoteCardState extends State<StickyNoteCard> {
                       ],
                       Expanded(
                         child: Text(
-                          block.pending ? '等待同步 · ${relTime(block.updatedAt)}' : '已同步 · ${relTime(block.updatedAt)}',
+                          block.pending ? '待同步 · ${relTime(block.updatedAt)}' : relTime(block.updatedAt),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: tt.bodySmall?.copyWith(color: c.text3, fontSize: 11),
