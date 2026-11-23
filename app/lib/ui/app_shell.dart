@@ -238,6 +238,7 @@ class AppShellState extends State<AppShell> implements PageHost {
               onSettings: _settings,
               onToggleSidebar: _wide ? toggleSidebar : null,
             );
+            final pal = AppColors.of(context);
             final Widget home;
             if (_wide) {
               home = MotionSwitch(
@@ -247,10 +248,13 @@ class AppShellState extends State<AppShell> implements PageHost {
                         embedded: true,
                         onMenu: _sidebarCollapsed ? toggleSidebar : null,
                       )
-                    : PageScreen(
+                    : ColoredBox(
                         key: ValueKey('page-$pageId'),
-                        pageId: pageId,
-                        onMenu: _sidebarCollapsed ? toggleSidebar : null,
+                        color: pal.bg,
+                        child: PageScreen(
+                          pageId: pageId,
+                          onMenu: _sidebarCollapsed ? toggleSidebar : null,
+                        ),
                       ),
               );
             } else {
@@ -269,7 +273,6 @@ class AppShellState extends State<AppShell> implements PageHost {
                 ),
               ),
             );
-            final pal = AppColors.of(context);
             return ListenableBuilder(
               listenable: Glass.backdropListenable,
               builder: (context, _) {

@@ -25,22 +25,24 @@ String relTime(int ms) {
   return '${t.month}月${t.day}日';
 }
 
-/// 便签颜色与重要级别预设（同步保存在 `block.payload['sticky_color']`）。
+/// 便签优先级与颜色预设（同步保存在 `block.payload['sticky_color']`）。
+/// 排序时按 `priority` 从高到低排列（紧急 > 重要 > 待办 > 灵感 > 备忘 > 默认）。
 class StickyColorOption {
   final String key;
   final String label;
   final String tag;
   final Color? color;
-  const StickyColorOption(this.key, this.label, this.tag, this.color);
+  final int priority;
+  const StickyColorOption(this.key, this.label, this.tag, this.color, this.priority);
 }
 
 const stickyColorOptions = <StickyColorOption>[
-  StickyColorOption('default', '默认 · 透明水晶', '', null),
-  StickyColorOption('red', '紧急 · 珊瑚红', '紧急', Color(0xFFEF4444)),
-  StickyColorOption('amber', '重要 · 琥珀金', '重要', Color(0xFFF59E0B)),
-  StickyColorOption('blue', '待办 · 晴空蓝', '待办', Color(0xFF3B82F6)),
-  StickyColorOption('purple', '灵感 · 薰衣草', '灵感', Color(0xFFA855F7)),
-  StickyColorOption('green', '完成 · 翡翠绿', '完成', Color(0xFF10B981)),
+  StickyColorOption('red', '紧急 · 珊瑚红（最高优先级）', '紧急', Color(0xFFEF4444), 5),
+  StickyColorOption('amber', '重要 · 琥珀金（高优先级）', '重要', Color(0xFFF59E0B), 4),
+  StickyColorOption('blue', '待办 · 晴空蓝（中优先级）', '待办', Color(0xFF3B82F6), 3),
+  StickyColorOption('purple', '灵感 · 薰衣草（低优先级）', '灵感', Color(0xFFA855F7), 2),
+  StickyColorOption('green', '备忘 · 翡翠绿', '备忘', Color(0xFF10B981), 1),
+  StickyColorOption('default', '默认 · 透明水晶', '', null, 0),
 ];
 
 StickyColorOption stickyColorOf(Block block) {
@@ -48,8 +50,18 @@ StickyColorOption stickyColorOf(Block block) {
   for (final opt in stickyColorOptions) {
     if (opt.key == key) return opt;
   }
-  return stickyColorOptions.first;
+  return stickyColorOptions.last;
 }
+
+/// 块的优先级分值（越大越靠前）：优先读取显式 `priority` 数值，否则取便签重要级别颜色对应的优先级。
+int blockPriorityOf(Block block) {
+  final explicit = block.payload['priority'];
+  if (explicit is num) return explicit.toInt();
+  return stickyColorOf(block).priority;
+}
+
+/// 块是否已标记为完成（同步保存在 `block.payload['completed']`）。
+bool isBlockCompleted(Block block) => block.payload['completed'] == true;
 
 void setStickyColor(SyncClient sync, Block block, String colorKey) {
   final next = Map<String, dynamic>.from(block.payload);
@@ -59,6 +71,143 @@ void setStickyColor(SyncClient sync, Block block, String colorKey) {
     next['sticky_color'] = colorKey;
   }
   sync.update(block.id, payload: next);
+}
+
+void setBlockCompleted(SyncClient sync, Block block, bool completed) {
+  final next = Map<String, dynamic>.from(block.payload);
+  if (completed) {
+    next['completed'] = true;
+    next['completed_at'] = DateTime.now().millisecondsSinceEpoch;
+  } else {
+    next.remove('completed');
+    next.remove('completed_at');
+  }
+  sync.update(block.id, payload: next);
+}
+
+/// 收件箱 / 文件夹统一排序规则：
+/// 1. 完成状态：未完成永远在最前，已完成永远单独排在最后；
+/// 2. 优先级（第一优先项）：紧急 > 重要 > 待办 > 灵感 > 备忘 > 默认；
+/// 3. 同优先级下文件夹置前；
+/// 4. 创建时间倒序（最新创建的在前），其次更新时间倒序、ID 稳定排序。
+int compareInboxBlocks(Block a, Block b) {
+  final ac = isBlockCompleted(a);
+  final bc = isBlockCompleted(b);
+  if (ac != bc) return ac ? 1 : -1;
+
+  final pa = blockPriorityOf(a);
+  final pb = blockPriorityOf(b);
+  if (pa != pb) return pb.compareTo(pa);
+
+  final af = a.kind == BlockKind.folder;
+  final bf = b.kind == BlockKind.folder;
+  if (af != bf) return af ? -1 : 1;
+
+  final created = b.createdAt.compareTo(a.createdAt);
+  if (created != 0) return created;
+  final updated = b.updatedAt.compareTo(a.updatedAt);
+  if (updated != 0) return updated;
+  return a.id.compareTo(b.id);
+}
+
+/// 块完成状态圆形勾选按钮（列表与便签卡片共用）。
+class _CompleteCheckButton extends StatelessWidget {
+  final Block block;
+  final double size;
+  const _CompleteCheckButton({required this.block, this.size = 26});
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScope.of(context);
+    final c = AppColors.of(context);
+    final done = isBlockCompleted(block);
+    return Tooltip(
+      message: done ? '取消完成' : '标为已完成',
+      child: InkWell(
+        key: ValueKey('completeToggle-${block.id}'),
+        customBorder: const CircleBorder(),
+        onTap: () {
+          HapticFeedback.selectionClick();
+          setBlockCompleted(s.sync, block, !done);
+        },
+        child: SizedBox.square(
+          dimension: size,
+          child: Center(
+            child: AnimatedContainer(
+              duration: Motion.short2,
+              width: 18,
+              height: 18,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: done ? c.success : Colors.transparent,
+                border: Border.all(
+                  color: done ? c.success : c.text3.withValues(alpha: 0.55),
+                  width: 1.5,
+                ),
+              ),
+              child: done ? const Icon(CupertinoIcons.checkmark, size: 11, color: Colors.white) : null,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// “已完成”分组分隔标题（折叠/展开已完成区，始终位于未完成区之后）。
+class _CompletedSectionHeader extends StatelessWidget {
+  final int count;
+  final bool expanded;
+  final VoidCallback onToggle;
+  final EdgeInsetsGeometry padding;
+  const _CompletedSectionHeader({
+    required this.count,
+    required this.expanded,
+    required this.onToggle,
+    this.padding = const EdgeInsets.fromLTRB(Gap.xl, Gap.l, Gap.xl, Gap.s),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    final tt = Theme.of(context).textTheme;
+    return Padding(
+      padding: padding,
+      child: InkWell(
+        key: const Key('completedSectionHeader'),
+        borderRadius: BorderRadius.circular(AppRadius.m),
+        onTap: onToggle,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: Gap.xs, vertical: Gap.xs),
+          child: Row(
+            children: [
+              Icon(
+                CupertinoIcons.checkmark_circle_fill,
+                size: 14,
+                color: c.success,
+              ),
+              const SizedBox(width: Gap.xs),
+              Text(
+                '已完成 · $count',
+                style: tt.labelMedium?.copyWith(
+                  color: c.text2,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(width: Gap.s),
+              Expanded(child: Divider(height: 1, color: c.separator.withValues(alpha: 0.7))),
+              const SizedBox(width: Gap.s),
+              Icon(
+                expanded ? CupertinoIcons.chevron_down : CupertinoIcons.chevron_right,
+                size: 13,
+                color: c.text3,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 double? _numField(Map<String, dynamic> payload, String key) {
@@ -104,7 +253,7 @@ Future<void> showStickyColorPicker(BuildContext context, Block block, {Offset? a
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '颜色与重要级别',
+                      '优先级与颜色（按优先级排序）',
                       style: tt.labelMedium?.copyWith(color: c.text2, fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 10),
@@ -246,8 +395,9 @@ class _StickyNoteCardState extends State<StickyNoteCard> {
     final tt = Theme.of(context).textTheme;
     final type = BlockTypes.of(block.kind);
     final unread = !block.isViewed && block.kind != BlockKind.folder;
+    final completed = isBlockCompleted(block);
     final stickyColor = stickyColorOf(block);
-    final effectiveTint = stickyColor.color ?? _kindTint(block.kind);
+    final effectiveTint = completed ? c.success : (stickyColor.color ?? _kindTint(block.kind));
     final emoji = block.kind == BlockKind.page
         ? (block.payload['icon'] ?? '') as String
         : block.kind == BlockKind.folder
@@ -315,10 +465,17 @@ class _StickyNoteCardState extends State<StickyNoteCard> {
                           key: const Key('cardTitle'),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: tt.titleSmall?.copyWith(fontSize: 15.2, fontWeight: FontWeight.w600, letterSpacing: -0.2, color: c.text),
+                          style: tt.titleSmall?.copyWith(
+                            fontSize: 15.2,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: -0.2,
+                            color: completed ? c.text2 : c.text,
+                            decoration: completed ? TextDecoration.lineThrough : null,
+                            decorationColor: c.text3,
+                          ),
                         ),
                       ),
-                      if (unread) ...[
+                      if (unread && !completed) ...[
                         const SizedBox(width: Gap.xs),
                         Container(
                           key: const Key('unreadDot'),
@@ -327,11 +484,11 @@ class _StickyNoteCardState extends State<StickyNoteCard> {
                           decoration: BoxDecoration(color: c.accent, shape: BoxShape.circle),
                         ),
                       ],
-                      const SizedBox(width: 4),
-                      // 便签重要级别色点快捷入口
+                      const SizedBox(width: 2),
+                      // 便签优先级色点快捷入口
                       Builder(
                         builder: (dotCtx) => Tooltip(
-                          message: stickyColor.tag.isEmpty ? '设置重要级别颜色' : '${stickyColor.label}（点击切换）',
+                          message: stickyColor.tag.isEmpty ? '设置优先级与颜色' : '${stickyColor.label}（点击切换）',
                           child: InkWell(
                             key: ValueKey('stickyColorBtn-${block.id}'),
                             borderRadius: BorderRadius.circular(10),
@@ -361,6 +518,7 @@ class _StickyNoteCardState extends State<StickyNoteCard> {
                           ),
                         ),
                       ),
+                      _CompleteCheckButton(block: block, size: 22),
                     ],
                   ),
                   const SizedBox(height: 10),
@@ -376,7 +534,26 @@ class _StickyNoteCardState extends State<StickyNoteCard> {
                   const SizedBox(height: 6),
                   Row(
                     children: [
-                      if (stickyColor.tag.isNotEmpty && stickyColor.color != null) ...[
+                      if (completed) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                          decoration: BoxDecoration(
+                            color: c.success.withValues(alpha: 0.18),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: c.success.withValues(alpha: 0.42), width: 0.8),
+                          ),
+                          child: Text(
+                            '已完成',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: c.success,
+                              height: 1.2,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                      ] else if (stickyColor.tag.isNotEmpty && stickyColor.color != null) ...[
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
                           decoration: BoxDecoration(
@@ -503,6 +680,7 @@ class _BlockCardState extends State<BlockCard> {
     final tt = Theme.of(context).textTheme;
     final type = BlockTypes.of(block.kind);
     final unread = !block.isViewed && block.kind != BlockKind.folder;
+    final completed = isBlockCompleted(block);
     final stickyColor = stickyColorOf(block);
     final emoji = block.kind == BlockKind.page
         ? (block.payload['icon'] ?? '') as String
@@ -514,8 +692,9 @@ class _BlockCardState extends State<BlockCard> {
 
     final dark = Theme.of(context).brightness == Brightness.dark;
     final translucent = Glass.surfaceTranslucent;
-    final baseGlass = stickyColor.color != null && translucent
-        ? Color.lerp(c.elevated, stickyColor.color, dark ? 0.22 : 0.12)!
+    final accentTint = completed ? c.success : stickyColor.color;
+    final baseGlass = accentTint != null && translucent
+        ? Color.lerp(c.elevated, accentTint, dark ? 0.22 : 0.12)!
         : c.elevated;
     final cardBg = _hover
         ? (translucent ? baseGlass.withValues(alpha: dark ? 0.56 : 0.78) : c.hover)
@@ -523,7 +702,7 @@ class _BlockCardState extends State<BlockCard> {
 
     final rowWidget = Semantics(
       button: true,
-      label: '${block.title}，$preview${unread ? '，未读' : ''}',
+      label: '${block.title}，$preview${completed ? '，已完成' : (unread ? '，未读' : '')}',
       child: MouseRegion(
         onEnter: (e) {
           if (isMouseHover(e)) setState(() => _hover = true);
@@ -543,14 +722,14 @@ class _BlockCardState extends State<BlockCard> {
             curve: Curves.easeOutCubic,
             constraints: const BoxConstraints(minHeight: Sizes.listRow),
             margin: EdgeInsets.symmetric(horizontal: translucent ? Gap.xl : Gap.m, vertical: translucent ? 4 : 0),
-            padding: const EdgeInsets.only(left: Gap.m, right: Gap.xs),
+            padding: const EdgeInsets.only(left: Gap.s, right: Gap.xs),
             decoration: BoxDecoration(
               color: cardBg,
               borderRadius: BorderRadius.circular(translucent ? AppRadius.l : AppRadius.m),
               border: translucent
                   ? Border.all(
-                      color: stickyColor.color != null
-                          ? stickyColor.color!.withValues(alpha: _hover ? 0.55 : 0.34)
+                      color: accentTint != null
+                          ? accentTint.withValues(alpha: _hover ? 0.55 : 0.34)
                           : (_hover
                               ? (dark ? Colors.white.withValues(alpha: 0.28) : Colors.white.withValues(alpha: 0.92))
                               : (dark ? Colors.white.withValues(alpha: 0.14) : Colors.white.withValues(alpha: 0.68))),
@@ -567,17 +746,19 @@ class _BlockCardState extends State<BlockCard> {
                   : const [],
             ),
             child: Row(children: [
-              if (stickyColor.color != null) ...[
+              if (accentTint != null) ...[
                 Container(
                   width: 3.5,
                   height: 26,
                   decoration: BoxDecoration(
-                    color: stickyColor.color,
+                    color: accentTint,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
-                const SizedBox(width: Gap.s),
+                const SizedBox(width: Gap.xs),
               ],
+              _CompleteCheckButton(block: block, size: 26),
+              const SizedBox(width: Gap.xs),
               Container(
                 width: Sizes.tile,
                 height: Sizes.tile,
@@ -585,15 +766,24 @@ class _BlockCardState extends State<BlockCard> {
                 decoration: BoxDecoration(color: c.fill, borderRadius: BorderRadius.circular(AppRadius.s)),
                 child: emoji.isNotEmpty ? Emoji(emoji, size: Sizes.iconMd) : Icon(type.icon, size: Sizes.iconSm, color: c.text2),
               ),
-              const SizedBox(width: Gap.l),
+              const SizedBox(width: Gap.m),
               Expanded(
                 child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                   Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
                     Expanded(
-                      child: Text(block.title.isEmpty ? '无标题' : block.title,
-                          key: const Key('cardTitle'), maxLines: 1, overflow: TextOverflow.ellipsis, style: tt.labelLarge),
+                      child: Text(
+                        block.title.isEmpty ? '无标题' : block.title,
+                        key: const Key('cardTitle'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: tt.labelLarge?.copyWith(
+                          color: completed ? c.text2 : null,
+                          decoration: completed ? TextDecoration.lineThrough : null,
+                          decorationColor: c.text3,
+                        ),
+                      ),
                     ),
-                    if (stickyColor.tag.isNotEmpty && stickyColor.color != null) ...[
+                    if (!completed && stickyColor.tag.isNotEmpty && stickyColor.color != null) ...[
                       const SizedBox(width: Gap.xs),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
@@ -619,7 +809,7 @@ class _BlockCardState extends State<BlockCard> {
                     SizedBox(
                       width: 16,
                       height: 20,
-                      child: unread
+                      child: unread && !completed
                           ? Center(
                               child: Container(
                                 key: const Key('unreadDot'),
@@ -798,6 +988,7 @@ Future<void> showBlockMenu(
   final messenger = ScaffoldMessenger.maybeOf(context);
   final title = block.title.isEmpty ? '无标题' : block.title;
   final currentColor = stickyColorOf(block);
+  final completed = isBlockCompleted(block);
 
   Future<void> moveToFolder() async {
     final target = await showDialog<String>(
@@ -843,11 +1034,17 @@ Future<void> showBlockMenu(
       items: [
         ContextMenuItem(icon: type.icon, label: type.executeLabel, onTap: () => type.execute(context, block)),
         ContextMenuItem(icon: CupertinoIcons.pencil, label: '编辑', onTap: () => type.edit(context, block)),
+        ContextMenuItem(
+          key: const Key('menuComplete'),
+          icon: completed ? CupertinoIcons.circle : CupertinoIcons.checkmark_circle_fill,
+          label: completed ? '取消完成' : '标为已完成',
+          onTap: () => setBlockCompleted(s.sync, block, !completed),
+        ),
         for (final a in extra) ContextMenuItem(icon: a.icon, label: a.label, onTap: a.run),
         const ContextMenuDivider(),
         ContextMenuItem(
           icon: CupertinoIcons.paintbrush,
-          label: currentColor.tag.isEmpty ? '颜色与重要级别…' : '颜色：${currentColor.tag}…',
+          label: currentColor.tag.isEmpty ? '优先级与颜色…' : '优先级：${currentColor.tag}…',
           onTap: () => showStickyColorPicker(context, block, anchor: anchor),
         ),
         if (onBringToFront != null)
@@ -924,6 +1121,15 @@ Future<void> showBlockMenu(
             Navigator.pop(c);
             type.edit(context, block);
           }),
+          MenuRow(
+            key: const Key('menuComplete'),
+            icon: completed ? CupertinoIcons.circle : CupertinoIcons.checkmark_circle_fill,
+            label: completed ? '取消完成' : '标为已完成',
+            onTap: () {
+              Navigator.pop(c);
+              setBlockCompleted(s.sync, block, !completed);
+            },
+          ),
           if (onBringToFront != null)
             MenuRow(icon: CupertinoIcons.square_stack_3d_up, label: '置顶到最前', onTap: () {
               Navigator.pop(c);
@@ -1005,15 +1211,22 @@ class EmptyState extends StatelessWidget {
   }
 }
 
-/// 自由拖拽、可堆叠、可分色标记重要级别的液态玻璃便签画布。
+/// 自由拖拽、可堆叠、可按优先级分色排列的液态玻璃便签画布；
+/// 未完成便签始终位于顶部主画布，已完成便签单独收纳在底部“已完成”区。
 class _StickyBoardCanvas extends StatefulWidget {
-  final List<Block> items;
+  final List<Block> activeItems;
+  final List<Block> completedItems;
+  final bool showCompleted;
+  final VoidCallback onToggleCompleted;
   final String? enterId;
   final double topPadding;
   final double bottomPadding;
   const _StickyBoardCanvas({
     super.key,
-    required this.items,
+    required this.activeItems,
+    required this.completedItems,
+    required this.showCompleted,
+    required this.onToggleCompleted,
     required this.enterId,
     required this.topPadding,
     required this.bottomPadding,
@@ -1099,48 +1312,101 @@ class _StickyBoardCanvasState extends State<_StickyBoardCanvas> {
     });
   }
 
+  Widget _wrapEnter(Block b, Widget card) {
+    if (b.id != widget.enterId) return card;
+    return _FadeIn(key: ValueKey('enter-${b.id}'), child: card);
+  }
+
   @override
   Widget build(BuildContext context) {
     final sync = AppScope.of(context).sync;
     final c = AppColors.of(context);
-    final items = widget.items;
+    final active = widget.activeItems;
+    final completed = widget.completedItems;
 
     return LayoutBuilder(
       builder: (context, constraints) {
         final boardW = constraints.maxWidth;
 
-        // 窄屏手机：自动采用自适应双列/单列液态便签网格，保留颜色标记与触屏舒适度
+        // 窄屏手机：未完成便签网格置顶，已完成便签单独收纳在底部区域
         if (boardW < 520) {
-          return GridView.builder(
+          final gridDelegate = SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: boardW >= 360 ? 2 : 1,
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            childAspectRatio: boardW >= 360 ? 0.94 : 1.55,
+          );
+          return CustomScrollView(
             key: const Key('blockGridView'),
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-            padding: EdgeInsets.fromLTRB(Gap.l, widget.topPadding, Gap.l, widget.bottomPadding),
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: boardW >= 360 ? 2 : 1,
-              mainAxisSpacing: 12,
-              crossAxisSpacing: 12,
-              childAspectRatio: boardW >= 360 ? 0.94 : 1.55,
-            ),
-            itemCount: items.length,
-            itemBuilder: (context, i) {
-              final card = StickyNoteCard(block: items[i]);
-              if (items[i].id != widget.enterId) return card;
-              return _FadeIn(key: ValueKey('enter-${items[i].id}'), child: card);
-            },
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              if (active.isNotEmpty)
+                SliverPadding(
+                  padding: EdgeInsets.fromLTRB(
+                    Gap.l,
+                    widget.topPadding,
+                    Gap.l,
+                    completed.isEmpty ? widget.bottomPadding : Gap.m,
+                  ),
+                  sliver: SliverGrid(
+                    gridDelegate: gridDelegate,
+                    delegate: SliverChildBuilderDelegate(
+                      (context, i) => _wrapEnter(active[i], StickyNoteCard(block: active[i])),
+                      childCount: active.length,
+                    ),
+                  ),
+                ),
+              if (completed.isNotEmpty) ...[
+                SliverToBoxAdapter(
+                  child: _CompletedSectionHeader(
+                    count: completed.length,
+                    expanded: widget.showCompleted,
+                    onToggle: widget.onToggleCompleted,
+                    padding: EdgeInsets.fromLTRB(
+                      Gap.l,
+                      active.isEmpty ? widget.topPadding : Gap.s,
+                      Gap.l,
+                      Gap.s,
+                    ),
+                  ),
+                ),
+                if (widget.showCompleted)
+                  SliverPadding(
+                    padding: EdgeInsets.fromLTRB(Gap.l, 0, Gap.l, widget.bottomPadding),
+                    sliver: SliverGrid(
+                      gridDelegate: gridDelegate,
+                      delegate: SliverChildBuilderDelegate(
+                        (context, i) => Opacity(
+                          opacity: 0.82,
+                          child: _wrapEnter(completed[i], StickyNoteCard(block: completed[i])),
+                        ),
+                        childCount: completed.length,
+                      ),
+                    ),
+                  )
+                else
+                  SliverToBoxAdapter(child: SizedBox(height: widget.bottomPadding)),
+              ],
+            ],
           );
         }
 
-        // 桌面 / 平板：真正自由拖拽 + 层叠 Z 轴 + 1 键整理排列的液态便签画布
+        // 桌面 / 平板：顶部自由拖拽未完成画布 + 底部独立“已完成”区
         final indexed = <(Block, int, Offset, double)>[];
-        double maxBottom = constraints.maxHeight;
-        for (var i = 0; i < items.length; i++) {
-          final b = items[i];
+        double activeBottom = active.isEmpty ? widget.topPadding + 16.0 : widget.topPadding + _cardH + 64.0;
+        for (var i = 0; i < active.length; i++) {
+          final b = active[i];
           final pos = _posOf(b, i, boardW);
           final z = _zOf(b, i);
           indexed.add((b, i, pos, z));
-          maxBottom = math.max(maxBottom, pos.dy + _cardH + widget.bottomPadding + 40.0);
+          activeBottom = math.max(activeBottom, pos.dy + _cardH + 28.0);
         }
         indexed.sort((a, b) => a.$4.compareTo(b.$4));
+
+        final canvasHeight = completed.isEmpty
+            ? math.max(constraints.maxHeight, activeBottom + widget.bottomPadding)
+            : activeBottom;
 
         return Stack(
           children: [
@@ -1148,112 +1414,151 @@ class _StickyBoardCanvasState extends State<_StickyBoardCanvas> {
               key: const Key('blockGridView'),
               keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
               physics: const AlwaysScrollableScrollPhysics(),
-              child: SizedBox(
-                width: boardW,
-                height: maxBottom,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    for (final entry in indexed)
-                      Builder(
-                        builder: (context) {
-                          final b = entry.$1;
-                          final pos = entry.$3;
-                          final isDragging = _draggingId == b.id;
-                          Widget card = StickyNoteCard(
-                            block: b,
-                            dragging: isDragging,
-                            onBringToFront: () => _bringToFront(sync, b, items),
-                          );
-                          if (b.id == widget.enterId) {
-                            card = _FadeIn(key: ValueKey('enter-${b.id}'), child: card);
-                          }
-                          return Positioned(
-                            key: ValueKey('sticky-pos-${b.id}'),
-                            left: pos.dx,
-                            top: pos.dy,
-                            width: _cardW,
-                            height: _cardH,
-                            child: GestureDetector(
-                              onPanStart: (_) {
-                                final nextZ = _maxZ(items) + 1.0;
-                                setState(() {
-                                  _draggingId = b.id;
-                                  _livePos[b.id] = pos;
-                                  _liveZ[b.id] = nextZ;
-                                });
-                              },
-                              onPanUpdate: (d) {
-                                final cur = _livePos[b.id] ?? pos;
-                                final maxX = math.max(16.0, boardW - _cardW - 16.0);
-                                final nx = (cur.dx + d.delta.dx).clamp(16.0, maxX);
-                                final ny = math.max(widget.topPadding + 8.0, cur.dy + d.delta.dy);
-                                setState(() => _livePos[b.id] = Offset(nx, ny));
-                              },
-                              onPanEnd: (_) {
-                                final finalPos = _livePos[b.id] ?? pos;
-                                final finalZ = _liveZ[b.id] ?? entry.$4;
-                                setState(() => _draggingId = null);
-                                sync.update(
-                                  b.id,
-                                  payload: {
-                                    ...b.payload,
-                                    'sticky_x': finalPos.dx.round(),
-                                    'sticky_y': finalPos.dy.round(),
-                                    'sticky_z': finalZ.round(),
-                                  },
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (active.isNotEmpty)
+                    SizedBox(
+                      width: boardW,
+                      height: canvasHeight,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          for (final entry in indexed)
+                            Builder(
+                              builder: (context) {
+                                final b = entry.$1;
+                                final pos = entry.$3;
+                                final isDragging = _draggingId == b.id;
+                                Widget card = StickyNoteCard(
+                                  block: b,
+                                  dragging: isDragging,
+                                  onBringToFront: () => _bringToFront(sync, b, active),
+                                );
+                                card = _wrapEnter(b, card);
+                                return Positioned(
+                                  key: ValueKey('sticky-pos-${b.id}'),
+                                  left: pos.dx,
+                                  top: pos.dy,
+                                  width: _cardW,
+                                  height: _cardH,
+                                  child: GestureDetector(
+                                    onPanStart: (_) {
+                                      final nextZ = _maxZ(active) + 1.0;
+                                      setState(() {
+                                        _draggingId = b.id;
+                                        _livePos[b.id] = pos;
+                                        _liveZ[b.id] = nextZ;
+                                      });
+                                    },
+                                    onPanUpdate: (d) {
+                                      final cur = _livePos[b.id] ?? pos;
+                                      final maxX = math.max(16.0, boardW - _cardW - 16.0);
+                                      final nx = (cur.dx + d.delta.dx).clamp(16.0, maxX);
+                                      final ny = math.max(widget.topPadding + 8.0, cur.dy + d.delta.dy);
+                                      setState(() => _livePos[b.id] = Offset(nx, ny));
+                                    },
+                                    onPanEnd: (_) {
+                                      final finalPos = _livePos[b.id] ?? pos;
+                                      final finalZ = _liveZ[b.id] ?? entry.$4;
+                                      setState(() => _draggingId = null);
+                                      sync.update(
+                                        b.id,
+                                        payload: {
+                                          ...b.payload,
+                                          'sticky_x': finalPos.dx.round(),
+                                          'sticky_y': finalPos.dy.round(),
+                                          'sticky_z': finalZ.round(),
+                                        },
+                                      );
+                                    },
+                                    onPanCancel: () => setState(() => _draggingId = null),
+                                    child: AnimatedScale(
+                                      scale: isDragging ? 1.035 : 1.0,
+                                      duration: Motion.short2,
+                                      curve: Curves.easeOutCubic,
+                                      child: card,
+                                    ),
+                                  ),
                                 );
                               },
-                              onPanCancel: () => setState(() => _draggingId = null),
-                              child: AnimatedScale(
-                                scale: isDragging ? 1.035 : 1.0,
-                                duration: Motion.short2,
-                                curve: Curves.easeOutCubic,
-                                child: card,
-                              ),
                             ),
-                          );
-                        },
+                        ],
                       ),
+                    ),
+                  if (completed.isNotEmpty) ...[
+                    _CompletedSectionHeader(
+                      count: completed.length,
+                      expanded: widget.showCompleted,
+                      onToggle: widget.onToggleCompleted,
+                      padding: EdgeInsets.fromLTRB(
+                        24,
+                        active.isEmpty ? widget.topPadding + 12 : Gap.m,
+                        24,
+                        Gap.m,
+                      ),
+                    ),
+                    if (widget.showCompleted)
+                      Padding(
+                        padding: EdgeInsets.fromLTRB(24, 0, 24, widget.bottomPadding + 20),
+                        child: Wrap(
+                          spacing: _gapX,
+                          runSpacing: _gapY,
+                          children: [
+                            for (final b in completed)
+                              SizedBox(
+                                width: _cardW,
+                                height: _cardH,
+                                child: Opacity(
+                                  opacity: 0.82,
+                                  child: _wrapEnter(b, StickyNoteCard(block: b)),
+                                ),
+                              ),
+                          ],
+                        ),
+                      )
+                    else
+                      SizedBox(height: widget.bottomPadding + 20),
                   ],
-                ),
+                ],
               ),
             ),
-            // 右上角轻量化「整理排列」悬浮玻璃胶囊
-            Positioned(
-              top: widget.topPadding + 2,
-              right: 20,
-              child: Tooltip(
-                message: '按网格重新整齐排列所有便签',
-                child: Glass(
-                  radius: 14,
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  child: Material(
-                    type: MaterialType.transparency,
-                    child: InkWell(
-                      key: const Key('tidyStickyButton'),
-                      borderRadius: BorderRadius.circular(12),
-                      onTap: () => _tidyAll(sync, items, boardW),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(CupertinoIcons.square_grid_2x2, size: 13, color: c.text2),
-                          const SizedBox(width: 5),
-                          Text(
-                            '整理排列',
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.w500,
-                                  color: c.text2,
-                                ),
-                          ),
-                        ],
+            if (active.isNotEmpty)
+              // 右上角轻量化「整理排列」悬浮玻璃胶囊（按优先级与创建时间排列）
+              Positioned(
+                top: widget.topPadding + 2,
+                right: 20,
+                child: Tooltip(
+                  message: '按优先级与创建时间整齐排列便签',
+                  child: Glass(
+                    radius: 14,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    child: Material(
+                      type: MaterialType.transparency,
+                      child: InkWell(
+                        key: const Key('tidyStickyButton'),
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () => _tidyAll(sync, active, boardW),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(CupertinoIcons.square_grid_2x2, size: 13, color: c.text2),
+                            const SizedBox(width: 5),
+                            Text(
+                              '整理排列',
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w500,
+                                    color: c.text2,
+                                  ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
           ],
         );
       },
@@ -1261,8 +1566,8 @@ class _StickyBoardCanvasState extends State<_StickyBoardCanvas> {
   }
 }
 
-/// 动画块列表（支持自由拖拽堆叠的液态便签画布与普通紧凑列表视图之间帧模糊丝滑切换）。
-class BlockList extends StatelessWidget {
+/// 动画块列表（支持便签画布与普通列表视图；按完成状态 → 优先级 → 创建时间排序）。
+class BlockList extends StatefulWidget {
   final String? parentId;
   final String filter;
 
@@ -1283,8 +1588,15 @@ class BlockList extends StatelessWidget {
     this.bottomPadding = Gap.x3,
   });
 
+  @override
+  State<BlockList> createState() => _BlockListState();
+}
+
+class _BlockListState extends State<BlockList> {
   static final Set<String> _known = {};
   static var _ready = false;
+
+  bool _showCompleted = true;
 
   @override
   Widget build(BuildContext context) {
@@ -1292,20 +1604,20 @@ class BlockList extends StatelessWidget {
     return ListenableBuilder(
       listenable: sync,
       builder: (context, _) {
-        var items = filter.isEmpty
-            ? sync.childrenOf(parentId)
+        var items = widget.filter.isEmpty
+            ? sync.childrenOf(widget.parentId)
             : sync.blocks.where((b) {
                 if (!SyncClient.isInboxItem(b)) return false;
-                final q = filter.toLowerCase();
+                final q = widget.filter.toLowerCase();
                 return b.title.toLowerCase().contains(q) ||
                     b.payload.values.whereType<String>().any((v) => v.toLowerCase().contains(q));
               }).toList();
-        if (kinds != null) items = items.where((b) => kinds!.contains(b.kind)).toList();
-        // 文件夹置顶
-        items = [
-          ...items.where((b) => b.kind == BlockKind.folder),
-          ...items.where((b) => b.kind != BlockKind.folder),
-        ];
+        if (widget.kinds != null) items = items.where((b) => widget.kinds!.contains(b.kind)).toList();
+        items.sort(compareInboxBlocks);
+
+        final activeItems = [for (final b in items) if (!isBlockCompleted(b)) b];
+        final completedItems = [for (final b in items) if (isBlockCompleted(b)) b];
+
         final fresh = [for (final b in items) if (!_known.contains(b.id)) b.id];
         final enterId = _ready && fresh.length == 1 ? fresh.single : null;
         if (enterId == null) {
@@ -1317,46 +1629,66 @@ class BlockList extends StatelessWidget {
         }
         _ready = true;
 
-        final kindKey = kinds == null ? 'all' : kinds!.map((k) => k.name).join('-');
+        final kindKey = widget.kinds == null ? 'all' : widget.kinds!.map((k) => k.name).join('-');
         final Widget content;
         if (items.isEmpty) {
           content = LayoutBuilder(
-            key: ValueKey('empty-$kindKey-$gridMode'),
+            key: ValueKey('empty-$kindKey-${widget.gridMode}'),
             builder: (context, c) => SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
-              padding: EdgeInsets.only(top: topPadding, bottom: bottomPadding),
+              padding: EdgeInsets.only(top: widget.topPadding, bottom: widget.bottomPadding),
               child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: (c.maxHeight - topPadding - bottomPadding).clamp(0.0, double.infinity)),
+                constraints: BoxConstraints(
+                  minHeight: (c.maxHeight - widget.topPadding - widget.bottomPadding).clamp(0.0, double.infinity),
+                ),
                 child: Center(
                   child: EmptyState(
                     key: const Key('emptyState'),
-                    icon: filter.isEmpty ? CupertinoIcons.tray : CupertinoIcons.search,
-                    title: filter.isEmpty ? '这里还没有内容' : '没有匹配的结果',
-                    subtitle: filter.isEmpty ? '在下方输入框发送消息，或点击 + 新建页面、文件、文件夹' : '换个关键词试试',
+                    icon: widget.filter.isEmpty ? CupertinoIcons.tray : CupertinoIcons.search,
+                    title: widget.filter.isEmpty ? '这里还没有内容' : '没有匹配的结果',
+                    subtitle: widget.filter.isEmpty ? '在下方输入框发送消息，或点击右侧 + 新建笔记、页面、文件' : '换个关键词试试',
                   ),
                 ),
               ),
             ),
           );
-        } else if (gridMode) {
+        } else if (widget.gridMode) {
           content = _StickyBoardCanvas(
             key: ValueKey('board-$kindKey'),
-            items: items,
+            activeItems: activeItems,
+            completedItems: completedItems,
+            showCompleted: _showCompleted,
+            onToggleCompleted: () => setState(() => _showCompleted = !_showCompleted),
             enterId: enterId,
-            topPadding: topPadding,
-            bottomPadding: bottomPadding,
+            topPadding: widget.topPadding,
+            bottomPadding: widget.bottomPadding,
           );
         } else {
+          Widget buildRow(Block b) {
+            final card = BlockCard(block: b);
+            if (b.id != enterId) return card;
+            return _FadeIn(key: ValueKey('enter-${b.id}'), child: card);
+          }
+
+          final rows = <Widget>[
+            for (final b in activeItems) buildRow(b),
+            if (completedItems.isNotEmpty) ...[
+              _CompletedSectionHeader(
+                count: completedItems.length,
+                expanded: _showCompleted,
+                onToggle: () => setState(() => _showCompleted = !_showCompleted),
+              ),
+              if (_showCompleted)
+                for (final b in completedItems) buildRow(b),
+            ],
+          ];
+
           content = ListView.builder(
             key: const Key('blockListView'),
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-            padding: EdgeInsets.only(top: topPadding, bottom: bottomPadding),
-            itemCount: items.length,
-            itemBuilder: (context, i) {
-              final card = BlockCard(block: items[i]);
-              if (items[i].id != enterId) return card;
-              return _FadeIn(key: ValueKey('enter-${items[i].id}'), child: card);
-            },
+            padding: EdgeInsets.only(top: widget.topPadding, bottom: widget.bottomPadding),
+            itemCount: rows.length,
+            itemBuilder: (context, i) => rows[i],
           );
         }
 
@@ -1364,10 +1696,9 @@ class BlockList extends StatelessWidget {
         if (!Glass.useShader) return content;
 
         return MotionSwitch(
-          duration: Motion.medium1,
-          maxBlur: 10.0,
+          duration: Motion.short4,
           child: KeyedSubtree(
-            key: ValueKey('${items.isEmpty ? "empty" : (gridMode ? "board" : "list")}-$kindKey'),
+            key: ValueKey('${items.isEmpty ? "empty" : (widget.gridMode ? "board" : "list")}-$kindKey'),
             child: content,
           ),
         );

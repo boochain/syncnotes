@@ -1,21 +1,81 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 
 import 'glass.dart';
 import 'tokens.dart';
 
-/// 帧模糊包装器：动画过程中使用 `ImageFiltered` 对当前帧做平滑失焦→对焦过渡，
-/// 静止帧（`sigma <= 0.05`）或测试模式（`!Glass.useShader`）零开销直出原组件。
-Widget _frameBlur({required double sigma, required Widget child}) {
-  if (!Glass.useShader || sigma <= 0.05) return child;
-  return ImageFiltered(
-    imageFilter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma, tileMode: TileMode.decal),
-    child: child,
+/// 轻量 GPU 卡片弹出转场：
+/// - 根路由（主页）保持透明以展示流体/壁纸背景，不被强制遮盖；
+/// - 推入的新页面（笔记编辑器、页面、文件夹、设置、回收站、传输等）作为不透明页面卡片
+///   从微缩+轻位移平滑弹出盖住主页，附带柔和暗幕与投影，杜绝透明叠字重影与逐帧模糊卡顿。
+Widget _buildPageCardTransition(
+  BuildContext context,
+  Animation<double> animation,
+  Widget child, {
+  required bool isRoot,
+}) {
+  if (isRoot) return child;
+  final surface = Theme.of(context).colorScheme.surface;
+  final dark = Theme.of(context).brightness == Brightness.dark;
+  final opaqueCard = RepaintBoundary(
+    child: ColoredBox(color: surface, child: child),
+  );
+  if (!Glass.useShader) return opaqueCard;
+
+  return AnimatedBuilder(
+    animation: animation,
+    child: opaqueCard,
+    builder: (context, card) {
+      final raw = animation.value.clamp(0.0, 1.0);
+      final reverse = animation.status == AnimationStatus.reverse;
+      final v = reverse ? 1.0 - Curves.easeInCubic.transform(1.0 - raw) : Curves.easeOutCubic.transform(raw);
+      if (v >= 0.999) return card!;
+
+      // 仅在极短的首尾边缘平滑收口，其余全程保持 100% 不透明，杜绝页面文字穿透叠加
+      final cardOpacity = (v / 0.14).clamp(0.0, 1.0);
+      final scale = 0.96 + 0.04 * v;
+      final dyFrac = 0.08 * (1.0 - v);
+      final radius = 20.0 * (1.0 - v);
+      final scrimAlpha = (dark ? 0.38 : 0.16) * v;
+
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          IgnorePointer(
+            child: ColoredBox(color: Colors.black.withValues(alpha: scrimAlpha)),
+          ),
+          Opacity(
+            opacity: cardOpacity,
+            child: FractionalTranslation(
+              translation: Offset(0, dyFrac),
+              child: Transform.scale(
+                scale: scale,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(radius),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: (dark ? 0.44 : 0.15) * v),
+                        blurRadius: 28,
+                        spreadRadius: -2,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(radius),
+                    child: card!,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    },
   );
 }
 
-/// 零叠层帧模糊内容切换器：严格只渲染当前页，入场时从失焦模糊平滑聚焦清晰，杜绝叠字重影。
+/// 零叠层内容切换器：仅渲染当前子视图，采用纯 GPU 淡入+微缩放，无逐帧模糊开销。
 class MotionSwitch extends StatelessWidget {
   final Widget child;
   final Duration duration;
@@ -23,8 +83,8 @@ class MotionSwitch extends StatelessWidget {
   const MotionSwitch({
     super.key,
     required this.child,
-    this.duration = Motion.medium1,
-    this.maxBlur = 10.0,
+    this.duration = Motion.short4,
+    this.maxBlur = 0.0,
   });
 
   @override
@@ -38,14 +98,10 @@ class MotionSwitch extends StatelessWidget {
         animation: animation,
         builder: (context, c) {
           final v = animation.value.clamp(0.0, 1.0);
-          final sigma = (1.0 - v) * maxBlur;
-          final scale = 0.985 + 0.015 * v;
+          final scale = 0.988 + 0.012 * v;
           return Opacity(
             opacity: v,
-            child: Transform.scale(
-              scale: scale,
-              child: _frameBlur(sigma: sigma, child: c!),
-            ),
+            child: Transform.scale(scale: scale, child: c),
           );
         },
         child: child,
@@ -55,10 +111,7 @@ class MotionSwitch extends StatelessWidget {
   }
 }
 
-/// 零叠层 Apple 风格帧模糊页面转场：
-/// - 新页面入场采用「帧模糊聚焦 + 微缩放 + 轻位移」的丝滑液态过渡；
-/// - 一旦上层路由推入（`secondaryAnimation.value > 0`），下层路由立刻 `Offstage` 且暂停 Ticker，
-///   彻底避免液态玻璃透明底色下两层页面叠加、文字穿透重影的问题。
+/// 全局页面路由转场：推入页面作为不透明卡片平滑弹出盖住主页。
 class OpaqueFadeTransitionsBuilder extends PageTransitionsBuilder {
   const OpaqueFadeTransitionsBuilder();
 
@@ -70,98 +123,22 @@ class OpaqueFadeTransitionsBuilder extends PageTransitionsBuilder {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    final translucent = Glass.surfaceTranslucent;
-    final curved = CurvedAnimation(
-      parent: animation,
-      curve: Curves.easeOutCubic,
-      reverseCurve: Curves.easeInCubic,
-    );
-    final entering = AnimatedBuilder(
-      animation: curved,
-      builder: (context, c) {
-        final v = curved.value.clamp(0.0, 1.0);
-        final sigma = (1.0 - v) * 12.0;
-        final scale = 0.982 + 0.018 * v;
-        final dx = (1.0 - v) * 14.0;
-        return Opacity(
-          opacity: v,
-          child: Transform.translate(
-            offset: Offset(dx, 0),
-            child: Transform.scale(
-              scale: scale,
-              child: _frameBlur(sigma: sigma, child: c!),
-            ),
-          ),
-        );
-      },
-      child: translucent ? child : ColoredBox(color: Theme.of(context).colorScheme.surface, child: child),
-    );
-    return AnimatedBuilder(
-      animation: secondaryAnimation,
-      builder: (context, c) {
-        final covered = secondaryAnimation.value > 0.0;
-        return Offstage(
-          offstage: covered,
-          child: TickerMode(
-            enabled: !covered,
-            child: c!,
-          ),
-        );
-      },
-      child: entering,
-    );
+    return _buildPageCardTransition(context, animation, child, isRoot: route.isFirst);
   }
 }
 
+/// 独立页面弹出路由（笔记编辑器、页面、文件夹、设置等）：
+/// 以不透明页面卡片弹出覆盖主页，关闭时平滑收回。
 PageRoute<T> fadeRoute<T>(Widget page, {Duration? duration, Duration? reverse}) => PageRouteBuilder<T>(
+      opaque: true,
       pageBuilder: (ctx, a1, a2) => page,
-      transitionDuration: duration ?? Motion.medium1,
-      reverseTransitionDuration: reverse ?? Motion.short4,
-      transitionsBuilder: (context, animation, secondaryAnimation, child) {
-        final translucent = Glass.surfaceTranslucent;
-        final curved = CurvedAnimation(
-          parent: animation,
-          curve: Curves.easeOutCubic,
-          reverseCurve: Curves.easeInCubic,
-        );
-        final body = AnimatedBuilder(
-          animation: curved,
-          builder: (context, c) {
-            final v = curved.value.clamp(0.0, 1.0);
-            final sigma = (1.0 - v) * 12.0;
-            final scale = 0.982 + 0.018 * v;
-            final dx = (1.0 - v) * 14.0;
-            return Opacity(
-              opacity: v,
-              child: Transform.translate(
-                offset: Offset(dx, 0),
-                child: Transform.scale(
-                  scale: scale,
-                  child: _frameBlur(sigma: sigma, child: c!),
-                ),
-              ),
-            );
-          },
-          child: translucent ? child : ColoredBox(color: Theme.of(context).colorScheme.surface, child: child),
-        );
-        return AnimatedBuilder(
-          animation: secondaryAnimation,
-          builder: (context, c) {
-            final covered = secondaryAnimation.value > 0.0;
-            return Offstage(
-              offstage: covered,
-              child: TickerMode(
-                enabled: !covered,
-                child: c!,
-              ),
-            );
-          },
-          child: body,
-        );
-      },
+      transitionDuration: duration ?? const Duration(milliseconds: 240),
+      reverseTransitionDuration: reverse ?? const Duration(milliseconds: 190),
+      transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+          _buildPageCardTransition(context, animation, child, isRoot: false),
     );
 
-/// 对话框 / 快速切换器出现动画（帧模糊聚焦 + 轻微缩放，Apple HIG 阻尼曲线）。
+/// 对话框 / 快速切换器出现动画（纯 GPU 缩放淡入，零模糊卡顿）。
 class MotionFade extends StatelessWidget {
   final Animation<double> animation;
   final Widget child;
@@ -169,19 +146,16 @@ class MotionFade extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic, reverseCurve: Curves.easeInCubic);
     return AnimatedBuilder(
-      animation: c,
+      animation: animation,
       builder: (context, inner) {
-        final v = c.value.clamp(0.0, 1.0);
-        final sigma = (1.0 - v) * 8.0;
+        final raw = animation.value.clamp(0.0, 1.0);
+        final reverse = animation.status == AnimationStatus.reverse;
+        final v = reverse ? 1.0 - Curves.easeInCubic.transform(1.0 - raw) : Curves.easeOutCubic.transform(raw);
         final scale = 0.96 + 0.04 * v;
         return Opacity(
           opacity: v,
-          child: Transform.scale(
-            scale: scale,
-            child: _frameBlur(sigma: sigma, child: inner!),
-          ),
+          child: Transform.scale(scale: scale, child: inner),
         );
       },
       child: child,

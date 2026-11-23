@@ -9,18 +9,18 @@ import '../app_scope.dart';
 import '../blocks/block_type.dart';
 import '../models/block.dart';
 import '../sync/sync_client.dart';
+import 'block_card.dart';
 import 'ds.dart';
-import 'glass.dart';
 import 'motion.dart';
 import 'tokens.dart';
 
 enum _NoteViewMode { edit, split, preview }
 
-/// 现代化液态玻璃 Markdown 笔记编辑器：
-/// - 零卡顿输入：使用局部 ValueNotifier 与 250ms 防抖预览，打字时零全页 rebuild；
-/// - 符合直觉：打开即写，桌面宽屏默认左右实时分栏，窄屏一键帧模糊切换编辑/预览；
-/// - 常用 Markdown 快捷格式工具栏 + Ctrl+B / Ctrl+I / Ctrl+S 快捷键；
-/// - 保存时完整保留原 payload 中的便签颜色与坐标元数据。
+/// 零卡顿 Markdown 笔记编辑器（不透明页面卡片，杜绝与主页内容叠字重影）：
+/// - 零卡顿输入：局部 ValueNotifier + 240ms 防抖预览，打字时零全页 rebuild；
+/// - 打开即写：桌面宽屏默认左右实时分栏，窄屏一键切换编辑/预览；
+/// - 内置常用 Markdown 格式工具栏、完成标记与优先级颜色快捷入口，支持 Ctrl+B / Ctrl+I / Ctrl+S；
+/// - 保存时完整保留原 payload 中的完成状态、优先级颜色与便签坐标元数据。
 class NoteEditorPage extends StatefulWidget {
   final String? blockId;
   final String? parentId;
@@ -79,18 +79,21 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
 
   /// 远程编辑到达且本地无未保存修改时，静默刷新内容。
   void _onRemote() {
-    if (_id == null || _dirtyNotifier.value || !mounted) return;
+    if (_id == null || !mounted) return;
     final b = _sync!.byId(_id!);
     if (b == null) return;
-    final md = (b.payload['markdown'] ?? '') as String;
-    if (md != _body.text) {
-      final sel = _body.selection;
-      _body.text = md;
-      if (sel.end <= md.length) _body.selection = sel;
-      _previewText.value = md;
-      _updateStats();
+    if (!_dirtyNotifier.value) {
+      final md = (b.payload['markdown'] ?? '') as String;
+      if (md != _body.text) {
+        final sel = _body.selection;
+        _body.text = md;
+        if (sel.end <= md.length) _body.selection = sel;
+        _previewText.value = md;
+        _updateStats();
+      }
+      if (b.title != _title.text) _title.text = b.title;
     }
-    if (b.title != _title.text) _title.text = b.title;
+    setState(() {});
   }
 
   void _changed() {
@@ -192,257 +195,319 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: Glass.backdropListenable,
-      builder: (context, _) {
-        final c = AppColors.of(context);
-        final tt = Theme.of(context).textTheme;
-        final bg = Glass.scaffoldBg(context);
-        final wide = MediaQuery.sizeOf(context).width >= 820;
-        final activeMode = _mode ?? (wide ? _NoteViewMode.split : _NoteViewMode.edit);
+    final c = AppColors.of(context);
+    final tt = Theme.of(context).textTheme;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final wide = MediaQuery.sizeOf(context).width >= 820;
+    final activeMode = _mode ?? (wide ? _NoteViewMode.split : _NoteViewMode.edit);
+    final currentBlock = _id == null ? null : _sync?.byId(_id!);
+    final completed = currentBlock != null && isBlockCompleted(currentBlock);
+    final stickyColor = currentBlock == null ? stickyColorOptions.last : stickyColorOf(currentBlock);
 
-        Widget fmtBtn(String tip, IconData icon, VoidCallback onTap) => Tooltip(
-              message: tip,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(AppRadius.s),
-                onTap: onTap,
-                child: SizedBox(
-                  width: 34,
-                  height: 32,
-                  child: Icon(icon, size: 16, color: c.text2),
-                ),
-              ),
-            );
-
-        final formatBar = Glass(
-          radius: 16,
-          padding: const EdgeInsets.symmetric(horizontal: Gap.s, vertical: 3),
-          child: Material(
-            type: MaterialType.transparency,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  fmtBtn('一级标题', CupertinoIcons.textformat_size, () => _prefixLine('# ')),
-                  fmtBtn('粗体 (Ctrl+B)', CupertinoIcons.bold, () => _wrapSelection('**', '**')),
-                  fmtBtn('斜体 (Ctrl+I)', CupertinoIcons.italic, () => _wrapSelection('*', '*')),
-                  fmtBtn('待办事项', CupertinoIcons.checkmark_square, () => _prefixLine('- [ ] ')),
-                  fmtBtn('无序列表', CupertinoIcons.list_bullet, () => _prefixLine('- ')),
-                  fmtBtn('引用', CupertinoIcons.quote_bubble, () => _prefixLine('> ')),
-                  fmtBtn('行内代码', CupertinoIcons.chevron_left_slash_chevron_right, () => _wrapSelection('`', '`')),
-                  fmtBtn('代码块', CupertinoIcons.doc_plaintext, () => _wrapSelection('\n```\n', '\n```\n')),
-                  fmtBtn('链接', CupertinoIcons.link, () => _wrapSelection('[', '](https://)')),
-                ],
-              ),
-            ),
-          ),
-        );
-
-        final editorPane = Padding(
-          padding: const EdgeInsets.fromLTRB(Gap.xl, Gap.m, Gap.xl, Gap.xl),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              TextField(
-                controller: _title,
-                onChanged: (_) => _changed(),
-                style: tt.headlineSmall?.copyWith(fontWeight: FontWeight.w700, color: c.text),
-                decoration: InputDecoration(
-                  hintText: '无标题笔记',
-                  hintStyle: tt.headlineSmall?.copyWith(fontWeight: FontWeight.w600, color: c.text3),
-                  filled: false,
-                  border: InputBorder.none,
-                  enabledBorder: InputBorder.none,
-                  focusedBorder: InputBorder.none,
-                  contentPadding: const EdgeInsets.only(bottom: Gap.s),
-                ),
-              ),
-              Divider(height: 1, color: c.separator.withValues(alpha: 0.6)),
-              const SizedBox(height: Gap.m),
-              Expanded(
-                child: TextField(
-                  key: const Key('noteBody'),
-                  controller: _body,
-                  focusNode: _bodyFocus,
-                  onChanged: (_) => _changed(),
-                  maxLines: null,
-                  expands: true,
-                  textAlignVertical: TextAlignVertical.top,
-                  style: tt.bodyLarge?.copyWith(fontSize: 15.5, height: 1.7, color: c.text),
-                  decoration: InputDecoration(
-                    hintText: '直接开始写作… 支持 Markdown（# 标题、**粗体**、- [ ] 待办、`代码`）',
-                    hintStyle: tt.bodyMedium?.copyWith(color: c.text3),
-                    filled: false,
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                  ),
-                ),
+    Widget paneCard({required Widget child}) => Container(
+          decoration: BoxDecoration(
+            color: c.elevated,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: c.separator.withValues(alpha: dark ? 0.65 : 0.85)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: dark ? 0.22 : 0.05),
+                blurRadius: 16,
+                offset: const Offset(0, 4),
               ),
             ],
           ),
+          clipBehavior: Clip.antiAlias,
+          child: child,
         );
 
-        final previewPane = ValueListenableBuilder<String>(
-          valueListenable: _previewText,
-          builder: (context, md, _) => Markdown(
-            data: md.trim().isEmpty ? '*暂无正文内容*' : md,
-            selectable: true,
-            padding: const EdgeInsets.all(Gap.xl),
+    Widget fmtBtn(String tip, IconData icon, VoidCallback onTap) => Tooltip(
+          message: tip,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(AppRadius.s),
+            onTap: onTap,
+            child: SizedBox(
+              width: 34,
+              height: 32,
+              child: Icon(icon, size: 16, color: c.text2),
+            ),
           ),
         );
 
-        final Widget bodyContent;
-        if (activeMode == _NoteViewMode.split && wide) {
-          bodyContent = Row(
-            key: const ValueKey('mode-split'),
-            children: [
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(Gap.l, Gap.s, Gap.s, Gap.l),
-                  child: SpecularGlassCard(radius: 20, child: editorPane),
-                ),
-              ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(Gap.s, Gap.s, Gap.l, Gap.l),
-                  child: SpecularGlassCard(radius: 20, child: previewPane),
-                ),
-              ),
-            ],
-          );
-        } else if (activeMode == _NoteViewMode.preview) {
-          bodyContent = Center(
-            key: const ValueKey('mode-preview'),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 800),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(Gap.l, Gap.s, Gap.l, Gap.l),
-                child: SpecularGlassCard(radius: 20, child: previewPane),
-              ),
-            ),
-          );
-        } else {
-          bodyContent = Center(
-            key: const ValueKey('mode-edit'),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 800),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(Gap.l, Gap.s, Gap.l, Gap.l),
-                child: SpecularGlassCard(radius: 20, child: editorPane),
-              ),
-            ),
-          );
-        }
+    final formatBar = Container(
+      padding: const EdgeInsets.symmetric(horizontal: Gap.s, vertical: 3),
+      decoration: BoxDecoration(
+        color: c.fill.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: c.separator.withValues(alpha: 0.55)),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            fmtBtn('一级标题', CupertinoIcons.textformat_size, () => _prefixLine('# ')),
+            fmtBtn('粗体 (Ctrl+B)', CupertinoIcons.bold, () => _wrapSelection('**', '**')),
+            fmtBtn('斜体 (Ctrl+I)', CupertinoIcons.italic, () => _wrapSelection('*', '*')),
+            fmtBtn('待办事项', CupertinoIcons.checkmark_square, () => _prefixLine('- [ ] ')),
+            fmtBtn('无序列表', CupertinoIcons.list_bullet, () => _prefixLine('- ')),
+            fmtBtn('引用', CupertinoIcons.quote_bubble, () => _prefixLine('> ')),
+            fmtBtn('行内代码', CupertinoIcons.chevron_left_slash_chevron_right, () => _wrapSelection('`', '`')),
+            fmtBtn('代码块', CupertinoIcons.doc_plaintext, () => _wrapSelection('\n```\n', '\n```\n')),
+            fmtBtn('链接', CupertinoIcons.link, () => _wrapSelection('[', '](https://)')),
+          ],
+        ),
+      ),
+    );
 
-        Widget modeChip(_NoteViewMode m, String label) {
-          final sel = activeMode == m;
-          return GestureDetector(
-            onTap: () {
-              _previewText.value = _body.text;
-              setState(() => _mode = m);
-            },
-            child: AnimatedContainer(
-              duration: Motion.short2,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: sel ? c.accent.withValues(alpha: 0.18) : Colors.transparent,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Text(
-                label,
-                style: tt.labelMedium?.copyWith(
-                  color: sel ? c.accent : c.text2,
-                  fontWeight: sel ? FontWeight.w600 : FontWeight.w500,
-                ),
-              ),
+    final editorPane = Padding(
+      padding: const EdgeInsets.fromLTRB(Gap.xl, Gap.m, Gap.xl, Gap.xl),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            controller: _title,
+            onChanged: (_) => _changed(),
+            style: tt.headlineSmall?.copyWith(fontWeight: FontWeight.w700, color: c.text),
+            decoration: InputDecoration(
+              hintText: '无标题笔记',
+              hintStyle: tt.headlineSmall?.copyWith(fontWeight: FontWeight.w600, color: c.text3),
+              filled: false,
+              border: InputBorder.none,
+              enabledBorder: InputBorder.none,
+              focusedBorder: InputBorder.none,
+              contentPadding: const EdgeInsets.only(bottom: Gap.s),
             ),
-          );
-        }
-
-        return CallbackShortcuts(
-          bindings: {
-            const SingleActivator(LogicalKeyboardKey.keyS, control: true): _save,
-            const SingleActivator(LogicalKeyboardKey.keyS, meta: true): _save,
-            const SingleActivator(LogicalKeyboardKey.keyB, control: true): () => _wrapSelection('**', '**'),
-            const SingleActivator(LogicalKeyboardKey.keyI, control: true): () => _wrapSelection('*', '*'),
-          },
-          child: PopScope(
-            onPopInvokedWithResult: (didPop, _) {
-              if (_dirtyNotifier.value) _save();
-            },
-            child: Scaffold(
-              backgroundColor: bg,
-              appBar: AppBar(
-                backgroundColor: bg,
-                titleSpacing: Gap.s,
-                title: Row(
-                  children: [
-                    Glass(
-                      radius: 18,
-                      padding: const EdgeInsets.all(3),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          modeChip(_NoteViewMode.edit, '编辑'),
-                          if (wide) modeChip(_NoteViewMode.split, '分栏'),
-                          modeChip(_NoteViewMode.preview, '预览'),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: Gap.m),
-                    if (wide && activeMode != _NoteViewMode.preview) Expanded(child: Align(alignment: Alignment.centerLeft, child: formatBar)),
-                  ],
-                ),
-                actions: [
-                  Center(
-                    child: ValueListenableBuilder<String>(
-                      valueListenable: _statsText,
-                      builder: (context, s, _) => Padding(
-                        padding: const EdgeInsets.only(right: Gap.s),
-                        child: Text(s, style: tt.bodySmall?.copyWith(color: c.text3)),
-                      ),
-                    ),
-                  ),
-                  ValueListenableBuilder<bool>(
-                    valueListenable: _dirtyNotifier,
-                    builder: (context, dirty, _) => Tooltip(
-                      message: dirty ? '正在同步保存…' : '已自动保存 (Ctrl+S)',
-                      child: IconButton(
-                        onPressed: _save,
-                        icon: dirty
-                            ? const SizedBox.square(
-                                key: ValueKey('saving'),
-                                dimension: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : Icon(
-                                CupertinoIcons.checkmark_alt_circle,
-                                key: const ValueKey('saved'),
-                                size: Sizes.iconMd,
-                                color: c.accent,
-                              ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: Gap.xs),
-                ],
-              ),
-              body: Column(
-                children: [
-                  if (!wide && activeMode != _NoteViewMode.preview)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(Gap.l, Gap.xs, Gap.l, Gap.xs),
-                      child: formatBar,
-                    ),
-                  Expanded(child: MotionSwitch(child: bodyContent)),
-                ],
+          ),
+          Divider(height: 1, color: c.separator.withValues(alpha: 0.6)),
+          const SizedBox(height: Gap.m),
+          Expanded(
+            child: TextField(
+              key: const Key('noteBody'),
+              controller: _body,
+              focusNode: _bodyFocus,
+              onChanged: (_) => _changed(),
+              maxLines: null,
+              expands: true,
+              textAlignVertical: TextAlignVertical.top,
+              style: tt.bodyLarge?.copyWith(fontSize: 15.5, height: 1.7, color: c.text),
+              decoration: InputDecoration(
+                hintText: '直接开始写作… 支持 Markdown（# 标题、**粗体**、- [ ] 待办、`代码`）',
+                hintStyle: tt.bodyMedium?.copyWith(color: c.text3),
+                filled: false,
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
               ),
             ),
           ),
-        );
+        ],
+      ),
+    );
+
+    final previewPane = ValueListenableBuilder<String>(
+      valueListenable: _previewText,
+      builder: (context, md, _) => Markdown(
+        data: md.trim().isEmpty ? '*暂无正文内容*' : md,
+        selectable: true,
+        padding: const EdgeInsets.all(Gap.xl),
+      ),
+    );
+
+    final Widget bodyContent;
+    if (activeMode == _NoteViewMode.split && wide) {
+      bodyContent = Row(
+        key: const ValueKey('mode-split'),
+        children: [
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(Gap.l, Gap.s, Gap.s, Gap.l),
+              child: paneCard(child: editorPane),
+            ),
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(Gap.s, Gap.s, Gap.l, Gap.l),
+              child: paneCard(child: previewPane),
+            ),
+          ),
+        ],
+      );
+    } else if (activeMode == _NoteViewMode.preview) {
+      bodyContent = Center(
+        key: const ValueKey('mode-preview'),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 800),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(Gap.l, Gap.s, Gap.l, Gap.l),
+            child: paneCard(child: previewPane),
+          ),
+        ),
+      );
+    } else {
+      bodyContent = Center(
+        key: const ValueKey('mode-edit'),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 800),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(Gap.l, Gap.s, Gap.l, Gap.l),
+            child: paneCard(child: editorPane),
+          ),
+        ),
+      );
+    }
+
+    Widget modeChip(_NoteViewMode m, String label) {
+      final sel = activeMode == m;
+      return GestureDetector(
+        onTap: () {
+          _previewText.value = _body.text;
+          setState(() => _mode = m);
+        },
+        child: AnimatedContainer(
+          duration: Motion.short2,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+          decoration: BoxDecoration(
+            color: sel ? c.accent.withValues(alpha: 0.16) : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            label,
+            style: tt.labelMedium?.copyWith(
+              color: sel ? c.accent : c.text2,
+              fontWeight: sel ? FontWeight.w600 : FontWeight.w500,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyS, control: true): _save,
+        const SingleActivator(LogicalKeyboardKey.keyS, meta: true): _save,
+        const SingleActivator(LogicalKeyboardKey.keyB, control: true): () => _wrapSelection('**', '**'),
+        const SingleActivator(LogicalKeyboardKey.keyI, control: true): () => _wrapSelection('*', '*'),
       },
+      child: PopScope(
+        onPopInvokedWithResult: (didPop, _) {
+          if (_dirtyNotifier.value) _save();
+        },
+        child: Scaffold(
+          backgroundColor: c.bg,
+          appBar: AppBar(
+            backgroundColor: c.bg,
+            surfaceTintColor: Colors.transparent,
+            titleSpacing: Gap.s,
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(
+                    color: c.fill.withValues(alpha: 0.72),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: c.separator.withValues(alpha: 0.55)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      modeChip(_NoteViewMode.edit, '编辑'),
+                      if (wide) modeChip(_NoteViewMode.split, '分栏'),
+                      modeChip(_NoteViewMode.preview, '预览'),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: Gap.m),
+                if (wide && activeMode != _NoteViewMode.preview)
+                  Expanded(child: Align(alignment: Alignment.centerLeft, child: formatBar)),
+              ],
+            ),
+            actions: [
+              if (currentBlock != null) ...[
+                Builder(
+                  builder: (dotCtx) => Tooltip(
+                    message: stickyColor.tag.isEmpty ? '设置优先级与颜色' : '${stickyColor.label}（点击切换）',
+                    child: IconButton(
+                      onPressed: () {
+                        Offset? anchor;
+                        final box = dotCtx.findRenderObject() as RenderBox?;
+                        if (box != null) anchor = box.localToGlobal(Offset(box.size.width / 2, box.size.height));
+                        showStickyColorPicker(context, currentBlock, anchor: anchor);
+                      },
+                      icon: Container(
+                        width: 14,
+                        height: 14,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: stickyColor.color ?? c.text3.withValues(alpha: 0.25),
+                          border: Border.all(color: stickyColor.color ?? c.text3, width: 1.5),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Tooltip(
+                  message: completed ? '取消完成' : '标为已完成',
+                  child: IconButton(
+                    key: const Key('noteCompleteToggle'),
+                    onPressed: () {
+                      if (_dirtyNotifier.value) _save();
+                      final latest = _sync?.byId(currentBlock.id) ?? currentBlock;
+                      setBlockCompleted(_sync!, latest, !completed);
+                    },
+                    icon: Icon(
+                      completed ? CupertinoIcons.checkmark_circle_fill : CupertinoIcons.circle,
+                      size: Sizes.iconMd,
+                      color: completed ? c.success : c.text2,
+                    ),
+                  ),
+                ),
+              ],
+              Center(
+                child: ValueListenableBuilder<String>(
+                  valueListenable: _statsText,
+                  builder: (context, s, _) => Padding(
+                    padding: const EdgeInsets.only(right: Gap.s),
+                    child: Text(s, style: tt.bodySmall?.copyWith(color: c.text3)),
+                  ),
+                ),
+              ),
+              ValueListenableBuilder<bool>(
+                valueListenable: _dirtyNotifier,
+                builder: (context, dirty, _) => Tooltip(
+                  message: dirty ? '正在同步保存…' : '已自动保存 (Ctrl+S)',
+                  child: IconButton(
+                    onPressed: _save,
+                    icon: dirty
+                        ? const SizedBox.square(
+                            key: ValueKey('saving'),
+                            dimension: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Icon(
+                            CupertinoIcons.checkmark_alt_circle,
+                            key: const ValueKey('saved'),
+                            size: Sizes.iconMd,
+                            color: c.accent,
+                          ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: Gap.xs),
+            ],
+          ),
+          body: Column(
+            children: [
+              if (!wide && activeMode != _NoteViewMode.preview)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(Gap.l, Gap.xs, Gap.l, Gap.xs),
+                  child: formatBar,
+                ),
+              Expanded(child: MotionSwitch(child: bodyContent)),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
