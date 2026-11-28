@@ -9,7 +9,6 @@ import '../pages/doc.dart';
 import '../pages/inline_md.dart';
 import '../sync/sync_client.dart';
 import 'ds.dart';
-import 'glass.dart';
 
 class SwitcherResult {
   final Block target; // 要打开的页面 / 收件箱条目
@@ -111,7 +110,8 @@ class _QuickSwitcherState extends State<_QuickSwitcher> {
       alignment: h < 500 ? Alignment.topCenter : const Alignment(0, -0.6),
       child: Padding(
         padding: const EdgeInsets.all(Gap.l),
-        child: Glass(
+        // v0.8.2：不透明卡片
+        child: CardSurface(
           key: const Key('quickSwitcher'),
           radius: AppRadius.l,
           child: Material(

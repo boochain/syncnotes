@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'ds.dart';
-import 'glass.dart';
+import 'motion.dart';
 
 /// 桌面端右键上下文菜单项。
 sealed class ContextMenuEntry {
@@ -131,8 +131,10 @@ class _GlassContextMenuOverlay extends StatelessWidget {
                 scale: Tween<double>(begin: 0.92, end: 1.0).animate(
                     CurvedAnimation(parent: animation, curve: Curves.easeOutCubic, reverseCurve: Curves.easeInCubic)),
                 alignment: origin,
-                child: Glass(
+                // v0.8.2：不透明卡片（下层页面由 PopupCover 盖住，只露背景）
+                child: CardSurface(
                 radius: AppRadius.l,
+                child: Padding(
                 padding: const EdgeInsets.all(5),
                 child: Material(
                   type: MaterialType.transparency,
@@ -171,6 +173,7 @@ class _GlassContextMenuOverlay extends StatelessWidget {
                       ),
                     ),
                   ),
+                ),
                 ),
               ),
               ),

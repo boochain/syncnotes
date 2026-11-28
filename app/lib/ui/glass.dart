@@ -1130,7 +1130,7 @@ Future<void> showSpotlightModal(
           key: const Key('spotlightModal'),
           width: (size.width * 0.964).clamp(300.0, 2400.0),
           height: (size.height * 0.956).clamp(240.0, 1600.0),
-          child: Glass(
+          child: CardSurface(
             radius: AppRadius.xl,
             child: Material(
               type: MaterialType.transparency,

@@ -4,6 +4,7 @@ import '../ui/tokens.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import '../ui/motion.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_highlight/flutter_highlight.dart';
 import 'package:flutter_highlight/themes/atom-one-dark.dart';
@@ -14,7 +15,6 @@ import '../app_scope.dart';
 import '../models/block.dart';
 import '../ui/custom_icons.dart';
 import '../ui/ds.dart';
-import '../ui/glass.dart';
 import '../ui/server_image.dart';
 import 'commands.dart';
 import 'doc.dart';
@@ -804,7 +804,8 @@ class SlashMenu extends StatelessWidget {
       duration: Motion.short4,
       curve: MotionCurves.enter,
       builder: (_, t, child) => Opacity(opacity: t.clamp(0.0, 1.0), child: child),
-      child: Glass(
+      // v0.8.2：不透明卡片，下面的正文不会透出来
+      child: CardSurface(
         key: const Key('slashMenu'),
         radius: AppRadius.l,
         child: Material(

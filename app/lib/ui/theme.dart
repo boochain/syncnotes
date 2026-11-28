@@ -261,7 +261,7 @@ ThemeData buildAppTheme(Brightness b, {DesignLanguage? language, String preset =
     drawerTheme: DrawerThemeData(backgroundColor: c.sidebar, surfaceTintColor: Colors.transparent, width: 300, shape: const RoundedRectangleBorder()),
     snackBarTheme: SnackBarThemeData(
       behavior: SnackBarBehavior.floating,
-      backgroundColor: dark ? c.elevated : c.text,
+      backgroundColor: (dark ? c.elevated : c.text).withValues(alpha: 1),
       contentTextStyle: text.bodyMedium?.copyWith(color: dark ? c.text : c.bg),
       actionTextColor: dark ? c.accent : const Color(0xFF64D2FF),
       elevation: 6,
