@@ -34,8 +34,9 @@ class CivilDate implements Comparable<CivilDate> {
         m < 1 ||
         m > 12 ||
         d < 1 ||
-        d > 31)
+        d > 31) {
       return null;
+    }
     final last = DateTime(y, m + 1, 0).day;
     if (d > last) return null;
     return CivilDate(y, m, d);
@@ -84,8 +85,11 @@ class CivilDate implements Comparable<CivilDate> {
   }
 
   @override
-  bool operator ==(Object o) =>
-      o is CivilDate && o.year == year && o.month == month && o.day == day;
+  bool operator ==(Object other) =>
+      other is CivilDate &&
+      other.year == year &&
+      other.month == month &&
+      other.day == day;
 
   @override
   int get hashCode => Object.hash(year, month, day);
@@ -397,8 +401,9 @@ class CalendarItem {
     if (remindersRaw is List) {
       for (final v in remindersRaw) {
         final n = v is int ? v : int.tryParse(v.toString());
-        if (n != null && n >= 0 && n <= 365 && !reminders.contains(n))
+        if (n != null && n >= 0 && n <= 365 && !reminders.contains(n)) {
           reminders.add(n);
+        }
       }
       reminders.sort();
     }
@@ -548,8 +553,10 @@ CivilDate lastAnniversary(CivilDate base, CivilDate onOrBefore) {
 
 int ageOn(CivilDate birth, CivilDate on) {
   var age = on.year - birth.year;
-  if (on.month < birth.month || (on.month == birth.month && on.day < birth.day))
+  if (on.month < birth.month ||
+      (on.month == birth.month && on.day < birth.day)) {
     age--;
+  }
   return age < 0 ? 0 : age;
 }
 
@@ -925,8 +932,9 @@ List<ReminderInstant> reminderSchedule(
   int horizonDays = 90,
   int allDayHour = 9,
 }) {
-  if (item.id == null || item.id!.isEmpty || item.reminders.isEmpty)
+  if (item.id == null || item.id!.isEmpty || item.reminders.isEmpty) {
     return const [];
+  }
   if (item.role == CalendarRole.subscription) {
     final st = resolvedStatus(item, CivilDate.fromDateTime(now));
     if (st == SubscriptionStatus.paused ||

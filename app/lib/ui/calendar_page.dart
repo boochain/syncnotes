@@ -801,10 +801,12 @@ class _CalendarPageState extends State<CalendarPage> {
       if (it.billing?.autoRenew == true) '自动续费',
       statusLabel(st),
     ];
-    if (it.billing?.amount != null)
+    if (it.billing?.amount != null) {
       bits.add(formatMoney(it.billing!.amount!, it.billing!.currency));
-    if (next != null)
+    }
+    if (next != null) {
       bits.add('下次 ${formatCivil(next)} · ${countdownPhrase(today, next)}');
+    }
     return ListTile(
       key: Key('calendarSub-${it.id}'),
       contentPadding: EdgeInsets.zero,

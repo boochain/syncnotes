@@ -44,8 +44,9 @@ class CalendarType extends BlockType {
       bits.add(countdownHeadline(it, today));
     } else {
       bits.add(formatCivil(it.startDate, withWeekday: true));
-      if (it.endDate != null && it.endDate != it.startDate)
+      if (it.endDate != null && it.endDate != it.startDate) {
         bits.add('至 ${formatCivil(it.endDate!)}');
+      }
       if (!it.allDay && it.startTime != null) bits.add(it.startTime!);
     }
     return bits.join(' · ');

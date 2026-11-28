@@ -441,12 +441,13 @@ class _CalendarEditorPageState extends State<CalendarEditorPage> {
               value: formatCivil(_start, withWeekday: true),
               onTap: () async {
                 final d = await _pickDate(_start);
-                if (d != null)
+                if (d != null) {
                   setState(() {
                     _start = d;
                     if (_end != null && _end!.isBefore(_start)) _end = _start;
                     _dirty = true;
                   });
+                }
               },
             ),
             _dateTile(
@@ -457,11 +458,12 @@ class _CalendarEditorPageState extends State<CalendarEditorPage> {
               value: _end == null ? '无' : formatCivil(_end!, withWeekday: true),
               onTap: () async {
                 final d = await _pickDate(_end ?? _start);
-                if (d != null)
+                if (d != null) {
                   setState(() {
                     _end = d;
                     _dirty = true;
                   });
+                }
               },
               trailing: _end == null
                   ? null
@@ -494,11 +496,12 @@ class _CalendarEditorPageState extends State<CalendarEditorPage> {
                       value: _startTime ?? '09:00',
                       onTap: () async {
                         final t = await _pickTime(_startTime);
-                        if (t != null)
+                        if (t != null) {
                           setState(() {
                             _startTime = t;
                             _dirty = true;
                           });
+                        }
                       },
                     ),
                   ),
@@ -509,11 +512,12 @@ class _CalendarEditorPageState extends State<CalendarEditorPage> {
                       value: _endTime ?? '无',
                       onTap: () async {
                         final t = await _pickTime(_endTime ?? _startTime);
-                        if (t != null)
+                        if (t != null) {
                           setState(() {
                             _endTime = t;
                             _dirty = true;
                           });
+                        }
                       },
                     ),
                   ),
@@ -646,12 +650,13 @@ class _CalendarEditorPageState extends State<CalendarEditorPage> {
                   value: _trialEnds == null ? '无' : formatCivil(_trialEnds!),
                   onTap: () async {
                     final d = await _pickDate(_trialEnds ?? _start);
-                    if (d != null)
+                    if (d != null) {
                       setState(() {
                         _trialEnds = d;
                         _status = SubscriptionStatus.trial;
                         _dirty = true;
                       });
+                    }
                   },
                 ),
               DropdownButtonFormField<String>(

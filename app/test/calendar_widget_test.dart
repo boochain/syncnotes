@@ -12,7 +12,6 @@ import 'package:syncnotes/services/auth_api.dart';
 import 'package:syncnotes/services/settings.dart';
 import 'package:syncnotes/sync/local_store.dart';
 import 'package:syncnotes/sync/sync_client.dart';
-import 'package:syncnotes/ui/calendar_editor_page.dart';
 import 'package:syncnotes/ui/calendar_page.dart';
 import 'package:syncnotes/ui/theme.dart';
 
