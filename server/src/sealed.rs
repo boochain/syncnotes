@@ -104,7 +104,7 @@ async fn dispatch(state: &AppState, ip: &str, req: &OpenedHttp) -> (u16, Vec<u8>
                 Ok(v) => v,
                 Err(_) => return (400, "请求格式错误".into()),
             };
-            match crate::sync::login(State(state.clone()), axum::Json(parsed)).await {
+            match crate::sync::login_from(state.clone(), ip, parsed).await {
                 Ok(axum::Json(v)) => Ok((200, serde_json::to_vec(&v).unwrap_or_default())),
                 Err(e) => Err(e),
             }

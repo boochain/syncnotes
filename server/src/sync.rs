@@ -22,7 +22,13 @@ pub async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
         status: "ok".into(),
         version: env!("CARGO_PKG_VERSION").into(),
         protocol: PROTOCOL_VERSION,
-        features: vec!["trash".into(), "seal".into(), "tasks".into(), "calendar".into(), "backup".into()],
+        features: vec![
+            "trash".into(),
+            "seal".into(),
+            "tasks".into(),
+            "calendar".into(),
+            "backup".into(),
+        ],
         trash_retention_days: state.trash_days,
         seal_pub: state.seal.public_b64(),
     })
@@ -47,10 +53,16 @@ pub async fn register(
         return Err((StatusCode::CONFLICT, "用户名已存在".into()));
     }
     let hash = hash_password(&req.password);
-    let user = state
-        .storage
-        .create_user(&req.username, &hash)
-        .map_err(internal)?;
+    let user = match state.storage.create_user(&req.username, &hash) {
+        Ok(u) => u,
+        // Two registrations of the same name at once: the UNIQUE index wins, report 409.
+        Err(rusqlite::Error::SqliteFailure(e, _))
+            if e.code == rusqlite::ErrorCode::ConstraintViolation =>
+        {
+            return Err((StatusCode::CONFLICT, "用户名已存在".into()));
+        }
+        Err(e) => return Err(internal(e)),
+    };
     // One-time recovery code (shown once by the client; only its argon2 hash is stored).
     let code = crate::auth::generate_recovery_code();
     state
@@ -76,13 +88,35 @@ pub async fn login(
     State(state): State<AppState>,
     Json(req): Json<LoginRequest>,
 ) -> Result<Json<AuthResponse>, (StatusCode, String)> {
+    login_from(state, "unknown", req).await
+}
+
+/// Login with the caller's IP so repeated wrong passwords are throttled
+/// (per user and per IP, 15-minute window).
+pub async fn login_from(
+    state: AppState,
+    ip: &str,
+    req: LoginRequest,
+) -> Result<Json<AuthResponse>, (StatusCode, String)> {
+    let uname = req.username.trim().to_string();
+    let lim = &state.login_limiter;
+    if lim.blocked(&uname, ip) {
+        return Err((
+            StatusCode::TOO_MANY_REQUESTS,
+            "密码错误次数过多，请 15 分钟后再试".into(),
+        ));
+    }
     let Some(user) = state.storage.find_user(&req.username).map_err(internal)? else {
         crate::auth::dummy_verify(&req.password);
+        lim.fail(&uname, ip);
         return Err((StatusCode::UNAUTHORIZED, "用户名或密码错误".into()));
     };
     if !verify_password(&req.password, &user.password_hash) {
+        lim.fail(&uname, ip);
+        tracing::warn!("登录失败 user={uname} ip={ip}");
         return Err((StatusCode::UNAUTHORIZED, "用户名或密码错误".into()));
     }
+    lim.reset_user(&uname);
     if req.device_id.trim().is_empty() {
         return Err((StatusCode::BAD_REQUEST, "缺少 device_id".into()));
     }

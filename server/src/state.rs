@@ -35,6 +35,8 @@ pub struct AppState {
     pub seal: SealIdentity,
     /// Failed-attempt limiter for password recovery (per user and per IP).
     pub recovery_limiter: RateLimiter,
+    /// Failed-login limiter (per user and per IP). Stops online password guessing.
+    pub login_limiter: RateLimiter,
 }
 
 /// Fixed-window failure counter. Keys are e.g. `user:bill` / `ip:1.2.3.4`.
@@ -108,12 +110,23 @@ impl AppState {
             trash_days: 30,
             seal: SealIdentity::generate(),
             recovery_limiter: RateLimiter::default(),
+            login_limiter: RateLimiter {
+                per_user: 10,
+                per_ip: 60,
+                ..RateLimiter::default()
+            },
         }
     }
 
     pub fn with_recovery_limits(mut self, per_user: u32, per_ip: u32) -> Self {
         self.recovery_limiter.per_user = per_user;
         self.recovery_limiter.per_ip = per_ip;
+        self
+    }
+
+    pub fn with_login_limits(mut self, per_user: u32, per_ip: u32) -> Self {
+        self.login_limiter.per_user = per_user;
+        self.login_limiter.per_ip = per_ip;
         self
     }
 
