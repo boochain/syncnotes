@@ -123,7 +123,7 @@ class _TaskDashboardPageState extends State<TaskDashboardPage> {
                   key: const Key('taskViewRow'),
                   scrollDirection: Axis.horizontal,
                   // 与首页同一个 FilterTab（胶囊、同高同色），不再用另一套描边 Chip。
-                  padding: const EdgeInsets.symmetric(horizontal: Gap.l, vertical: (Sizes.bar - Sizes.compact) / 2),
+                  padding: const EdgeInsets.symmetric(horizontal: Gap.l),
                   children: [
                     for (final v in TaskSmartView.values)
                       Padding(
@@ -133,6 +133,7 @@ class _TaskDashboardPageState extends State<TaskDashboardPage> {
                           label: taskSmartViewLabel(v),
                           selected: _view == v,
                           onTap: () => setState(() => _view = v),
+                          hitHeight: Sizes.bar,
                         ),
                       ),
                   ],

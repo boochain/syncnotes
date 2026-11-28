@@ -118,11 +118,22 @@ class _SyncNotesAppState extends State<SyncNotesApp> with WidgetsBindingObserver
   late SyncClient _sync;
   late AppServices _services;
   bool _loggedIn = false;
+  final _rootNav = GlobalKey<NavigatorState>();
+
+  /// 桌面端 Esc 关闭当前页面：只在焦点树里没人处理 Esc 时才生效
+  /// （对话框、菜单、搜索框自己的 Esc 优先），到根页面不做任何事。
+  KeyEventResult _lateEscape(KeyEvent event) {
+    if (event is! KeyDownEvent || event.logicalKey != LogicalKeyboardKey.escape) return KeyEventResult.ignored;
+    if (!_loggedIn) return KeyEventResult.ignored;
+    unawaited(escapeOneLevel(_rootNav.currentState));
+    return KeyEventResult.handled;
+  }
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    if (isDesktop) FocusManager.instance.addLateKeyEventHandler(_lateEscape);
     _sync = _newClient();
     _services = _makeServices();
     _loggedIn = widget.settings.isLoggedIn;
@@ -199,6 +210,7 @@ class _SyncNotesAppState extends State<SyncNotesApp> with WidgetsBindingObserver
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    if (isDesktop) FocusManager.instance.removeLateKeyEventHandler(_lateEscape);
     _sync.dispose();
     super.dispose();
   }
@@ -212,6 +224,7 @@ class _SyncNotesAppState extends State<SyncNotesApp> with WidgetsBindingObserver
         builder: (context, _) => ValueListenableBuilder<ThemeMode>(
         valueListenable: _themeMode,
         builder: (context, mode, _) => MaterialApp(
+        navigatorKey: _rootNav,
         themeMode: mode,
         title: 'SyncNotes',
         debugShowCheckedModeBanner: false,

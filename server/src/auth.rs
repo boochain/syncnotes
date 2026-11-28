@@ -6,6 +6,15 @@ use argon2::password_hash::{
 use argon2::Argon2;
 use rand::Rng;
 
+/// Run argon2 work off the async runtime: each hash/verify burns ~20 MB and tens of ms of CPU,
+/// which would otherwise stall every WebSocket on that worker thread during a login burst.
+pub async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+    match tokio::task::spawn_blocking(f).await {
+        Ok(v) => v,
+        Err(e) => std::panic::resume_unwind(e.into_panic()),
+    }
+}
+
 pub fn hash_password(pw: &str) -> String {
     let salt = SaltString::generate(&mut OsRng);
     Argon2::default()

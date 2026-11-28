@@ -31,6 +31,7 @@ class _LoginPageState extends State<LoginPage> {
   late final TextEditingController _user =
       TextEditingController(text: widget.settings.username ?? '');
   final _pw = TextEditingController();
+  final _pw2 = TextEditingController();
   bool _busy = false;
   late bool _remember;
 
@@ -46,6 +47,7 @@ class _LoginPageState extends State<LoginPage> {
     _server.dispose();
     _user.dispose();
     _pw.dispose();
+    _pw2.dispose();
     super.dispose();
   }
   bool _registerMode = false;
@@ -58,6 +60,11 @@ class _LoginPageState extends State<LoginPage> {
     final server = normalizeServer(_server.text);
     if (server.isEmpty || _user.text.trim().isEmpty || _pw.text.isEmpty) {
       setState(() => _error = '请填写服务器地址、用户名和密码');
+      return;
+    }
+    // 注册时确认密码，与网页版一致（防止打错字后再也登不上）
+    if (_registerMode && _pw.text != _pw2.text) {
+      setState(() => _error = '两次输入的密码不一致');
       return;
     }
     if (_server.text != server) _server.text = server;
@@ -224,7 +231,25 @@ class _LoginPageState extends State<LoginPage> {
             icon: CupertinoIcons.lock,
             hint: '密码',
             obscure: true,
-            onSubmitted: (_) => _submit()),
+            onSubmitted: (_) => _registerMode ? null : _submit()),
+        // 注册模式展开「确认密码」行，切回登录时对称收起
+        AnimatedSize(
+          duration: Motion.short4,
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topCenter,
+          child: _registerMode
+              ? Column(mainAxisSize: MainAxisSize.min, children: [
+                  divider,
+                  _row(context,
+                      key: const Key('password2Field'),
+                      c: _pw2,
+                      icon: CupertinoIcons.lock_rotation,
+                      hint: '再次输入密码',
+                      obscure: true,
+                      onSubmitted: (_) => _submit()),
+                ])
+              : const SizedBox(width: double.infinity),
+        ),
         divider,
         SizedBox(
           height: Sizes.bar,

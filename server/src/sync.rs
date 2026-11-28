@@ -52,7 +52,8 @@ pub async fn register(
     {
         return Err((StatusCode::CONFLICT, "用户名已存在".into()));
     }
-    let hash = hash_password(&req.password);
+    let pw = req.password.clone();
+    let hash = crate::auth::blocking(move || hash_password(&pw)).await;
     let user = match state.storage.create_user(&req.username, &hash) {
         Ok(u) => u,
         // Two registrations of the same name at once: the UNIQUE index wins, report 409.
@@ -107,11 +108,13 @@ pub async fn login_from(
         ));
     }
     let Some(user) = state.storage.find_user(&req.username).map_err(internal)? else {
-        crate::auth::dummy_verify(&req.password);
+        let pw = req.password.clone();
+        crate::auth::blocking(move || crate::auth::dummy_verify(&pw)).await;
         lim.fail(&uname, ip);
         return Err((StatusCode::UNAUTHORIZED, "用户名或密码错误".into()));
     };
-    if !verify_password(&req.password, &user.password_hash) {
+    let (pw, hash) = (req.password.clone(), user.password_hash.clone());
+    if !crate::auth::blocking(move || verify_password(&pw, &hash)).await {
         lim.fail(&uname, ip);
         tracing::warn!("登录失败 user={uname} ip={ip}");
         return Err((StatusCode::UNAUTHORIZED, "用户名或密码错误".into()));

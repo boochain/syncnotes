@@ -215,6 +215,8 @@ void main() {
       await tester.enterText(find.byKey(const Key('serverField')), 'h:1');
       await tester.enterText(find.byKey(const Key('userField')), 'bill');
       await tester.enterText(find.byKey(const Key('passwordField')), pw);
+      final pw2 = find.byKey(const Key('password2Field'));
+      if (pw2.evaluate().isNotEmpty) await tester.enterText(pw2, pw);
       await tester.tap(find.byKey(const Key('loginButton')));
       await tester.pumpAndSettle();
     }
@@ -276,6 +278,29 @@ void main() {
       await login(tester, pw: 'pw12');
       expect(find.byKey(const Key('recoveryCodeDialog')), findsOneWidget);
       expect(find.text(code), findsOneWidget);
+    });
+
+    testWidgets('v0.8.1：注册时两次密码不一致不提交', (tester) async {
+      var calls = 0;
+      await pumpLogin(tester, (r) {
+        calls++;
+        return js(auth(recovery: code));
+      });
+      await tester.tap(find.text('没有账号？注册'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('password2Field')), findsOneWidget);
+      await tester.enterText(find.byKey(const Key('serverField')), 'h:1');
+      await tester.enterText(find.byKey(const Key('userField')), 'bill');
+      await tester.enterText(find.byKey(const Key('passwordField')), 'pw12');
+      await tester.enterText(find.byKey(const Key('password2Field')), 'pw13');
+      await tester.tap(find.byKey(const Key('loginButton')));
+      await tester.pumpAndSettle();
+      expect(find.text('两次输入的密码不一致'), findsOneWidget);
+      expect(calls, 0);
+      // 切回登录：确认密码行收起
+      await tester.tap(find.text('已有账号？去登录'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('password2Field')), findsNothing);
     });
   });
 

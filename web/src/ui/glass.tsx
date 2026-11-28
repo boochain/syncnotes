@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { mountFluid, type FluidHandle } from '../background/fluid';
 import type { GlassQuality } from '../store/session';
 
@@ -15,6 +15,8 @@ export function FluidBackdrop({
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const handle = useRef<FluidHandle | null>(null);
+  // 浏览器没有 WebGL（或被禁用）时退回 CSS 渐变背景；以前只是隐藏画布，留下一整块灰色平底。
+  const [glFailed, setGlFailed] = useState(false);
   const reduced = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
   useEffect(() => {
@@ -25,7 +27,7 @@ export function FluidBackdrop({
       handle.current.set({ dark, refraction, quality, running: true });
     } catch {
       handle.current = null;
-      canvas.style.display = 'none';
+      setGlFailed(true);
     }
     return () => {
       handle.current?.destroy();
@@ -41,7 +43,7 @@ export function FluidBackdrop({
     document.documentElement.style.setProperty('--glass-blur', `${18 + refraction * 22}px`);
   }, [dark, refraction, quality, enabled, reduced]);
 
-  const showFallback = !enabled || quality === 'off' || reduced;
+  const showFallback = !enabled || quality === 'off' || reduced || glFailed;
   return (
     <>
       <canvas ref={ref} className="fluid-canvas" style={{ display: showFallback ? 'none' : 'block' }} />

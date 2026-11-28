@@ -49,30 +49,27 @@ Future<void> showGlassContextMenu(
     barrierColor: Colors.transparent,
     transitionDuration: const Duration(milliseconds: 140),
     pageBuilder: (ctx, a1, a2) => _GlassContextMenuOverlay(
+      animation: a1,
       anchor: anchor,
       items: items,
       header: header,
     ),
     transitionBuilder: (ctx, animation, secondaryAnimation, child) {
       final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic, reverseCurve: Curves.easeInCubic);
-      return FadeTransition(
-        opacity: curved,
-        child: ScaleTransition(
-          scale: Tween<double>(begin: 0.94, end: 1.0).animate(curved),
-          alignment: Alignment.topLeft,
-          child: child,
-        ),
-      );
+      // 缩放在菜单自身上做、原点跟随锚点（见 _GlassContextMenuOverlay）；这里只淡入淡出。
+      return FadeTransition(opacity: curved, child: child);
     },
   );
 }
 
 class _GlassContextMenuOverlay extends StatelessWidget {
+  final Animation<double> animation;
   final Offset anchor;
   final List<ContextMenuEntry> items;
   final String? header;
 
   const _GlassContextMenuOverlay({
+    required this.animation,
     required this.anchor,
     required this.items,
     this.header,
@@ -93,12 +90,16 @@ class _GlassContextMenuOverlay extends StatelessWidget {
 
     double left = anchor.dx;
     double top = anchor.dy;
-    if (left + menuWidth + pad > size.width) {
+    final flipX = left + menuWidth + pad > size.width;
+    final flipY = top + estHeight + pad > size.height;
+    // M3 / HIG：菜单从触发点展开——向左 / 向上翻转时原点也跟着换到右 / 下角
+    final origin = Alignment(flipX ? 1 : -1, flipY ? 1 : -1);
+    if (flipX) {
       left = (anchor.dx - menuWidth).clamp(pad, (size.width - menuWidth - pad).clamp(pad, double.infinity));
     } else {
       left = left.clamp(pad, (size.width - menuWidth - pad).clamp(pad, double.infinity));
     }
-    if (top + estHeight + pad > size.height) {
+    if (flipY) {
       top = (anchor.dy - estHeight).clamp(pad, (size.height - estHeight - pad).clamp(pad, double.infinity));
     } else {
       top = top.clamp(pad, (size.height - estHeight - pad).clamp(pad, double.infinity));
@@ -126,7 +127,11 @@ class _GlassContextMenuOverlay extends StatelessWidget {
               left: left,
               top: top,
               width: menuWidth,
-              child: Glass(
+              child: ScaleTransition(
+                scale: Tween<double>(begin: 0.92, end: 1.0).animate(
+                    CurvedAnimation(parent: animation, curve: Curves.easeOutCubic, reverseCurve: Curves.easeInCubic)),
+                alignment: origin,
+                child: Glass(
                 radius: AppRadius.l,
                 padding: const EdgeInsets.all(5),
                 child: Material(
@@ -167,6 +172,7 @@ class _GlassContextMenuOverlay extends StatelessWidget {
                     ),
                   ),
                 ),
+              ),
               ),
             ),
           ],

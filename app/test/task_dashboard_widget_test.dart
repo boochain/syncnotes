@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -114,4 +116,25 @@ void main() {
     final sync = AppScope.of(tester.element(find.byKey(const Key('taskDashboard')))).sync;
     expect(sync.blocks.where((b) => isTaskBlock(b) && !b.deleted), isEmpty);
   });
+
+  testWidgets('v0.8.1: desktop Esc closes pages level by level and does nothing at root', (tester) async {
+    await pumpApp(tester);
+    await openTasks(tester);
+    await tester.tap(find.byKey(const Key('newTaskButton')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('taskEditor')), findsOneWidget);
+    // 焦点在标题输入框里也能用 Esc 关闭
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('taskEditor')), findsNothing);
+    expect(find.byKey(const Key('taskDashboard')), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('taskDashboard')), findsNothing);
+    expect(find.byKey(const Key('homeTitle')), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(find.text(BackToExit.message), findsNothing);
+    expect(find.byKey(const Key('homeTitle')), findsOneWidget);
+  }, skip: !(Platform.isLinux || Platform.isWindows || Platform.isMacOS));
 }
