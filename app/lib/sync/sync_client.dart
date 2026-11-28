@@ -697,11 +697,15 @@ class SyncClient extends ChangeNotifier {
       Map<String, dynamic>? payload,
       ViewedMode? viewedMode,
       String? parentId,
-      bool moveToRoot = false}) {
+      bool moveToRoot = false,
+      BlockKind? kind,
+      String? kindName}) {
     final old = _blocks[id];
     if (old == null) return null;
     if (parentId != null && (parentId == id || descendantIds(id).contains(parentId))) return old;
     final b = old.copyWith(
+      kind: kind,
+      kindName: kindName,
       title: title,
       payload: payload,
       viewedMode: viewedMode,

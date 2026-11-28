@@ -12,6 +12,7 @@ pub enum BlockKind {
     Note,
     File,
     Folder,
+    Task,
     #[serde(other)]
     Unknown,
 }
@@ -23,6 +24,7 @@ impl BlockKind {
             BlockKind::Note => "note",
             BlockKind::File => "file",
             BlockKind::Folder => "folder",
+            BlockKind::Task => "task",
             BlockKind::Unknown => "unknown",
         }
     }
@@ -33,6 +35,7 @@ impl BlockKind {
             "note" => BlockKind::Note,
             "file" => BlockKind::File,
             "folder" => BlockKind::Folder,
+            "task" => BlockKind::Task,
             _ => BlockKind::Unknown,
         }
     }
@@ -125,5 +128,6 @@ mod tests {
         assert!(!valid_kind("a b"));
         assert!(!valid_kind(&"x".repeat(33)));
         assert_eq!(BlockKind::from_str_loose("folder"), BlockKind::Folder);
+        assert_eq!(BlockKind::from_str_loose("task"), BlockKind::Task);
     }
 }
