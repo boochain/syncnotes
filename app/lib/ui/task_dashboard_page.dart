@@ -9,6 +9,7 @@ import '../tasks/task_queries.dart';
 import 'ds.dart';
 import 'glass.dart';
 import 'home_page.dart' show FilterTab;
+import 'motion.dart';
 import 'task_editor_page.dart';
 import 'task_widgets.dart';
 
@@ -26,6 +27,9 @@ class _TaskDashboardPageState extends State<TaskDashboardPage> {
   String _query = '';
   final _search = TextEditingController();
   bool _searching = false;
+  // 删除 / 完成 / 在其它设备上删掉的任务淡出并收起，而不是瞬间消失（与块列表一致）
+  final _activeExits = ExitTracker();
+  final _doneExits = ExitTracker();
 
   @override
   void dispose() {
@@ -148,7 +152,12 @@ class _TaskDashboardPageState extends State<TaskDashboardPage> {
                     : ListView(
                         padding: const EdgeInsets.fromLTRB(Gap.l, Gap.s, Gap.l, Gap.x4),
                         children: [
-                          for (final b in active) _TaskTile(block: b, now: now, onTap: () => _open(b)),
+                          for (final r in _activeExits.merge(
+                            [for (final b in active) (b.id, KeyedSubtree(key: ValueKey('task-${b.id}'), child: _TaskTile(block: b, now: now, onTap: () => _open(b))))],
+                            context: '${_view.name}|$_query|${_sort.name}',
+                            onSettled: () { if (mounted) setState(() {}); },
+                          ))
+                            r.$2,
                           if (done.isNotEmpty) ...[
                             Padding(
                               padding: const EdgeInsets.fromLTRB(Gap.s, Gap.xl, Gap.s, Gap.m),
@@ -157,7 +166,12 @@ class _TaskDashboardPageState extends State<TaskDashboardPage> {
                                 style: tt.bodySmall?.copyWith(color: c.text2, fontWeight: FontWeight.w500),
                               ),
                             ),
-                            for (final b in done) _TaskTile(block: b, now: now, onTap: () => _open(b)),
+                            for (final r in _doneExits.merge(
+                              [for (final b in done) (b.id, KeyedSubtree(key: ValueKey('task-${b.id}'), child: _TaskTile(block: b, now: now, onTap: () => _open(b))))],
+                              context: '${_view.name}|$_query|${_sort.name}',
+                              onSettled: () { if (mounted) setState(() {}); },
+                            ))
+                              r.$2,
                           ],
                         ],
                       ),

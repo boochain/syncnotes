@@ -10,6 +10,7 @@ import 'block_card.dart' show EmptyState, relTime;
 import 'context_menu.dart';
 import 'ds.dart';
 import 'glass.dart';
+import 'motion.dart';
 
 /// 设备名：本设备显示"本设备"，其他设备显示 id 前 8 位。
 String deviceLabel(SyncClient sync, String? id) {
@@ -30,6 +31,8 @@ class TrashPage extends StatefulWidget {
 class _TrashPageState extends State<TrashPage> {
   final _selected = <String>{};
   String _query = '';
+  // 恢复 / 彻底删除的条目淡出收起（M3 列表移除动效），批量清空时直接切到空状态
+  final _exits = ExitTracker();
   bool _healthLoaded = false;
 
   @override
@@ -190,22 +193,36 @@ class _TrashPageState extends State<TrashPage> {
                               subtitle: all.isEmpty ? '删除的内容会先放在这里，可以随时恢复' : null,
                             ),
                           )
-                        : ListView.separated(
-                            itemCount: items.length,
-                            separatorBuilder: (_, _) =>
-                                Divider(height: 1, indent: Gap.xl + Sizes.tile + Gap.l, color: c.separator),
-                            itemBuilder: (context, i) => _TrashRow(
-                              block: items[i],
-                              title: _title(items[i]),
-                              selected: _selected.contains(items[i].id),
-                              selecting: selecting,
-                              onToggle: () => setState(() {
-                                final id = items[i].id;
-                                _selected.contains(id) ? _selected.remove(id) : _selected.add(id);
-                              }),
-                              onRestore: () => _restore([items[i].id]),
-                              onPurge: () => _purge([items[i].id]),
-                            ),
+                        : ListView(
+                            children: [
+                              for (final r in _exits.merge(
+                                [
+                                  for (final (i, b) in items.indexed)
+                                    (
+                                      b.id,
+                                      Column(key: ValueKey('trash-${b.id}'), mainAxisSize: MainAxisSize.min, children: [
+                                        if (i > 0) Divider(height: 1, indent: Gap.xl + Sizes.tile + Gap.l, color: c.separator),
+                                        _TrashRow(
+                                          block: b,
+                                          title: _title(b),
+                                          selected: _selected.contains(b.id),
+                                          selecting: selecting,
+                                          onToggle: () => setState(() {
+                                            _selected.contains(b.id) ? _selected.remove(b.id) : _selected.add(b.id);
+                                          }),
+                                          onRestore: () => _restore([b.id]),
+                                          onPurge: () => _purge([b.id]),
+                                        ),
+                                      ]),
+                                    ),
+                                ],
+                                context: q,
+                                onSettled: () {
+                                  if (mounted) setState(() {});
+                                },
+                              ))
+                                r.$2,
+                            ],
                           ),
                   ),
                 ],
