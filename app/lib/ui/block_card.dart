@@ -9,6 +9,8 @@ import '../blocks/block_type.dart';
 import '../models/block.dart';
 import '../platform/desktop.dart';
 import '../sync/sync_client.dart';
+import '../tasks/task_actions.dart';
+import '../tasks/task_models.dart';
 import 'context_menu.dart';
 import 'ds.dart';
 import 'glass.dart';
@@ -60,8 +62,11 @@ int blockPriorityOf(Block block) {
   return stickyColorOf(block).priority;
 }
 
-/// 块是否已标记为完成（同步保存在 `block.payload['completed']`）。
-bool isBlockCompleted(Block block) => block.payload['completed'] == true;
+/// 块是否已标记为完成（同步保存在 `block.payload['completed']`；任务还看 status）。
+bool isBlockCompleted(Block block) {
+  if (isTaskBlock(block)) return taskDataOf(block).status == TaskStatus.done;
+  return block.payload['completed'] == true;
+}
 
 void setStickyColor(SyncClient sync, Block block, String colorKey) {
   final next = Map<String, dynamic>.from(block.payload);
@@ -74,6 +79,10 @@ void setStickyColor(SyncClient sync, Block block, String colorKey) {
 }
 
 void setBlockCompleted(SyncClient sync, Block block, bool completed) {
+  if (isTaskBlock(block)) {
+    setTaskCompleted(sync, block, completed);
+    return;
+  }
   final next = Map<String, dynamic>.from(block.payload);
   if (completed) {
     next['completed'] = true;
@@ -384,6 +393,7 @@ class _StickyNoteCardState extends State<StickyNoteCard> {
         BlockKind.folder => const Color(0xFFF59E0B),
         BlockKind.file => const Color(0xFF38BDF8),
         BlockKind.page || BlockKind.note => const Color(0xFF8B5CF6),
+        BlockKind.task => const Color(0xFF007AFF),
         BlockKind.message || BlockKind.text || BlockKind.unknown => null,
       };
 

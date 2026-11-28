@@ -9,7 +9,7 @@ String shortTitle(String text, [int max = 40]) {
 
 /// 同步块模型（与服务器协议一致）。
 /// page = Notion 式页面（可嵌套）；text = 页面里的一个内容块（段落/标题/列表/代码…）。
-enum BlockKind { message, note, file, folder, page, text, unknown }
+enum BlockKind { message, note, file, folder, page, text, task, unknown }
 
 BlockKind blockKindFrom(String? s) => BlockKind.values
     .firstWhere((k) => k.name == s, orElse: () => BlockKind.unknown);
@@ -25,6 +25,9 @@ String viewedModeWire(ViewedMode m) =>
 class Block {
   final String id;
   final BlockKind kind;
+
+  /// 线上原始 kind 字符串。为空时等于 [kind].name。用于保留未知类型，避免 upsert 改写成 unknown。
+  final String kindName;
   final String title;
   final Map<String, dynamic> payload;
   final String? parentId;
@@ -51,6 +54,7 @@ class Block {
   const Block({
     required this.id,
     required this.kind,
+    this.kindName = '',
     required this.title,
     this.payload = const {},
     this.parentId,
@@ -70,10 +74,15 @@ class Block {
   /// 在回收站中（尚未彻底删除）。
   bool get inTrash => deletedAt != null && !deleted;
 
+  /// 发给服务器的 kind。优先用原始字符串。
+  String get wireKind => kindName.isEmpty ? kind.name : kindName;
+
   bool get isViewed =>
       viewedMode == ViewedMode.global ? viewedGlobal : viewedLocal;
 
   Block copyWith({
+    BlockKind? kind,
+    String? kindName,
     String? title,
     Map<String, dynamic>? payload,
     String? parentId,
@@ -91,7 +100,8 @@ class Block {
   }) =>
       Block(
         id: id,
-        kind: kind,
+        kind: kind ?? this.kind,
+        kindName: kindName ?? this.kindName,
         title: title ?? this.title,
         payload: payload ?? this.payload,
         parentId: clearParent ? null : (parentId ?? this.parentId),
@@ -112,6 +122,7 @@ class Block {
       Block(
         id: j['id'] as String,
         kind: blockKindFrom(j['kind'] as String?),
+        kindName: (j['kind'] ?? '') as String,
         title: (j['title'] ?? '') as String,
         payload: (j['payload'] is Map)
             ? Map<String, dynamic>.from(j['payload'] as Map)
@@ -131,7 +142,7 @@ class Block {
 
   Map<String, dynamic> toJson() => {
         'id': id,
-        'kind': kind.name,
+        'kind': wireKind,
         'title': title,
         'payload': payload,
         'parent_id': parentId,
@@ -156,7 +167,7 @@ class Block {
   Map<String, dynamic> toUpsertMessage() => {
         'type': 'upsert_block',
         'id': id,
-        'kind': kind.name,
+        'kind': wireKind,
         'title': title,
         'payload': payload,
         'parent_id': parentId,

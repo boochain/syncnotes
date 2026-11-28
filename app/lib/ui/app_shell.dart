@@ -22,6 +22,7 @@ import 'quick_switcher.dart';
 import 'settings_page.dart';
 import 'sidebar.dart';
 import 'transfer_page.dart';
+import 'task_dashboard_page.dart';
 import 'trash_page.dart';
 
 /// 宽屏断点：≥ 720 显示常驻侧边栏，否则使用抽屉。
@@ -128,7 +129,7 @@ class AppShellState extends State<AppShell> implements PageHost {
   Future<void> _settings() async {
     _scaffold.currentState?.closeDrawer();
     if (_inSettings) return;
-    if (_inTrash || _inTransfers) _navKey.currentState?.popUntil((r) => r.isFirst);
+    if (_inTrash || _inTransfers || _inTasks) _navKey.currentState?.popUntil((r) => r.isFirst);
     setState(() => _inSettings = true);
     await _navKey.currentState?.push(MaterialPageRoute(builder: (_) => const SettingsPage()));
     if (mounted) setState(() => _inSettings = false);
@@ -138,17 +139,27 @@ class AppShellState extends State<AppShell> implements PageHost {
   Future<void> _trash() async {
     _scaffold.currentState?.closeDrawer();
     if (_inTrash) return;
-    if (_inSettings || _inTransfers) _navKey.currentState?.popUntil((r) => r.isFirst);
+    if (_inSettings || _inTransfers || _inTasks) _navKey.currentState?.popUntil((r) => r.isFirst);
     setState(() => _inTrash = true);
     await _navKey.currentState?.push(MaterialPageRoute(builder: (_) => const TrashPage()));
     if (mounted) setState(() => _inTrash = false);
+  }
+
+  bool _inTasks = false;
+  Future<void> _tasks() async {
+    _scaffold.currentState?.closeDrawer();
+    if (_inTasks) return;
+    if (_inSettings || _inTrash || _inTransfers) _navKey.currentState?.popUntil((r) => r.isFirst);
+    setState(() => _inTasks = true);
+    await _navKey.currentState?.push(MaterialPageRoute(builder: (_) => const TaskDashboardPage()));
+    if (mounted) setState(() => _inTasks = false);
   }
 
   bool _inTransfers = false;
   Future<void> _transfers() async {
     _scaffold.currentState?.closeDrawer();
     if (_inTransfers) return;
-    if (_inSettings || _inTrash) _navKey.currentState?.popUntil((r) => r.isFirst);
+    if (_inSettings || _inTrash || _inTasks) _navKey.currentState?.popUntil((r) => r.isFirst);
     setState(() => _inTransfers = true);
     await _navKey.currentState?.push(MaterialPageRoute(builder: (_) => const TransferPage()));
     if (mounted) setState(() => _inTransfers = false);
@@ -223,13 +234,15 @@ class AppShellState extends State<AppShell> implements PageHost {
             final pageId = page == null || sync.isHidden(page) ? null : _page;
             final showSidebar = _wide && !_sidebarCollapsed;
             final sidebar = Sidebar(
-              selectedPage: _inSettings || _inTrash || _inTransfers ? null : pageId,
-              inboxSelected: pageId == null && !_inSettings && !_inTrash && !_inTransfers,
-              settingsSelected: _inSettings && !_inTrash && !_inTransfers,
+              selectedPage: _inSettings || _inTrash || _inTransfers || _inTasks ? null : pageId,
+              inboxSelected: pageId == null && !_inSettings && !_inTrash && !_inTransfers && !_inTasks,
+              settingsSelected: _inSettings && !_inTrash && !_inTransfers && !_inTasks,
               trashSelected: _inTrash,
               transfersSelected: _inTransfers,
+              tasksSelected: _inTasks,
               onTrash: _trash,
               onTransfers: _transfers,
+              onTasks: _tasks,
               onSelect: _select,
               onSearch: () {
                 _scaffold.currentState?.closeDrawer();

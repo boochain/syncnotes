@@ -20,3 +20,7 @@
 
 - Windows 客户端由 CI 恢复构建（目前需要在 Windows 上手动构建，见 [`build-windows.md`](build-windows.md)）
 - Android 使用固定的发布签名，升级时不必卸载旧版
+
+## 任务仪表盘（分支 `feature/task-dashboard`，未发版）
+
+侧边栏「任务」入口：重要程度、起止与完成时间、自定义加权进度组成、带子任务日期的仪表盘。调研与协议说明见 [`task-dashboard.md`](task-dashboard.md)。

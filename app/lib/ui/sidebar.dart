@@ -10,6 +10,14 @@ import 'ds.dart';
 import 'glass.dart';
 import 'home_page.dart' show ConnectionBadge;
 import 'tokens.dart';
+import '../tasks/task_queries.dart';
+
+
+Widget? _overdueBadge(AppServices s) {
+  final n = overdueRootCount(s.sync);
+  if (n <= 0) return null;
+  return CountBadge(n);
+}
 
 /// 侧边栏（布局照 AppFlowy / Notion + Apple HIG 材质）：顶部用户行 44（含一键日夜切换与侧边栏收起），导航与页面树每行 32，分组标题行 32；
 /// 选中 / 悬停都用中性灰叠加，不用强调色铺底；桌面端页面树支持原生右键上下文菜单。
@@ -22,6 +30,8 @@ class Sidebar extends StatelessWidget {
   final VoidCallback onSettings;
   final bool trashSelected;
   final VoidCallback? onTrash;
+  final bool tasksSelected;
+  final VoidCallback? onTasks;
   final bool transfersSelected;
   final VoidCallback? onTransfers;
   final VoidCallback? onToggleSidebar;
@@ -35,6 +45,8 @@ class Sidebar extends StatelessWidget {
     required this.onSettings,
     this.trashSelected = false,
     this.onTrash,
+    this.tasksSelected = false,
+    this.onTasks,
     this.transfersSelected = false,
     this.onTransfers,
     this.onToggleSidebar,
@@ -196,6 +208,15 @@ class Sidebar extends StatelessWidget {
                 trailing: s.sync.unreadCount > 0 ? CountBadge(s.sync.unreadCount) : null,
                 onTap: () => onSelect(null),
               ),
+              if (onTasks != null)
+                SidebarRow(
+                  key: const Key('sidebarTasks'),
+                  leading: Icon(CupertinoIcons.checkmark_alt_circle_fill, color: c.accent),
+                  label: '任务',
+                  selected: tasksSelected,
+                  trailing: _overdueBadge(s),
+                  onTap: onTasks!,
+                ),
               SidebarRow(
                 key: const Key('sidebarSettings'),
                 leading: Icon(CupertinoIcons.gear_alt_fill, color: c.accent),

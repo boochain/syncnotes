@@ -20,7 +20,11 @@ import '../models/block.dart';
 import '../ui/folder_page.dart';
 import '../ui/motion.dart';
 import '../ui/note_editor_page.dart';
+import '../ui/task_editor_page.dart';
 import '../ui/tokens.dart';
+import '../tasks/task_actions.dart';
+import '../tasks/task_models.dart';
+import '../tasks/task_queries.dart';
 import 'block_type.dart';
 
 /// 清理来自其他设备的文件名：去掉路径分隔符和 Windows 非法字符，防止写到下载目录之外。
@@ -40,6 +44,7 @@ void registerBuiltinTypes() {
   BlockTypes.register(PageType());
   BlockTypes.register(FileType_());
   BlockTypes.register(FolderType());
+  BlockTypes.register(TaskType());
   BlockTypes.register(UnknownType());
 }
 
@@ -474,6 +479,57 @@ class FolderType extends BlockType {
   }
 }
 
+
+// ------------------------------------------------------------------ task
+
+class TaskType extends BlockType {
+  @override
+  BlockKind get kind => BlockKind.task;
+  @override
+  String get label => '任务';
+  @override
+  IconData get icon => CupertinoIcons.checkmark_alt_circle;
+  @override
+  Color color(ColorScheme cs) => cs.onSurfaceVariant;
+  @override
+  String get executeLabel => '打开';
+
+  @override
+  String previewText(BuildContext context, Block block) {
+    final sync = AppScope.of(context).sync;
+    final byId = taskIndexOf(sync);
+    final d = taskDataOf(block);
+    final pct = formatProgressPct(computeTaskProgress(block, byId));
+    final due = d.dueAt == null ? '' : ' · 截止 ${formatTaskDate(d.dueAt, allDay: d.allDay)}';
+    return '${taskStatusLabel(d.status)} · $pct$due';
+  }
+
+  @override
+  Widget buildPreview(BuildContext context, Block block) => Text(
+        previewText(context, block),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      );
+
+  @override
+  Future<void> execute(BuildContext context, Block block) async {
+    AppScope.of(context).sync.setViewed(block.id, true);
+    await Navigator.of(context).push(_fade(TaskEditorPage(blockId: block.id, parentId: block.parentId)));
+  }
+
+  @override
+  Future<bool> edit(BuildContext context, Block? block, {String? parentId}) async {
+    if (block != null) {
+      await execute(context, block);
+      return true;
+    }
+    final created = saveTask(AppScope.of(context).sync, null, title: '未命名任务', data: const TaskData(), parentId: parentId);
+    if (created == null || !context.mounted) return false;
+    await Navigator.of(context).push(_fade(TaskEditorPage(blockId: created.id, parentId: parentId)));
+    return true;
+  }
+}
+
 // ------------------------------------------------------------------ unknown
 
 class UnknownType extends BlockType {
@@ -494,9 +550,20 @@ class UnknownType extends BlockType {
   Widget buildPreview(BuildContext context, Block block) =>
       const Text('此类型需要更新客户端才能显示');
   @override
-  Future<void> execute(BuildContext context, Block block) async {}
+  Future<void> execute(BuildContext context, Block block) async {
+    if (isTaskBlock(block)) {
+      await Navigator.of(context).push(_fade(TaskEditorPage(blockId: block.id, parentId: block.parentId)));
+    }
+  }
+
   @override
-  Future<bool> edit(BuildContext context, Block? block, {String? parentId}) async => false;
+  Future<bool> edit(BuildContext context, Block? block, {String? parentId}) async {
+    if (block != null && isTaskBlock(block)) {
+      await execute(context, block);
+      return true;
+    }
+    return false;
+  }
 }
 
 Route<T> _fade<T>(Widget page) => fadeRoute(page);
