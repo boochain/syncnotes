@@ -269,7 +269,7 @@ abstract final class Materials {
 
 // ---------------------------------------------------------------- motion
 
-/// [M3] Motion duration tokens（ms）
+/// [M3] Motion duration tokens（ms）。页面转场必须遵循 `docs/motion.md`，不要在调用处另写时长或曲线。
 abstract final class Motion {
   static const short1 = Duration(milliseconds: 50);
   static const short2 = Duration(milliseconds: 100);
