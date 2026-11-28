@@ -48,7 +48,7 @@ class BlockTypes {
       _registry.values.where((t) => !_hidden.contains(t.kind)).toList();
 
   /// 旧版 Markdown 笔记仍可显示/编辑，但新建统一使用页面。
-  static const _hidden = {BlockKind.unknown, BlockKind.note, BlockKind.text};
+  static const _hidden = {BlockKind.unknown, BlockKind.note, BlockKind.text, BlockKind.calendar};
 
   static bool get isInitialized => _registry.isNotEmpty;
 }

@@ -9,7 +9,7 @@ String shortTitle(String text, [int max = 40]) {
 
 /// 同步块模型（与服务器协议一致）。
 /// page = Notion 式页面（可嵌套）；text = 页面里的一个内容块（段落/标题/列表/代码…）。
-enum BlockKind { message, note, file, folder, page, text, unknown }
+enum BlockKind { message, note, file, folder, page, text, calendar, unknown }
 
 BlockKind blockKindFrom(String? s) => BlockKind.values
     .firstWhere((k) => k.name == s, orElse: () => BlockKind.unknown);
@@ -48,9 +48,14 @@ class Block {
   /// 本地尚未被服务器确认。
   final bool pending;
 
+  /// 协议上的原始 kind 字符串。未识别的类型（例如未来的 `task`）不能改写成 `unknown`，
+  /// 否则整包回传时会把新类型盖掉。
+  final String kindRaw;
+
   const Block({
     required this.id,
     required this.kind,
+    this.kindRaw = '',
     required this.title,
     this.payload = const {},
     this.parentId,
@@ -66,6 +71,9 @@ class Block {
     this.viewedLocal = false,
     this.pending = false,
   });
+
+  /// 发给服务器 / 写入本地缓存时使用的 kind。
+  String get wireKind => kindRaw.isNotEmpty ? kindRaw : kind.name;
 
   /// 在回收站中（尚未彻底删除）。
   bool get inTrash => deletedAt != null && !deleted;
@@ -92,6 +100,7 @@ class Block {
       Block(
         id: id,
         kind: kind,
+        kindRaw: kindRaw,
         title: title ?? this.title,
         payload: payload ?? this.payload,
         parentId: clearParent ? null : (parentId ?? this.parentId),
@@ -112,6 +121,7 @@ class Block {
       Block(
         id: j['id'] as String,
         kind: blockKindFrom(j['kind'] as String?),
+        kindRaw: (j['kind'] as String?) ?? '',
         title: (j['title'] ?? '') as String,
         payload: (j['payload'] is Map)
             ? Map<String, dynamic>.from(j['payload'] as Map)
@@ -131,7 +141,7 @@ class Block {
 
   Map<String, dynamic> toJson() => {
         'id': id,
-        'kind': kind.name,
+        'kind': wireKind,
         'title': title,
         'payload': payload,
         'parent_id': parentId,
@@ -156,7 +166,7 @@ class Block {
   Map<String, dynamic> toUpsertMessage() => {
         'type': 'upsert_block',
         'id': id,
-        'kind': kind.name,
+        'kind': wireKind,
         'title': title,
         'payload': payload,
         'parent_id': parentId,

@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../app_scope.dart';
+import '../sync/sync_client.dart';
+import '../calendar/calendar_reminders.dart';
 import '../blocks/block_type.dart';
 import '../models/block.dart';
 import '../pages/page_nav.dart';
@@ -21,6 +23,7 @@ import 'motion.dart';
 import 'quick_switcher.dart';
 import 'settings_page.dart';
 import 'sidebar.dart';
+import 'calendar_page.dart';
 import 'transfer_page.dart';
 import 'trash_page.dart';
 
@@ -40,6 +43,7 @@ class AppShellState extends State<AppShell> implements PageHost {
   final _navKey = GlobalKey<NavigatorState>();
   bool _wide = false;
   bool _sidebarCollapsed = false;
+  SyncClient? _syncForReminders;
 
   String? get currentPage => _page;
   bool get sidebarCollapsed => _sidebarCollapsed;
@@ -73,12 +77,29 @@ class AppShellState extends State<AppShell> implements PageHost {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _onNotificationOpened();
       _onShared();
-      if (mounted) askNotificationPermission(context, AppScope.of(context).settings);
+      if (mounted) {
+        askNotificationPermission(context, AppScope.of(context).settings);
+        _hookReminders();
+      }
     });
+  }
+
+  void _hookReminders() {
+    if (_syncForReminders != null) return;
+    final sync = AppScope.of(context).sync;
+    _syncForReminders = sync;
+    sync.addListener(_onCalendarReminders);
+    _onCalendarReminders();
+  }
+
+  void _onCalendarReminders() {
+    if (!mounted || _syncForReminders == null) return;
+    unawaited(CalendarReminders.sync(_syncForReminders!));
   }
 
   @override
   void dispose() {
+    _syncForReminders?.removeListener(_onCalendarReminders);
     Notifier.opened.removeListener(_onNotificationOpened);
     ShareReceiver.incoming.removeListener(_onShared);
     super.dispose();
@@ -128,7 +149,7 @@ class AppShellState extends State<AppShell> implements PageHost {
   Future<void> _settings() async {
     _scaffold.currentState?.closeDrawer();
     if (_inSettings) return;
-    if (_inTrash || _inTransfers) _navKey.currentState?.popUntil((r) => r.isFirst);
+    if (_inTrash || _inTransfers || _inCalendar) _navKey.currentState?.popUntil((r) => r.isFirst);
     setState(() => _inSettings = true);
     await _navKey.currentState?.push(MaterialPageRoute(builder: (_) => const SettingsPage()));
     if (mounted) setState(() => _inSettings = false);
@@ -138,7 +159,7 @@ class AppShellState extends State<AppShell> implements PageHost {
   Future<void> _trash() async {
     _scaffold.currentState?.closeDrawer();
     if (_inTrash) return;
-    if (_inSettings || _inTransfers) _navKey.currentState?.popUntil((r) => r.isFirst);
+    if (_inSettings || _inTransfers || _inCalendar) _navKey.currentState?.popUntil((r) => r.isFirst);
     setState(() => _inTrash = true);
     await _navKey.currentState?.push(MaterialPageRoute(builder: (_) => const TrashPage()));
     if (mounted) setState(() => _inTrash = false);
@@ -148,10 +169,20 @@ class AppShellState extends State<AppShell> implements PageHost {
   Future<void> _transfers() async {
     _scaffold.currentState?.closeDrawer();
     if (_inTransfers) return;
-    if (_inSettings || _inTrash) _navKey.currentState?.popUntil((r) => r.isFirst);
+    if (_inSettings || _inTrash || _inCalendar) _navKey.currentState?.popUntil((r) => r.isFirst);
     setState(() => _inTransfers = true);
     await _navKey.currentState?.push(MaterialPageRoute(builder: (_) => const TransferPage()));
     if (mounted) setState(() => _inTransfers = false);
+  }
+
+  bool _inCalendar = false;
+  Future<void> _calendar() async {
+    _scaffold.currentState?.closeDrawer();
+    if (_inCalendar) return;
+    if (_inSettings || _inTrash || _inTransfers) _navKey.currentState?.popUntil((r) => r.isFirst);
+    setState(() => _inCalendar = true);
+    await _navKey.currentState?.push(MaterialPageRoute(builder: (_) => const CalendarPage()));
+    if (mounted) setState(() => _inCalendar = false);
   }
 
   /// 系统返回（Android 返回键 / 预测性返回手势）：
@@ -223,13 +254,15 @@ class AppShellState extends State<AppShell> implements PageHost {
             final pageId = page == null || sync.isHidden(page) ? null : _page;
             final showSidebar = _wide && !_sidebarCollapsed;
             final sidebar = Sidebar(
-              selectedPage: _inSettings || _inTrash || _inTransfers ? null : pageId,
-              inboxSelected: pageId == null && !_inSettings && !_inTrash && !_inTransfers,
-              settingsSelected: _inSettings && !_inTrash && !_inTransfers,
+              selectedPage: _inSettings || _inTrash || _inTransfers || _inCalendar ? null : pageId,
+              inboxSelected: pageId == null && !_inSettings && !_inTrash && !_inTransfers && !_inCalendar,
+              settingsSelected: _inSettings && !_inTrash && !_inTransfers && !_inCalendar,
               trashSelected: _inTrash,
               transfersSelected: _inTransfers,
+              calendarSelected: _inCalendar,
               onTrash: _trash,
               onTransfers: _transfers,
+              onCalendar: _calendar,
               onSelect: _select,
               onSearch: () {
                 _scaffold.currentState?.closeDrawer();

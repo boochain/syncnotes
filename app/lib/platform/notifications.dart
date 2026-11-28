@@ -96,6 +96,8 @@ class Notifier {
         return md.length > 120 ? '${md.substring(0, 120)}…' : md;
       case BlockKind.file:
         return '文件：${b.payload['name'] ?? b.title}';
+      case BlockKind.calendar:
+        return b.title;
       default:
         return b.title;
     }
@@ -125,7 +127,37 @@ class Notifier {
       debugPrint('notify failed: $e');
     }
   }
+  /// 日历提醒（续费、倒数日、日程）。点按打开对应条目。
+  static Future<void> showReminder({
+    required String title,
+    required String body,
+    String? payload,
+    int? id,
+  }) async {
+    if (!_ready) await init(requestPermission: false);
+    if (!_ready) return;
+    try {
+      await _plugin.show(
+        id: id ?? _id++,
+        title: title,
+        body: body,
+        notificationDetails: const NotificationDetails(
+          android: AndroidNotificationDetails('syncnotes_calendar', '日历提醒',
+              channelDescription: '订阅续费、倒数日和日程提醒',
+              icon: '@mipmap/ic_launcher_monochrome',
+              importance: Importance.high,
+              priority: Priority.high),
+          linux: LinuxNotificationDetails(),
+          windows: WindowsNotificationDetails(),
+        ),
+        payload: payload,
+      );
+    } catch (e) {
+      debugPrint('calendar notify failed: $e');
+    }
+  }
 }
+
 
 /// 通知权限说明（Android 13+）：先解释用途，用户同意后再弹系统权限框；只主动询问一次。
 Future<void> askNotificationPermission(BuildContext context, Settings settings,

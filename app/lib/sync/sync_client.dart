@@ -214,10 +214,11 @@ class SyncClient extends ChangeNotifier {
   }
 
   /// 收件箱条目（不含页面内部的内容块）。
-  static bool isInboxItem(Block b) => b.kind != BlockKind.text;
+  static bool isInboxItem(Block b) =>
+      b.kind != BlockKind.text && b.kind != BlockKind.calendar && b.kindRaw != 'calendar';
 
   int get unreadCount => blocks
-      .where((b) => !b.isViewed && b.kind != BlockKind.folder && b.kind != BlockKind.text && b.kind != BlockKind.page)
+      .where((b) => !b.isViewed && b.kind != BlockKind.folder && b.kind != BlockKind.text && b.kind != BlockKind.page && b.kind != BlockKind.calendar && b.kindRaw != 'calendar')
       .length;
 
   Future<void> loadLocal() async {
@@ -600,7 +601,9 @@ class SyncClient extends ChangeNotifier {
         incoming.createdBy != deviceId &&
         !incoming.deleted &&
         incoming.deletedAt == null &&
-        incoming.kind != BlockKind.text) {
+        incoming.kind != BlockKind.text &&
+        incoming.kind != BlockKind.calendar &&
+        incoming.kindRaw != 'calendar') {
       onRemoteNew?.call(merged);
     }
     _persist();

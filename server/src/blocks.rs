@@ -12,6 +12,7 @@ pub enum BlockKind {
     Note,
     File,
     Folder,
+    Calendar,
     #[serde(other)]
     Unknown,
 }
@@ -23,6 +24,7 @@ impl BlockKind {
             BlockKind::Note => "note",
             BlockKind::File => "file",
             BlockKind::Folder => "folder",
+            BlockKind::Calendar => "calendar",
             BlockKind::Unknown => "unknown",
         }
     }
@@ -33,6 +35,7 @@ impl BlockKind {
             "note" => BlockKind::Note,
             "file" => BlockKind::File,
             "folder" => BlockKind::Folder,
+            "calendar" => BlockKind::Calendar,
             _ => BlockKind::Unknown,
         }
     }

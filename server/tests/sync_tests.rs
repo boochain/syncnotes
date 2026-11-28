@@ -105,11 +105,9 @@ async fn health_ok() {
         .await
         .unwrap();
     assert_eq!(v["status"], "ok");
-    assert!(v["features"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|f| f == "seal"));
+    let features = v["features"].as_array().unwrap();
+    assert!(features.iter().any(|f| f == "seal"));
+    assert!(features.iter().any(|f| f == "calendar"));
     assert!(v["seal_pub"].as_str().unwrap().len() > 40);
 }
 
@@ -519,6 +517,36 @@ async fn unknown_block_kind_is_tolerated() {
     )
     .await;
     assert_eq!(recv(&mut a).await["type"], "error");
+}
+
+#[tokio::test]
+async fn calendar_block_roundtrips() {
+    let addr = spawn_server().await;
+    setup_user(&addr, "bill").await;
+    let t1 = login(&addr, "bill", "pass1234", "pc").await.unwrap();
+    let mut a = connect(&addr, &t1, "pc").await;
+    let payload = serde_json::json!({
+        "schema": 1,
+        "role": "subscription",
+        "all_day": true,
+        "start_date": "2026-11-01",
+        "timezone": "Asia/Shanghai",
+        "billing": {
+            "cycle": "monthly",
+            "auto_renew": true,
+            "amount": 18,
+            "currency": "CNY",
+            "status": "active"
+        },
+        "vendor_id": "netflix"
+    });
+    send(&mut a, upsert("c1", "calendar", "网飞", payload.clone(), "global", 1)).await;
+    let v = recv_type(&mut a, "block_update").await;
+    assert_eq!(v["block"]["kind"], "calendar");
+    assert_eq!(v["block"]["title"], "网飞");
+    assert_eq!(v["block"]["payload"]["role"], "subscription");
+    assert_eq!(v["block"]["payload"]["vendor_id"], "netflix");
+    assert_eq!(v["block"]["payload"]["billing"]["amount"], 18);
 }
 
 #[tokio::test]
