@@ -392,12 +392,19 @@ button { cursor: pointer; }
   100% { opacity: 0; transform: translateY(24px) scale(0.96); }
 }
 /* 下层：先淡出再出卡片；卡片退完再淡入（退出时 covered 在卡片动画结束后才移除） */
-.shell > .sidebar, .main > .topbar, .main > .toolbar, .main > .inbox, .main > .composer, .shell { transition: opacity 140ms ease-out; }
+/* 下层一开始就模糊到不可读（filter 不过渡，第一帧即生效），再用 140ms 淡出到只剩背景；退出倒放。
+ * 这样淡出过程中任何一帧都读不到下层文字。 */
+.shell > .sidebar, .main > .topbar, .main > .toolbar, .main > .inbox, .main > .composer, .shell {
+  transition: opacity 140ms ease-out, filter 0ms linear 140ms;
+}
 .shell.covered > .sidebar, .shell.covered .main > .topbar, .shell.covered .main > .toolbar,
-.shell.covered .main > .inbox, .shell.covered .main > .composer { opacity: 0; pointer-events: none; }
+.shell.covered .main > .inbox, .shell.covered .main > .composer {
+  opacity: 0; filter: blur(18px); pointer-events: none;
+  transition: opacity 140ms ease-out, filter 0ms;
+}
 /* 卡片铺在整个窗口上（侧栏也淡出），四周只露流动背景 */
 .card-layer { position: fixed; }
-html.popup-open .shell, html.popup-open .login > .login-col { opacity: 0; }
+html.popup-open .shell, html.popup-open .login > .login-col { opacity: 0; filter: blur(18px); transition: opacity 140ms ease-out, filter 0ms; }
 .popup-root { position: fixed; inset: 0; z-index: 40; }
 .popup-scrim { position: absolute; inset: 0; }
 .popup-root[data-state='out'] { pointer-events: none; }
