@@ -34,6 +34,8 @@ class Sidebar extends StatelessWidget {
   final VoidCallback? onTasks;
   final bool transfersSelected;
   final VoidCallback? onTransfers;
+  final bool calendarSelected;
+  final VoidCallback? onCalendar;
   final VoidCallback? onToggleSidebar;
   const Sidebar({
     super.key,
@@ -49,6 +51,8 @@ class Sidebar extends StatelessWidget {
     this.onTasks,
     this.transfersSelected = false,
     this.onTransfers,
+    this.calendarSelected = false,
+    this.onCalendar,
     this.onToggleSidebar,
   });
 
@@ -216,6 +220,14 @@ class Sidebar extends StatelessWidget {
                   selected: tasksSelected,
                   trailing: _overdueBadge(s),
                   onTap: onTasks!,
+                ),
+              if (onCalendar != null)
+                SidebarRow(
+                  key: const Key('sidebarCalendar'),
+                  leading: Icon(CupertinoIcons.calendar, color: c.accent),
+                  label: '日历',
+                  selected: calendarSelected,
+                  onTap: onCalendar!,
                 ),
               SidebarRow(
                 key: const Key('sidebarSettings'),

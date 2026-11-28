@@ -2,7 +2,7 @@
 
 一个可自部署的多设备实时同步笔记、便签、消息与文件工具：在任意一台设备上发消息、写笔记、整理便签或传文件，其他设备**立即**同步。
 
-> **当前版本**：[v0.7.2](https://github.com/boochain/syncnotes/releases/latest) · [更新日志](docs/release-notes/v0.7.2.md) · [设计系统](docs/design-system.md) · [服务端管理脚本](docs/server-script.md) · [密码找回与数据救援](docs/password-recovery.md) · [任务仪表盘设计](docs/task-dashboard.md)
+> **当前版本**：[v0.7.2](https://github.com/boochain/syncnotes/releases/latest) · [更新日志](docs/release-notes/v0.7.2.md) · [设计系统](docs/design-system.md) · [服务端管理脚本](docs/server-script.md) · [密码找回与数据救援](docs/password-recovery.md) · [任务仪表盘](docs/task-dashboard.md) · [日历](docs/calendar.md)
 
 ---
 
@@ -29,6 +29,8 @@
 - **回收站与轻量 Rust 服务端**
   - 删除内容先进入**回收站**（支持撤销、搜索、批量恢复/彻底删除、多端同步，默认保留 30 天自动清理并回收附件空间）。
   - 服务端为单个 Rust 可执行文件 + SQLite，支持局域网 mDNS 自动发现、恢复码自助找回以及 Linux/Windows 一键管理与救援脚本。
+- **日历、订阅与倒数日**
+  - 侧边栏「日历」入口：月 / 周 / 年 / 议程视图，会员订阅（自动续费或单月 / 单季 / 单年等）、重要日期和倒数日；花费汇总、续费提醒与农历显示。数据作为 `calendar` 块同步，旧客户端可原样保存。说明见 [`docs/calendar.md`](docs/calendar.md)。
 
 > 显卡较旧或在远程桌面中运行时，可设置环境变量 `SYNCNOTES_GLASS=0`，改用轻量的毛玻璃效果。
 

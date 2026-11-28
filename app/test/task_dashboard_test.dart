@@ -13,13 +13,13 @@ Block task(
   TaskData data = const TaskData(),
   int createdAt = 1,
   int updatedAt = 1,
-  String kindName = 'task',
+  String kindRaw = 'task',
   BlockKind kind = BlockKind.task,
 }) =>
     Block(
       id: id,
       kind: kind,
-      kindName: kindName,
+      kindRaw: kindRaw,
       title: title.isEmpty ? id : title,
       payload: data.toPayload(),
       parentId: parent,
@@ -31,7 +31,7 @@ int day(int y, int m, int d, [int hh = 0, int mm = 0]) =>
     DateTime(y, m, d, hh, mm).millisecondsSinceEpoch;
 
 void main() {
-  test('kindName is preserved on upsert so unknown types are not rewritten', () {
+  test('kindRaw is preserved on upsert so unknown types are not rewritten', () {
     final b = Block.fromServer({
       'id': 'x',
       'kind': 'future_widget',
@@ -44,7 +44,7 @@ void main() {
       'seq': 1,
     });
     expect(b.kind, BlockKind.unknown);
-    expect(b.kindName, 'future_widget');
+    expect(b.kindRaw, 'future_widget');
     expect(b.wireKind, 'future_widget');
     expect(b.toUpsertMessage()['kind'], 'future_widget');
     expect(isTaskBlock(b), isTrue);
@@ -290,7 +290,7 @@ void main() {
     final b = Block(
       id: 'old',
       kind: BlockKind.unknown,
-      kindName: 'unknown',
+      kindRaw: 'unknown',
       title: '救援',
       payload: const TaskData(priority: TaskPriority.medium).toPayload(),
       createdAt: 1,
@@ -301,7 +301,7 @@ void main() {
     // inject via create then overwrite kind? use update after create
     final created = saveTask(sync, null, title: '救援', data: const TaskData())!;
     // simulate old client rewriting kind
-    final spoofed = created.copyWith(kind: BlockKind.unknown, kindName: 'unknown');
+    final spoofed = created.copyWith(kind: BlockKind.unknown, kindRaw: 'unknown');
     expect(isTaskBlock(spoofed), isTrue);
     final saved = saveTask(sync, spoofed, title: spoofed.title, data: taskDataOf(spoofed))!;
     expect(saved.kind, BlockKind.task);

@@ -5,7 +5,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:syncnotes/app_scope.dart';
 import 'package:syncnotes/blocks/builtin_types.dart';
 import 'package:syncnotes/main.dart';
-import 'package:syncnotes/models/block.dart';
 import 'package:syncnotes/services/settings.dart';
 import 'package:syncnotes/sync/local_store.dart';
 import 'package:syncnotes/tasks/task_actions.dart';

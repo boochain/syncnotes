@@ -101,7 +101,7 @@
 旧版客户端（v0.7.2 及更早）若对任务做 upsert（例如移入回收站），可能把 `kind` 写成 `unknown`。为此：
 
 - `payload.is_task = true` 作为标记，新客户端即使看到 `kind=unknown` 也能恢复为任务  
-- 本分支的客户端保存 `kindName`（线上原始类型字符串），以后遇到未知类型再 upsert 时不再改写成 `unknown`
+- 本分支的客户端保存 `kindRaw`（线上原始类型字符串），以后遇到未知类型再 upsert 时不再改写成 `unknown`
 
 存储不新增表，不加密 payload。父子关系沿用 `parent_id`：子任务的父是任务，文件夹里的任务父是文件夹。删除父任务时，子任务随祖先进入回收站隐藏，逻辑与文件夹相同。
 
@@ -179,7 +179,7 @@
 - `docs/task-dashboard.md`：本文  
 - `app/lib/tasks/`：模型、进度、智能列表（纯 Dart，便于测试）  
 - `app/lib/ui/task_dashboard_page.dart`、`task_editor_page.dart`：界面  
-- `app/lib/models/block.dart`：`BlockKind.task` + 保留 `kindName`  
+- `app/lib/models/block.dart`：`BlockKind.task` + 保留 `kindRaw`  
 - `app/lib/blocks/builtin_types.dart`：注册 `TaskType`  
 - `app/lib/ui/app_shell.dart`、`sidebar.dart`：只加入口  
 - `app/lib/ui/quick_switcher.dart`、通知、回收站类型标签：小补  

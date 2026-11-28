@@ -34,9 +34,7 @@ class _TaskDashboardPageState extends State<TaskDashboardPage> {
 
   Future<void> _open(Block? block, {String? parentId}) async {
     var target = block;
-    if (target == null) {
-      target = saveTask(AppScope.of(context).sync, null, title: '未命名任务', data: const TaskData(), parentId: parentId);
-    }
+    target ??= saveTask(AppScope.of(context).sync, null, title: '未命名任务', data: const TaskData(), parentId: parentId);
     if (target == null || !mounted) return;
     await Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => TaskEditorPage(blockId: target!.id, parentId: parentId ?? target.parentId),
@@ -339,7 +337,7 @@ class _TaskTile extends StatelessWidget {
                         const SizedBox(height: 2),
                         Text(
                           [
-                            if (parentTitle != null) parentTitle,
+                            ?parentTitle,
                             if (data.milestone) '里程碑',
                             if (data.flagged) '旗标',
                             if (caption.isNotEmpty) caption,

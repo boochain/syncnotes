@@ -27,7 +27,7 @@ Block? saveTask(SyncClient sync, Block? existing,
     parentId: parentId,
     moveToRoot: moveToRoot,
     kind: BlockKind.task,
-    kindName: 'task',
+    kindRaw: 'task',
   );
 }
 

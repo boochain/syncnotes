@@ -22,7 +22,7 @@ pub async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
         status: "ok".into(),
         version: env!("CARGO_PKG_VERSION").into(),
         protocol: PROTOCOL_VERSION,
-        features: vec!["trash".into(), "seal".into(), "tasks".into()],
+        features: vec!["trash".into(), "seal".into(), "tasks".into(), "calendar".into()],
         trash_retention_days: state.trash_days,
         seal_pub: state.seal.public_b64(),
     })

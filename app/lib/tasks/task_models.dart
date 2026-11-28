@@ -16,7 +16,7 @@ enum TaskHealth { completed, cancelled, overdue, atRisk, onTrack, notStarted, in
 enum TaskSmartView { overview, today, upcoming, overdue, inProgress, atRisk, active, completed, milestones }
 
 bool isTaskBlock(Block b) =>
-    b.kind == BlockKind.task || b.kindName == 'task' || b.payload['is_task'] == true;
+    b.kind == BlockKind.task || b.kindRaw == 'task' || b.payload['is_task'] == true;
 
 String taskStatusWire(TaskStatus s) => switch (s) {
       TaskStatus.todo => 'todo',

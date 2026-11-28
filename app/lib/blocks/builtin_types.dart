@@ -26,6 +26,7 @@ import '../tasks/task_actions.dart';
 import '../tasks/task_models.dart';
 import '../tasks/task_queries.dart';
 import 'block_type.dart';
+import '../calendar/calendar_type.dart';
 
 /// 清理来自其他设备的文件名：去掉路径分隔符和 Windows 非法字符，防止写到下载目录之外。
 String safeFileName(String name) {
@@ -45,6 +46,7 @@ void registerBuiltinTypes() {
   BlockTypes.register(FileType_());
   BlockTypes.register(FolderType());
   BlockTypes.register(TaskType());
+  BlockTypes.register(CalendarType());
   BlockTypes.register(UnknownType());
 }
 
