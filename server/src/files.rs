@@ -229,6 +229,105 @@ async fn hash_file_blocking(path: PathBuf) -> Result<(u64, String), std::io::Err
     .map_err(|_| std::io::Error::other("hash task failed"))?
 }
 
+async fn stream_file_then(
+    opened: &OpenedHttp,
+    path: PathBuf,
+    header_body: Vec<u8>,
+    delete_after: bool,
+) -> axum::response::Response {
+    let raw_file = match tokio::fs::File::open(&path).await {
+        Ok(f) => f,
+        Err(_) => {
+            if delete_after {
+                let _ = tokio::fs::remove_file(&path).await;
+            }
+            return sealed_err(opened, StatusCode::NOT_FOUND, "文件不存在");
+        }
+    };
+    let size = raw_file.metadata().await.map(|m| m.len()).unwrap_or(0);
+    let key = opened.chunk_key();
+    let head = opened.seal_response(200, &header_body);
+    let (mut tx, rx) =
+        futures::channel::mpsc::channel::<Result<axum::body::Bytes, std::io::Error>>(16);
+    let path_del = path.clone();
+    tokio::spawn(async move {
+        let mut prefix = Vec::with_capacity(4 + head.len());
+        prefix.extend_from_slice(&(head.len() as u32).to_be_bytes());
+        prefix.extend_from_slice(&head);
+        if !matches!(
+            tokio::time::timeout(
+                IO_STALL_TIMEOUT,
+                tx.send(Ok(axum::body::Bytes::from(prefix)))
+            )
+            .await,
+            Ok(Ok(()))
+        ) {
+            if delete_after {
+                let _ = tokio::fs::remove_file(&path_del).await;
+            }
+            return;
+        }
+        let mut file = BufReader::with_capacity(512 * 1024, raw_file);
+        let mut buf = vec![0u8; CHUNK];
+        let mut idx = 0u64;
+        let mut left = size;
+        while left > 0 {
+            let target = (CHUNK as u64).min(left) as usize;
+            let mut filled = 0usize;
+            while filled < target {
+                match file.read(&mut buf[filled..target]).await {
+                    Ok(0) => break,
+                    Ok(n) => filled += n,
+                    Err(_) => {
+                        if delete_after {
+                            let _ = tokio::fs::remove_file(&path_del).await;
+                        }
+                        return;
+                    }
+                }
+            }
+            if filled == 0 {
+                break;
+            }
+            left -= filled as u64;
+            let ct = seal_chunk(&key, idx, &buf[..filled]);
+            let mut frame = Vec::with_capacity(4 + ct.len());
+            frame.extend_from_slice(&(ct.len() as u32).to_be_bytes());
+            frame.extend_from_slice(&ct);
+            match tokio::time::timeout(
+                IO_STALL_TIMEOUT,
+                tx.send(Ok(axum::body::Bytes::from(frame))),
+            )
+            .await
+            {
+                Ok(Ok(())) => {}
+                _ => {
+                    if delete_after {
+                        let _ = tokio::fs::remove_file(&path_del).await;
+                    }
+                    return;
+                }
+            }
+            idx += 1;
+        }
+        let _ = tokio::time::timeout(
+            IO_STALL_TIMEOUT,
+            tx.send(Ok(axum::body::Bytes::from(0u32.to_be_bytes().to_vec()))),
+        )
+        .await;
+        drop(tx);
+        if delete_after {
+            let _ = tokio::fs::remove_file(&path_del).await;
+        }
+    });
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "application/octet-stream")],
+        Body::from_stream(rx),
+    )
+        .into_response()
+}
+
 /// Streamed encrypted upload or download (including resumable chunked transfers).
 pub async fn blob(State(state): State<AppState>, body: Body) -> axum::response::Response {
     let mut reader = Reader::new(body);
@@ -414,7 +513,9 @@ pub async fn blob(State(state): State<AppState>, body: Body) -> axum::response::
             return sealed_err(&opened, StatusCode::BAD_REQUEST, "非法上传 id");
         }
         let dir = state.files_dir.join(&uid);
-        let part_path = dir.join(".uploads").join(format!("{}.part", meta.upload_id));
+        let part_path = dir
+            .join(".uploads")
+            .join(format!("{}.part", meta.upload_id));
         if tokio::fs::metadata(&part_path).await.is_err() {
             return sealed_err(&opened, StatusCode::NOT_FOUND, "上传会话不存在或已过期");
         }
@@ -633,8 +734,11 @@ pub async fn blob(State(state): State<AppState>, body: Body) -> axum::response::
             prefix.extend_from_slice(&(head.len() as u32).to_be_bytes());
             prefix.extend_from_slice(&head);
             if !matches!(
-                tokio::time::timeout(IO_STALL_TIMEOUT, tx.send(Ok(axum::body::Bytes::from(prefix))))
-                    .await,
+                tokio::time::timeout(
+                    IO_STALL_TIMEOUT,
+                    tx.send(Ok(axum::body::Bytes::from(prefix)))
+                )
+                .await,
                 Ok(Ok(()))
             ) {
                 return;
@@ -685,6 +789,54 @@ pub async fn blob(State(state): State<AppState>, body: Body) -> axum::response::
         )
             .into_response();
     }
+
+    // ── Account backup zip (server content the user can see) ─────────────────
+    if meta.op == "backup_export" {
+        match reader.u32().await {
+            Ok(0) => {}
+            _ => return sealed_err(&opened, StatusCode::BAD_REQUEST, "请求格式错误"),
+        }
+        let user = match state.storage.find_user_by_id(&uid) {
+            Ok(Some(u)) => u,
+            _ => return sealed_err(&opened, StatusCode::UNAUTHORIZED, "无效令牌"),
+        };
+        let exports_dir = state.files_dir.join(&uid).join(".exports");
+        if tokio::fs::create_dir_all(&exports_dir).await.is_err() {
+            return sealed_err(&opened, StatusCode::INTERNAL_SERVER_ERROR, "服务器内部错误");
+        }
+        let tmp = exports_dir.join(format!("export-{}.zip", uuid::Uuid::new_v4()));
+        let storage = state.storage.clone();
+        let files_dir = state.files_dir.clone();
+        let username = user.username.clone();
+        let tmp_task = tmp.clone();
+        let built = tokio::task::spawn_blocking(move || {
+            crate::admin::export_user(&storage, &files_dir, &username, &tmp_task)
+        })
+        .await;
+        match built {
+            Ok(Ok(sum)) => {
+                let header = serde_json::to_vec(&json!({
+                    "name": "syncnotes-backup.zip",
+                    "size": tokio::fs::metadata(&tmp).await.map(|m| m.len()).unwrap_or(0),
+                    "blocks": sum.blocks,
+                    "trashed": sum.trashed,
+                    "files": sum.files,
+                    "missing_files": sum.missing_files,
+                }))
+                .unwrap_or_default();
+                return stream_file_then(&opened, tmp, header, true).await;
+            }
+            Ok(Err(e)) => {
+                let _ = tokio::fs::remove_file(&tmp).await;
+                return sealed_err(&opened, StatusCode::INTERNAL_SERVER_ERROR, &e);
+            }
+            Err(_) => {
+                let _ = tokio::fs::remove_file(&tmp).await;
+                return sealed_err(&opened, StatusCode::INTERNAL_SERVER_ERROR, "导出失败");
+            }
+        }
+    }
+
     discard_chunks(&mut reader).await;
     sealed_err(&opened, StatusCode::BAD_REQUEST, "未知操作")
 }

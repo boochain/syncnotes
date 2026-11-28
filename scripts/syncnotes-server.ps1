@@ -13,6 +13,7 @@
 #   list-users       列出所有用户
 #   reset-password   重置用户密码（如：reset-password bill）
 #   export           导出用户全部数据为 zip（如：export bill .\bill.zip）
+#   restore          把备份 zip 还原到指定用户（如：restore bill .\bill.zip）
 #   backup           在线备份 SQLite 数据库
 param(
   [Parameter(Position = 0)]
@@ -116,9 +117,15 @@ switch ($Command) {
     $out = if ($Arg1) { $Arg1 } else { "$DbPath.bak-$ts" }
     & $BinPath admin backup $out --db $DbPath --files-dir $FilesDir
   }
+  "restore" {
+    Ensure-Bin
+    if (-not $Arg1) { $Arg1 = Read-Host "请输入要还原到的用户名" }
+    if (-not $Arg2) { $Arg2 = Read-Host "请输入备份 zip 路径" }
+    & $BinPath admin restore $Arg1 $Arg2 --db $DbPath --files-dir $FilesDir
+  }
   default {
     Show-Status
     Write-Host ""
-    Write-Host "可用命令: run | start | stop | status | install | uninstall | list-users | reset-password | export | backup"
+    Write-Host "可用命令: run | start | stop | status | install | uninstall | list-users | reset-password | export | restore | backup"
   }
 }

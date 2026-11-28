@@ -72,6 +72,8 @@ enum AdminCmd {
     Export { username: String, out: PathBuf },
     /// 在线备份数据库（VACUUM INTO，服务器运行时也安全）
     Backup { out: PathBuf },
+    /// 把备份 zip 还原到指定用户（先自动备份当前数据；密码和登录状态不变）
+    Restore { username: String, zip: PathBuf },
 }
 
 fn run_admin(db: &std::path::Path, files: &std::path::Path, cmd: &AdminCmd) -> Result<(), String> {
@@ -134,6 +136,23 @@ fn run_admin(db: &std::path::Path, files: &std::path::Path, cmd: &AdminCmd) -> R
         AdminCmd::Backup { out } => {
             admin::backup(&st, out)?;
             println!("数据库已备份到 {}", out.display());
+        }
+        AdminCmd::Restore { username, zip } => {
+            let s = syncnotes_server::backup::restore_from_zip(&st, files, username, zip)?;
+            println!(
+                "已将备份还原到 {username}：{} 个块（回收站 {} 个），{} 个附件{}，覆盖了 {} 个原有块。",
+                s.blocks,
+                s.trashed,
+                s.files,
+                if s.missing_files > 0 {
+                    format!("，{} 个附件在备份中缺失", s.missing_files)
+                } else {
+                    String::new()
+                },
+                s.tombstoned
+            );
+            println!("还原前的数据已备份到 {}", s.safety_backup.display());
+            println!("密码和登录会话未改动。若服务器正在运行，已连接的设备会收到重新同步通知；否则请让客户端重新连接。");
         }
     }
     Ok(())
@@ -203,7 +222,11 @@ async fn main() {
     }
     tracing::info!(
         "数据目录 {}（和程序分开存放，换版本不会丢）",
-        layout.db.parent().unwrap_or(std::path::Path::new(".")).display()
+        layout
+            .db
+            .parent()
+            .unwrap_or(std::path::Path::new("."))
+            .display()
     );
     if let Some(from) = &layout.migrated_from {
         tracing::info!(

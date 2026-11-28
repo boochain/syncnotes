@@ -187,3 +187,58 @@ pub async fn blob_get(addr: &str, token: &str, id: &str) -> (u16, Vec<u8>) {
     let _ = raw;
     (200, out)
 }
+
+/// Download the account backup zip produced by blob op `backup_export`.
+#[allow(dead_code)]
+pub async fn blob_backup_export(addr: &str, token: &str) -> (u16, Vec<u8>) {
+    let pubk = server_pub(addr).await;
+    let meta = json!({"op":"backup_export","token":token});
+    let pending = HttpPending::seal(&pubk, 3, "/api/blob", b"{}", meta.to_string().as_bytes());
+    let mut body = Vec::new();
+    body.extend_from_slice(&(pending.envelope.len() as u32).to_be_bytes());
+    body.extend_from_slice(&pending.envelope);
+    body.extend_from_slice(&0u32.to_be_bytes());
+    let res = reqwest::Client::new()
+        .post(format!("http://{addr}/api/blob"))
+        .body(body)
+        .send()
+        .await
+        .unwrap();
+    let bytes = res.bytes().await.unwrap();
+    if bytes.len() >= 4 && &bytes[..4] == b"SNC1" {
+        let (st, raw) = pending
+            .open_response(&bytes)
+            .unwrap_or((500, b"open".to_vec()));
+        return (st, raw);
+    }
+    if bytes.len() < 4 {
+        return (500, bytes.to_vec());
+    }
+    let n = u32::from_be_bytes(bytes[0..4].try_into().unwrap()) as usize;
+    if 4 + n > bytes.len() {
+        return (500, bytes.to_vec());
+    }
+    let (st, raw) = pending.open_response(&bytes[4..4 + n]).unwrap();
+    if st != 200 {
+        return (st, raw);
+    }
+    let key = pending.chunk_key();
+    let mut rest = &bytes[4 + n..];
+    let mut out = Vec::new();
+    let mut idx = 0u64;
+    while rest.len() >= 4 {
+        let cn = u32::from_be_bytes(rest[..4].try_into().unwrap()) as usize;
+        rest = &rest[4..];
+        if cn == 0 {
+            break;
+        }
+        if cn > rest.len() {
+            break;
+        }
+        let ct = &rest[..cn];
+        rest = &rest[cn..];
+        out.extend(seal::open_chunk(&key, idx, ct).unwrap());
+        idx += 1;
+    }
+    (200, out)
+}

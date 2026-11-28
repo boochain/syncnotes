@@ -18,6 +18,7 @@
 #   reset-password <用户名> [--password X]  重置密码为默认 syncnotes123456（或 X / $SYNCNOTES_RESCUE_PASSWORD），
 #                    登录后强制修改；先自动备份数据库，所有设备退出，数据不变
 #   export <用户名> [输出.zip]  导出用户全部数据（含回收站和附件）
+#   restore <用户名> <备份.zip>  把备份还原到该用户（先自动备份当前数据；密码不变）
 #   backup           在线备份数据库（服务运行中也安全）
 #   proxy [域名]     打印 Caddy / Nginx 反代配置（不安装、不改防火墙）
 # 选项：
@@ -813,6 +814,23 @@ cmd_export() {
   [ -n "${SUDO_USER-}" ] && chown "$SUDO_USER" "$out" 2>/dev/null
   info "已导出到 $out（含 JSON、Markdown、附件；可用任何解压软件打开）"
 }
+cmd_restore() {
+  local user=${1-} zip=${2-}
+  rescue_bin
+  if [ -z "$user" ]; then
+    rescue_admin list-users
+    ask user "要还原到的用户名" ""
+  fi
+  { [ -n "$user" ] && valid_username "$user"; } || die "用户名无效：$user"
+  if [ -z "$zip" ]; then
+    ask zip "备份 zip 路径" ""
+  fi
+  [ -n "$zip" ] || die "请指定备份 zip 路径"
+  case "$zip" in /*) ;; *) zip="$PWD/$zip" ;; esac
+  [ -f "$zip" ] || die "找不到备份文件：$zip"
+  info "将把 $zip 还原到用户 $user。还原前会自动备份当前数据。密码和登录状态不变。"
+  rescue_admin restore "$user" "$zip" || die "还原失败"
+}
 rescue_menu() {
   while true; do
     title "忘记密码 / 数据救援"
@@ -820,15 +838,17 @@ rescue_menu() {
   1) 列出用户
   2) 重置用户密码（数据不变）
   3) 导出用户全部数据（zip：JSON + Markdown + 附件，含回收站）
-  4) 备份数据库
+  4) 把备份 zip 还原到指定用户（先自动备份当前数据）
+  5) 备份数据库
   0) 返回
 MENU
-    local c="" u="" o=""; read -r -p "请选择 [0-4]: " c || return 0
+    local c="" u="" o=""; read -r -p "请选择 [0-5]: " c || return 0
     case "$c" in
       1) cmd_list_users ;;
       2) cmd_reset_password ;;
       3) cmd_list_users; ask u "用户名" ""; ask o "保存到" "$PWD/syncnotes-export-$u.zip"; cmd_export "$u" "$o" ;;
-      4) cmd_backup ;;
+      4) cmd_list_users; ask u "用户名" ""; ask o "备份 zip 路径" ""; cmd_restore "$u" "$o" ;;
+      5) cmd_backup ;;
       0|q) return 0 ;;
       *) echo "无效选项" ;;
     esac
@@ -936,12 +956,12 @@ MENU
 
 main_rescue() { local c=$1; shift; case "$c" in
   list|list-users|users) cmd_list_users ;; reset|reset-password) cmd_reset_password "$@" ;;
-  export) cmd_export "$@" ;; backup) cmd_backup ;; *) die "未知救援命令：$c（可用：list-users reset export backup）" ;; esac; }
+  export) cmd_export "$@" ;; restore) cmd_restore "$@" ;; backup) cmd_backup ;; *) die "未知救援命令：$c（可用：list-users reset export restore backup）" ;; esac; }
 
 main() {
   need_root "$@"
   local args=() a
-  for a in "$@"; do case "$a" in -y|--yes) ASSUME_YES=1 ;; --open-firewall) OPEN_FW=1 ;; -h|--help) sed -n '2,27p' "$SCRIPT_PATH" | sed 's/^# \{0,1\}//'; exit 0 ;; *) args+=("$a") ;; esac; done
+  for a in "$@"; do case "$a" in -y|--yes) ASSUME_YES=1 ;; --open-firewall) OPEN_FW=1 ;; -h|--help) sed -n '2,28p' "$SCRIPT_PATH" | sed 's/^# \{0,1\}//'; exit 0 ;; *) args+=("$a") ;; esac; done
   set -- "${args[@]+"${args[@]}"}"
   local cmd=${1-menu}; shift || true
   case "$cmd" in
@@ -960,9 +980,10 @@ main() {
     list-users|users) cmd_list_users ;;
     reset-password|reset) cmd_reset_password "$@" ;;
     export) cmd_export "$@" ;;
+    restore) cmd_restore "$@" ;;
     backup) cmd_backup ;;
     proxy) cmd_proxy "$@" ;;
-    *) err "未知命令：$cmd"; sed -n '2,27p' "$SCRIPT_PATH" | sed 's/^# \{0,1\}//'; exit 1 ;;
+    *) err "未知命令：$cmd"; sed -n '2,28p' "$SCRIPT_PATH" | sed 's/^# \{0,1\}//'; exit 1 ;;
   esac
 }
 [ "${SYNCNOTES_SOURCE_ONLY:-0}" = 1 ] || main "$@"
