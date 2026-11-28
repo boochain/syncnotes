@@ -3,6 +3,7 @@ import 'dart:io';
 import 'ui/motion.dart';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart' show timeDilation;
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:path_provider/path_provider.dart';
@@ -32,6 +33,9 @@ Future<void> main(List<String> args) async {
 }
 
 Future<void> _main(List<String> args) async {
+  // 设计验收用：SYNCNOTES_ANIM_SLOW=4 把所有动画放慢 4 倍，便于逐帧截图检查（默认不生效）
+  final slow = double.tryParse(Platform.environment['SYNCNOTES_ANIM_SLOW'] ?? '');
+  if (slow != null && slow >= 1 && slow <= 20) timeDilation = slow;
   WidgetsFlutterBinding.ensureInitialized();
   registerBuiltinTypes();
   final settings = await Settings.load();
