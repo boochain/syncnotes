@@ -35,6 +35,8 @@ export const Icons = {
   logout: (p: P) => <I {...p}><path d="M10 5H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h4M14 12h8m0 0-3-3m3 3-3 3"/></I>,
   sun: (p: P) => <I {...p}><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M3 12h2M19 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/></I>,
   moon: (p: P) => <I {...p}><path d="M16 3a8 8 0 1 0 5 13 7 7 0 0 1-5-13z"/></I>,
+  task: (p: P) => <I {...p}><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M8.5 12l2.5 2.5 4.5-5"/></I>,
+  calendar: (p: P) => <I {...p}><rect x="4" y="5" width="16" height="15" rx="2.5"/><path d="M4 10h16M8.5 3v4M15.5 3v4"/></I>,
   restore: (p: P) => <I {...p}><path d="M4 12a8 8 0 1 0 2.3-5.6M4 5v5h5"/></I>,
 };
 
@@ -44,6 +46,8 @@ export function KindIcon({ kind, size = 16 }: { kind: string; size?: number }) {
     : kind === 'file' ? Icons.file
     : kind === 'folder' ? Icons.folder
     : kind === 'page' ? Icons.page
+    : kind === 'task' ? Icons.task
+    : kind === 'calendar' ? Icons.calendar
     : Icons.note;
   return <P size={size} />;
 }

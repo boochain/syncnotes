@@ -1,4 +1,4 @@
-export type BlockKind = 'message' | 'note' | 'file' | 'folder' | 'page' | 'text' | 'unknown' | string;
+export type BlockKind = 'message' | 'note' | 'file' | 'folder' | 'page' | 'text' | 'task' | 'calendar' | 'unknown' | string;
 export type ViewedMode = 'per_device' | 'global';
 export type ConnState = 'offline' | 'connecting' | 'online' | 'authError';
 
@@ -95,8 +95,9 @@ export function isViewed(b: Block): boolean {
   return b.viewed_mode === 'global' ? b.viewed_global : b.viewed_local;
 }
 
+/** 收件箱条目：不含页面内部的内容块；日历条目只在「日历」里显示（与原生客户端一致）。 */
 export function isInboxItem(b: Block): boolean {
-  return b.kind !== 'text';
+  return b.kind !== 'text' && b.kind !== 'calendar';
 }
 
 export function toUpsertMessage(b: Block): Record<string, unknown> {

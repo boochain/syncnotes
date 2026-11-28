@@ -489,3 +489,13 @@ input[type='range'] { width: 160px; accent-color: var(--accent); }
   -webkit-backdrop-filter: none;
   background: rgba(var(--glass-tint), 0.88);
 }
+
+/* 任务 / 日历（v0.8.0） */
+.stat-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 4px 0 12px; }
+.stat { border-radius: 16px; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; }
+.stat b { font-size: 22px; font-weight: 700; }
+.stat span { font-size: 12px; color: var(--text2); }
+.task-detail { padding: 4px 8px 12px 52px; }
+.cal-date { width: 44px; font-variant-numeric: tabular-nums; font-weight: 650; color: var(--text2); }
+.cal-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+.countdown { font-size: 14px; white-space: nowrap; }

@@ -33,7 +33,9 @@ import {
 import { fetchHealth } from './api/http';
 import { hex } from './crypto/bytes';
 import { sha256 } from '@noble/hashes/sha2.js';
-import { isDashboardBlock, dashboardProgress, dashboardReady } from './features/dashboard';
+import { isTaskBlock, taskProgress, toggledTaskPayload } from './features/tasks';
+import { TasksPage } from './views/TasksPage';
+import { CalendarPage } from './views/CalendarPage';
 
 type Route =
   | { name: 'inbox' }
@@ -42,7 +44,9 @@ type Route =
   | { name: 'folder'; id: string }
   | { name: 'trash' }
   | { name: 'transfers' }
-  | { name: 'settings' };
+  | { name: 'settings' }
+  | { name: 'tasks'; focus?: string }
+  | { name: 'calendar' };
 
 function persist(server: string, userId: string): SyncPersist {
   const key = `syncnotes-web-cache:${server}:${userId}`;
@@ -309,6 +313,15 @@ function Shell(props: {
       sync.setViewed(b.id, true);
       return;
     }
+    if (isTaskBlock(b)) {
+      sync.setViewed(b.id, true);
+      setRoute({ name: 'tasks', focus: b.id });
+      return;
+    }
+    if (b.kind === 'calendar') {
+      setRoute({ name: 'calendar' });
+      return;
+    }
     if (b.kind === 'message') {
       void navigator.clipboard.writeText(String(b.payload.text ?? ''));
       sync.setViewed(b.id, true);
@@ -371,7 +384,7 @@ function Shell(props: {
 
   const noteBlock = route.name === 'note' && route.id ? sync.byId(route.id) ?? null : null;
   const pageBlock = route.name === 'page' ? sync.byId(route.id) : undefined;
-  const overlay = route.name === 'note' || route.name === 'page' || route.name === 'trash' || route.name === 'transfers' || route.name === 'settings';
+  const overlay = route.name === 'note' || route.name === 'page' || route.name === 'trash' || route.name === 'transfers' || route.name === 'settings' || route.name === 'tasks' || route.name === 'calendar';
 
   return (
     <div
@@ -391,6 +404,12 @@ function Shell(props: {
           </div>
           <nav className="side-nav">
             <button className={`side-item ${route.name === 'inbox' && !parentId ? 'active' : ''}`} onClick={goInbox}>收件箱</button>
+            <button className={`side-item ${route.name === 'tasks' ? 'active' : ''}`} onClick={() => setRoute({ name: 'tasks' })}>
+              <Icons.task size={16} /> 任务
+            </button>
+            <button className={`side-item ${route.name === 'calendar' ? 'active' : ''}`} onClick={() => setRoute({ name: 'calendar' })}>
+              <Icons.calendar size={16} /> 日历
+            </button>
             <button className={`side-item ${route.name === 'trash' ? 'active' : ''}`} onClick={() => setRoute({ name: 'trash' })}>
               <Icons.trash size={16} /> 回收站{sync.trash.length ? ` · ${sync.trash.length}` : ''}
             </button>
@@ -432,6 +451,8 @@ function Shell(props: {
           <div className="right">
             {!wide && (
               <>
+                <button className="icon-btn" onClick={() => setRoute({ name: 'tasks' })} aria-label="任务"><Icons.task /></button>
+                <button className="icon-btn" onClick={() => setRoute({ name: 'calendar' })} aria-label="日历"><Icons.calendar /></button>
                 <button className="icon-btn" onClick={() => setRoute({ name: 'trash' })} aria-label="回收站"><Icons.trash /></button>
                 <button className="icon-btn" onClick={() => setRoute({ name: 'transfers' })} aria-label="传输"><Icons.transfer /></button>
               </>
@@ -509,6 +530,10 @@ function Shell(props: {
             {route.name === 'page' && pageBlock && (
               <PageEditor sync={sync} page={pageBlock} onClose={goBack} onOpenPage={(id) => setRoute({ name: 'page', id })} />
             )}
+            {route.name === 'tasks' && (
+              <TasksPage sync={sync} tick={props.tick} focus={route.focus} onClose={goBack} />
+            )}
+            {route.name === 'calendar' && <CalendarPage sync={sync} tick={props.tick} onClose={goBack} />}
             {route.name === 'trash' && <TrashPage sync={sync} onClose={goBack} onToast={props.onToast} />}
             {route.name === 'transfers' && <TransfersPage transfers={props.transfers} onClose={goBack} />}
             {route.name === 'settings' && (
@@ -576,7 +601,7 @@ function matchQuery(b: Block, q: string) {
 }
 
 function kindLabel(k: string) {
-  return k === 'message' ? '消息' : k === 'note' ? '笔记' : k === 'file' ? '文件' : k === 'folder' ? '文件夹' : k === 'page' ? '页面' : k;
+  return k === 'message' ? '消息' : k === 'note' ? '笔记' : k === 'file' ? '文件' : k === 'folder' ? '文件夹' : k === 'page' ? '页面' : k === 'task' ? '任务' : k === 'calendar' ? '日历' : k;
 }
 
 function Card({ block, sync, onOpen, onCtx }: { block: Block; sync: SyncEngine; onOpen: () => void; onCtx: (e: React.MouseEvent) => void }) {
@@ -595,7 +620,7 @@ function Card({ block, sync, onOpen, onCtx }: { block: Block; sync: SyncEngine; 
       <div className="meta">
         {color.tag && !done && <span className="tag" style={{ color: color.color ?? undefined, background: `${color.color}22` }}>{color.tag}</span>}
         {done && <span className="tag" style={{ color: 'var(--success)', background: 'color-mix(in srgb, var(--success) 18%, transparent)' }}>已完成</span>}
-        {isDashboardBlock(block) && dashboardProgress(block) != null && <span>{Math.round((dashboardProgress(block) ?? 0) * 100)}%</span>}
+        {isTaskBlock(block) && <span>{Math.round(taskProgress(block, sync.blockMap()) * 100)}%</span>}
         <span>{timeAgo(block.updated_at)}</span>
       </div>
     </article>
@@ -682,10 +707,8 @@ function previewOf(b: Block, sync: SyncEngine): string {
     return `${n} 项`;
   }
   if (b.kind === 'page') return '页面';
-  if (isDashboardBlock(b)) {
-    const p = dashboardProgress(b);
-    return p == null ? '任务' : `进度 ${Math.round(p * 100)}%`;
-  }
+  if (isTaskBlock(b)) return `任务 · 进度 ${Math.round(taskProgress(b, sync.blockMap()) * 100)}%`;
+  if (b.kind === 'calendar') return '日历条目';
   return '';
 }
 
@@ -714,7 +737,7 @@ function ContextMenu({ x, y, block, sync, onClose, onOpen, onDownload }: { x: nu
     <div className="ctx glass" style={{ left: Math.min(x, window.innerWidth - 220), top: Math.min(y, window.innerHeight - 240) }} onClick={(e) => e.stopPropagation()}>
       <button className="side-item" onClick={() => { onOpen(); onClose(); }}>打开</button>
       <button className="side-item" onClick={() => { cycleColor(sync, block); onClose(); }}>切换优先级</button>
-      <button className="side-item" onClick={() => { toggleComplete(sync, block); onClose(); }}>{isCompleted(block) ? '取消完成' : '标为已完成'}</button>
+      <button className="side-item" onClick={() => { if (isTaskBlock(block)) sync.update(block.id, { payload: toggledTaskPayload(block) }); else toggleComplete(sync, block); onClose(); }}>{isCompleted(block) ? '取消完成' : '标为已完成'}</button>
       {block.kind === 'file' && <button className="side-item" onClick={() => { onDownload(block); onClose(); }}>下载</button>}
       {block.kind === 'message' && <button className="side-item" onClick={() => { void navigator.clipboard.writeText(String(block.payload.text ?? '')); onClose(); }}>复制</button>}
       <button className="side-item danger" onClick={() => { sync.delete(block.id); onClose(); }}>移到回收站</button>
@@ -889,12 +912,6 @@ function SettingsPage({
             </button>
           </div>
         </div>
-        {!dashboardReady() && (
-          <div className="settings-group">
-            <h3>任务仪表盘</h3>
-            <p className="hint">网页版已预留仪表盘接口。原生客户端的任务仪表盘合并进主线后，这里会显示任务进度、重要程度和子任务。当前版本先同步已有的消息、笔记、便签、文件、文件夹和回收站。</p>
-          </div>
-        )}
         <button className="ghost danger" onClick={onSignOut}><Icons.logout size={16} /> 退出登录</button>
       </div>
     </section>
@@ -904,4 +921,3 @@ function SettingsPage({
 // keep deviceName referenced for tree-shaking of unused imports in this module
 void deviceName;
 void renderMarkdown;
-void dashboardReady;

@@ -81,6 +81,11 @@ export class SyncEngine {
     return [...this.blocks.values()];
   }
 
+  /** 只读的全部块（含回收站），按 id 索引；任务进度计算用。 */
+  blockMap(): ReadonlyMap<string, Block> {
+    return this.blocks;
+  }
+
   visible(): Block[] {
     return this.all()
       .filter((b) => !b.deleted && !this.isHidden(b))

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SyncEngine } from '../src/sync/engine';
 import { isCompleted, isViewed, type Block } from '../src/protocol/types';
-import { dashboardProgress, isDashboardBlock } from '../src/features/dashboard';
 
 function engine(): SyncEngine {
   const e = new SyncEngine('device-web');
@@ -126,36 +125,5 @@ describe('SyncEngine', () => {
     expect(e.connState).toBe('online');
     expect(e.byId('n1')?.title).toBe('from-server');
     expect(e.latestSeq).toBe(4);
-  });
-});
-
-describe('dashboard reservation', () => {
-  it('reads weighted step progress without inventing a write schema', () => {
-    const b = {
-      id: 't1',
-      kind: 'dashboard_task',
-      title: 'demo',
-      payload: {
-        steps: [
-          { id: 'a', title: '设计', weight: 2, done: true },
-          { id: 'b', title: '实现', weight: 2, done: false },
-        ],
-      },
-      parent_id: null,
-      viewed_mode: 'per_device',
-      viewed_global: false,
-      created_at: 1,
-      updated_at: 1,
-      created_by: 'x',
-      deleted: false,
-      deleted_at: null,
-      deleted_by: null,
-      seq: 0,
-      viewed_local: true,
-      pending: false,
-    } satisfies Block;
-    expect(isDashboardBlock(b)).toBe(true);
-    expect(dashboardProgress(b)).toBe(0.5);
-    expect(isCompleted(b)).toBe(false);
   });
 });
