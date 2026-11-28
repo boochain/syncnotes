@@ -5,6 +5,7 @@ import { ApiError } from '../api/http';
 import type { AuthResponse } from '../protocol/types';
 import { normalizeServer } from '../protocol/url';
 import { deviceName, type Session } from '../store/session';
+import { Icons } from '../ui/icons';
 
 type Mode = 'login' | 'register' | 'recover';
 
@@ -118,44 +119,63 @@ export function LoginView({
     );
   }
 
+  // 与 App 登录页同一结构：应用图标 + 标题 + 分组表单（每行 44 高、左侧图标、细分隔线）+ 主按钮 + 文字链接
+  const submitLabel = busy ? '请稍候…' : mode === 'login' ? '登录' : mode === 'register' ? '注册并登录' : '重置密码并登录';
   return (
     <div className="login">
-      <form className="login-card glass" onSubmit={submit}>
+      <form className="login-col" onSubmit={submit}>
+        <div className="app-mark" aria-hidden><Icons.sync size={28} strokeWidth={2.2} /></div>
         <h1>SyncNotes</h1>
-        <p className="lead">在浏览器里打开，连接到你已经部署的服务器。</p>
-        <div className="tabs">
-          {(['login', 'register', 'recover'] as const).map((m) => (
-            <button key={m} type="button" className={`pill ${mode === m ? 'active' : ''}`} onClick={() => setMode(m)}>
-              {m === 'login' ? '登录' : m === 'register' ? '注册' : '恢复码找回'}
-            </button>
-          ))}
-        </div>
-        <div className="stack">
-          <input className="field" placeholder="服务器地址，例如 192.168.1.8:7700" value={server} onChange={(e) => setServer(e.target.value)} onBlur={() => void probe()} autoCapitalize="off" autoCorrect="off" />
-          {health && <div className="hint">{health}</div>}
-          <input className="field" placeholder="用户名" value={user} onChange={(e) => setUser(e.target.value)} autoComplete="username" />
+        <p className="lead">{mode === 'recover' ? '用恢复码设置新密码，笔记不会丢失' : '多设备实时同步的笔记与消息'}</p>
+        <div className="form-group glass">
+          <label className="form-row">
+            <Icons.globe size={17} />
+            <input aria-label="服务器地址" placeholder="服务器地址，例如 192.168.1.8:7700" value={server} onChange={(e) => setServer(e.target.value)} onBlur={() => void probe()} autoCapitalize="off" autoCorrect="off" />
+          </label>
+          <label className="form-row">
+            <Icons.person size={17} />
+            <input aria-label="用户名" placeholder="用户名" value={user} onChange={(e) => setUser(e.target.value)} autoComplete="username" />
+          </label>
           {mode === 'recover' && (
-            <input className="field" placeholder="恢复码（形如 AAAAA-AAAAA-AAAAA-AAAAA）" value={code} onChange={(e) => setCode(e.target.value)} autoCapitalize="characters" />
+            <label className="form-row">
+              <Icons.key size={17} />
+              <input aria-label="恢复码" placeholder="恢复码（形如 AAAAA-AAAAA-AAAAA-AAAAA）" value={code} onChange={(e) => setCode(e.target.value)} autoCapitalize="characters" />
+            </label>
           )}
-          <input className="field" type="password" placeholder={mode === 'recover' ? '新密码' : '密码'} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
+          <label className="form-row">
+            <Icons.lock size={17} />
+            <input aria-label={mode === 'recover' ? '新密码' : '密码'} type="password" placeholder={mode === 'recover' ? '新密码' : '密码'} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
+          </label>
           {mode !== 'login' && (
-            <input className="field" type="password" placeholder="再输入一次密码" value={password2} onChange={(e) => setPassword2(e.target.value)} autoComplete="new-password" />
+            <label className="form-row">
+              <Icons.lock size={17} />
+              <input aria-label="再输入一次密码" type="password" placeholder="再输入一次密码" value={password2} onChange={(e) => setPassword2(e.target.value)} autoComplete="new-password" />
+            </label>
           )}
-          {error && <div className="error">{error}</div>}
-          {mismatch && (
-            <div className="stack">
-              <div className="error">{mismatch.message}</div>
-              <div className="hint">上次 {shortFp(mismatch.saved)}，这次 {shortFp(mismatch.current)}</div>
-              <button type="button" className="ghost" onClick={() => { onClearPin(normalizeServer(server)); setMismatch(null); void submit(); }}>
-                我确认这是同一台服务器，清除旧指纹并重试
-              </button>
-            </div>
-          )}
-          <button className="primary" disabled={busy} type="submit">
-            {busy ? '请稍候…' : mode === 'login' ? '登录' : mode === 'register' ? '注册' : '重置密码并登录'}
-          </button>
-          <div className="hint">传输走 syncnotes-seal-v1 加密，网页版是独立静态站点，不内嵌在服务器进程里。</div>
         </div>
+        {health && <div className="hint center">{health}</div>}
+        {error && <div className="error center" role="alert">{error}</div>}
+        {mismatch && (
+          <div className="stack">
+            <div className="error center">{mismatch.message}</div>
+            <div className="hint center">上次 {shortFp(mismatch.saved)}，这次 {shortFp(mismatch.current)}</div>
+            <button type="button" className="ghost" onClick={() => { onClearPin(normalizeServer(server)); setMismatch(null); void submit(); }}>
+              我确认这是同一台服务器，清除旧指纹并重试
+            </button>
+          </div>
+        )}
+        <button className="primary block" disabled={busy} type="submit">{submitLabel}</button>
+        <div className="links">
+          {mode === 'login' ? (
+            <>
+              <button type="button" className="link" onClick={() => setMode('register')}>没有账号？注册</button>
+              <button type="button" className="link" onClick={() => setMode('recover')}>忘记密码？</button>
+            </>
+          ) : (
+            <button type="button" className="link" onClick={() => setMode('login')}>已有账号？去登录</button>
+          )}
+        </div>
+        <div className="hint center fine">传输走 syncnotes-seal-v1 加密；网页版是独立静态站点，不内嵌在服务器进程里。</div>
       </form>
     </div>
   );

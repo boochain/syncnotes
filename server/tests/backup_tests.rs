@@ -651,13 +651,40 @@ fn backup_restore_keeps_task_and_calendar_blocks() {
         "role": "subscription", "start_date": "2026-11-01",
         "billing": {"cycle": "yearly", "auto_renew": true, "amount": 168}
     });
-    applied(&st, &bill.id, "t1", "task", "季度汇报", task_payload.clone(), 3, None);
-    applied(&st, &bill.id, "c1", "calendar", "iCloud", cal_payload.clone(), 4, None);
+    applied(
+        &st,
+        &bill.id,
+        "t1",
+        "task",
+        "季度汇报",
+        task_payload.clone(),
+        3,
+        None,
+    );
+    applied(
+        &st,
+        &bill.id,
+        "c1",
+        "calendar",
+        "iCloud",
+        cal_payload.clone(),
+        4,
+        None,
+    );
     let out = dir.path().join("export.zip");
     admin::export_user(&st, &files, "bill", &out).unwrap();
 
     applied(&st, &bill.id, "t1", "task", "改坏了", json!({}), 50, None);
-    applied(&st, &bill.id, "c1", "calendar", "改坏了", json!({}), 50, None);
+    applied(
+        &st,
+        &bill.id,
+        "c1",
+        "calendar",
+        "改坏了",
+        json!({}),
+        50,
+        None,
+    );
     backup::restore_from_zip(&st, &files, "bill", &out).unwrap();
     let all = st.all_blocks(&bill.id).unwrap();
     let t = all.iter().find(|b| b.id == "t1").unwrap();
@@ -668,4 +695,48 @@ fn backup_restore_keeps_task_and_calendar_blocks() {
     assert_eq!(c.kind, "calendar");
     assert_eq!(c.payload, cal_payload);
     assert!(!t.deleted && !c.deleted);
+}
+
+/// v0.8.1: two attachments whose ids share the first 8 chars must each get their own bytes,
+/// and attachments are streamed to disk (checked via the .sha256 sidecar).
+#[test]
+fn restore_maps_attachments_with_same_id_prefix() {
+    let dir = tempfile::tempdir().unwrap();
+    let files = dir.path().join("files");
+    let st = Storage::in_memory().unwrap();
+    let bill = st.create_user("bill", "h").unwrap();
+    let fa = "abcdef12-0000-0000-0000-00000000000a";
+    let fb = "abcdef12-0000-0000-0000-00000000000b";
+    let blocks = json!([
+        {"id": "f1", "kind": "file", "title": "a.txt",
+         "payload": {"file_id": fa, "name": "a.txt", "size": 5},
+         "viewed_mode": "global", "created_at": 1, "updated_at": 1, "created_by": "pc", "deleted": false},
+        {"id": "f2", "kind": "file", "title": "b.txt",
+         "payload": {"file_id": fb, "name": "b.txt", "size": 5},
+         "viewed_mode": "global", "created_at": 1, "updated_at": 1, "created_by": "pc", "deleted": false}
+    ]);
+    let zip = dir.path().join("p.zip");
+    // b.txt is written first so a loose prefix match would hand its bytes to a.txt.
+    write_zip(
+        &zip,
+        &[
+            (
+                "manifest.json",
+                br#"{"format":"syncnotes-export","version":1,"blocks":2}"#,
+            ),
+            (
+                "blocks.json",
+                serde_json::to_vec(&blocks).unwrap().as_slice(),
+            ),
+            ("files/abcdef12-b.txt", b"BBBBB"),
+            ("files/abcdef12-a.txt", b"AAAAA"),
+        ],
+    );
+    let sum = backup::restore_from_zip(&st, &files, "bill", &zip).unwrap();
+    assert_eq!(sum.files, 2);
+    assert_eq!(sum.missing_files, 0);
+    let live = files.join(&bill.id);
+    assert_eq!(std::fs::read(live.join(fa)).unwrap(), b"AAAAA");
+    assert_eq!(std::fs::read(live.join(fb)).unwrap(), b"BBBBB");
+    assert!(live.join(format!("{fa}.sha256")).is_file());
 }

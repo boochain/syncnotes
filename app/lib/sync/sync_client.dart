@@ -631,6 +631,10 @@ class SyncClient extends ChangeNotifier {
     if (incoming.deleted) {
       _outbox.removeWhere((o) => (o['id'] ?? o['block_id']) == incoming.id);
     } else {
+      // 本地有未确认的修改，但服务器上的版本更新（另一台设备同时改了同一块）：
+      // LWW 会直接用服务器版本覆盖。为了不悄悄丢掉这边的修改，先把本地版本另存为
+      // 「冲突副本」，再接受服务器版本。
+      _keepConflictCopy(existing, incoming);
       _outbox.removeWhere(
         (o) =>
             o['type'] == 'upsert_block' &&
@@ -679,6 +683,49 @@ class SyncClient extends ChangeNotifier {
     }
     _persist();
     _notify();
+  }
+
+  /// 被另一台设备的更新覆盖掉的本地未同步修改，另存为同级的「冲突副本」。
+  void _keepConflictCopy(Block? local, Block incoming) {
+    if (local == null || !local.pending || local.deleted || local.deletedAt != null) return;
+    if (local.updatedAt > incoming.updatedAt) return; // 本地更新，会在 outbox 重放
+    if (incoming.deletedAt != null) return; // 对方移入回收站：本地修改随块一起进回收站
+    if (local.kind == BlockKind.folder) return;
+    final sameContent = local.title == incoming.title && _sameJson(local.payload, incoming.payload);
+    if (sameContent) return;
+    final pendingOp = _outbox.any((o) =>
+        o['type'] == 'upsert_block' &&
+        o['id'] == local.id &&
+        _asInt(o['client_updated_at']) == local.updatedAt);
+    if (!pendingOp) return;
+    final now = _now();
+    final copy = Block(
+      id: const Uuid().v4(),
+      kind: local.kind,
+      kindRaw: local.kindRaw,
+      title: conflictTitle(local.title, DateTime.fromMillisecondsSinceEpoch(local.updatedAt)),
+      payload: Map<String, dynamic>.from(local.payload),
+      parentId: local.parentId,
+      viewedMode: local.viewedMode,
+      createdAt: now,
+      updatedAt: now,
+      createdBy: deviceId,
+      viewedLocal: false,
+      pending: true,
+    );
+    _blocks[copy.id] = copy;
+    _enqueue(copy.toUpsertMessage());
+    conflictCopies++;
+  }
+
+  /// 本次运行中生成的冲突副本数（界面可提示）。
+  int conflictCopies = 0;
+
+  static String conflictTitle(String title, DateTime at) {
+    String two(int v) => v.toString().padLeft(2, '0');
+    final stamp = '${at.month}/${at.day} ${two(at.hour)}:${two(at.minute)}';
+    final base = title.trim().isEmpty ? '无标题' : title;
+    return '$base（冲突副本 $stamp）';
   }
 
   void _applyViewed(Map<String, dynamic> m) {

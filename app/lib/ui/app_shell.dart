@@ -93,14 +93,30 @@ class AppShellState extends State<AppShell> implements PageHost {
     _onCalendarReminders();
   }
 
+  Timer? _reminderTick;
+  Timer? _rescheduleDebounce;
+
   void _onCalendarReminders() {
     if (!mounted || _syncForReminders == null) return;
     unawaited(CalendarReminders.sync(_syncForReminders!));
+    // 数据一直在变（同步、输入），预约只在安静 3 秒后重算一次。
+    _rescheduleDebounce?.cancel();
+    _rescheduleDebounce = Timer(const Duration(seconds: 3), () {
+      final s = _syncForReminders;
+      if (mounted && s != null) unawaited(CalendarReminders.schedule(s));
+    });
+    // 没有数据变化时也要按时提醒：每分钟检查一次到点的提醒。
+    _reminderTick ??= Timer.periodic(const Duration(minutes: 1), (_) {
+      final s = _syncForReminders;
+      if (mounted && s != null) unawaited(CalendarReminders.sync(s));
+    });
   }
 
   @override
   void dispose() {
     _syncForReminders?.removeListener(_onCalendarReminders);
+    _reminderTick?.cancel();
+    _rescheduleDebounce?.cancel();
     Notifier.opened.removeListener(_onNotificationOpened);
     ShareReceiver.incoming.removeListener(_onShared);
     super.dispose();

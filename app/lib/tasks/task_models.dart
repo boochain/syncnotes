@@ -353,7 +353,8 @@ double computeTaskProgress(Block task, Map<String, Block> byId, {Set<String>? vi
   if (data.status == TaskStatus.done) return 1;
   if (data.status == TaskStatus.cancelled) return 0;
   if (data.progressMode == ProgressMode.manual) {
-    return data.manualProgress.clamp(0, 1);
+    final m = data.manualProgress;
+    return m.isFinite ? m.clamp(0, 1).toDouble() : 0;
   }
   final seen = {...?visiting, task.id};
   final items = [...data.items];
@@ -375,7 +376,7 @@ double computeTaskProgress(Block task, Map<String, Block> byId, {Set<String>? vi
   var den = 0.0;
   for (final item in items) {
     final w = data.progressMode == ProgressMode.equal ? 1.0 : item.weight;
-    if (w <= 0) continue;
+    if (!w.isFinite || w <= 0) continue; // 同步来的脏数据（NaN/Infinity）不能把整体进度变成 NaN
     switch (item.kind) {
       case ProgressItemKind.subtask:
         final id = item.subtaskId;
@@ -525,7 +526,7 @@ bool isUpcoming(TaskData d, DateTime now, {int days = 7}) {
   final due = dateOfMillis(d.dueAt);
   if (due == null) return false;
   final startOfToday = DateTime(now.year, now.month, now.day);
-  final lastDay = DateTime(startOfToday.year, startOfToday.month, startOfToday.day).add(Duration(days: days));
+  final lastDay = DateTime(startOfToday.year, startOfToday.month, startOfToday.day + days);
   final dueDay = DateTime(due.year, due.month, due.day);
   return dueDay.isAfter(startOfToday) && !dueDay.isAfter(lastDay);
 }

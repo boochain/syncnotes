@@ -8,13 +8,13 @@ import 'tokens.dart';
 
 /// v0.4 主题：所有组件都从 ds.dart 的同一套调色板 / 字阶 / 高度 / 圆角取值。
 /// [language] 仅为兼容旧测试保留；所有平台使用同一套设计。
-ThemeData buildAppTheme(Brightness b, {DesignLanguage? language, String preset = 'default'}) {
+ThemeData buildAppTheme(Brightness b, {DesignLanguage? language, String preset = 'default', bool glass = false}) {
   final dark = b == Brightness.dark;
   // 触屏平台（Android / iOS）：按下水波纹反馈（Material 3）；桌面用悬停高亮，不要水波纹
   final touch = defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS;
   // 触屏：可点区域至少 48dp（Material 无障碍要求）；按钮视觉尺寸不变，只扩大点击区。桌面保持紧凑。
   final tapTarget = touch ? MaterialTapTargetSize.padded : MaterialTapTargetSize.shrinkWrap;
-  final c = tintBackground(dark ? AppColors.dark : AppColors.light, preset);
+  final c = vibrantText(tintBackground(dark ? AppColors.dark : AppColors.light, preset), glass: glass, dark: dark);
 
   final cs = ColorScheme(
     brightness: b,
@@ -99,6 +99,25 @@ ThemeData buildAppTheme(Brightness b, {DesignLanguage? language, String preset =
     focusColor: c.accent.withValues(alpha: 0.12),
     cupertinoOverrideTheme: CupertinoThemeData(primaryColor: c.accent, brightness: b),
     iconTheme: IconThemeData(color: c.text2, size: Sizes.iconSm),
+    // 主操作按钮：实色强调色 + 白色图标（M3 FAB / HIG 主按钮），不随玻璃变透明。
+    floatingActionButtonTheme: FloatingActionButtonThemeData(
+      backgroundColor: c.accent,
+      foregroundColor: Colors.white,
+      elevation: 3,
+      focusElevation: 4,
+      hoverElevation: 4,
+      highlightElevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    ),
+    // v0.8.1：默认返回 / 关闭 / 菜单按钮统一用应用自己的 Cupertino 图标集。
+    // 之前沿用 Material 字体图标，在 Linux/Windows 上渲染成一个像「楼房」的错字形，
+    // 用户看不出那是返回键（导航层级断掉）。HIG：返回用尾部开口的 chevron。
+    actionIconTheme: ActionIconThemeData(
+      backButtonIconBuilder: (_) => const Icon(CupertinoIcons.back, size: Sizes.iconMd + 2),
+      closeButtonIconBuilder: (_) => const Icon(CupertinoIcons.xmark, size: Sizes.iconMd),
+      drawerButtonIconBuilder: (_) => const Icon(CupertinoIcons.sidebar_left, size: Sizes.iconMd),
+      endDrawerButtonIconBuilder: (_) => const Icon(CupertinoIcons.sidebar_right, size: Sizes.iconMd),
+    ),
     appBarTheme: AppBarTheme(
       backgroundColor: c.bg,
       surfaceTintColor: Colors.transparent,
@@ -282,7 +301,10 @@ AppColors tintBackground(AppColors c, String preset) {
   };
   final wash = washes[preset];
   if (wash == null) return c;
-  Color mix(Color base) => Color.lerp(base, wash, 0.42)!;
+  // v0.8.1：原来按 42% 混色，浅色「墨」预设把白底混成 #9A9A9A，灰字直接看不见。
+  // 现在只做轻染色（浅色 10%、深色 18%），保证正文 / 次要文字仍满足 WCAG AA。
+  final dark = c.bg.computeLuminance() < 0.2;
+  Color mix(Color base) => Color.lerp(base, wash, dark ? 0.18 : 0.10)!;
   return AppColors(
     bg: mix(c.bg),
     sidebar: mix(c.sidebar),
@@ -298,6 +320,29 @@ AppColors tintBackground(AppColors c, String preset) {
     danger: c.danger,
     success: c.success,
     warning: c.warning,
+  );
+}
+
+/// 液态玻璃 / 壁纸开启时，正文直接压在流动的彩色背景上。浅色模式把次要 / 三级文字加深到
+/// Apple vibrancy 的 secondaryLabel 档（#3C3C43 系），让它们在中等亮度的流体色块上也满足
+/// WCAG AA（次要 ≥ 4.5:1，三级 ≥ 3:1）。深色模式原色已达标，不改。
+AppColors vibrantText(AppColors c, {required bool glass, required bool dark}) {
+  if (!glass || dark) return c;
+  return AppColors(
+    bg: c.bg,
+    sidebar: c.sidebar,
+    elevated: c.elevated,
+    fill: c.fill,
+    hover: c.hover,
+    selected: c.selected,
+    separator: const Color(0x2E000000),
+    text: const Color(0xFF111113),
+    text2: const Color(0xFF3F3F44),
+    text3: const Color(0xFF5E5E63),
+    accent: const Color(0xFF0066DD),
+    danger: const Color(0xFFD70015),
+    success: const Color(0xFF248A3D),
+    warning: const Color(0xFFC93400),
   );
 }
 

@@ -426,4 +426,40 @@ void main() {
     expect(SyncClient.wsUri('https://h.com/notes').toString(), 'wss://h.com/notes/ws');
     expect(SyncClient.wsUri('https://h.com/notes/').toString(), 'wss://h.com/notes/ws');
   });
+
+  test('v0.8.1: concurrent edit from another device keeps the local edit as a conflict copy', () async {
+    c.connect('h:1', 'tok');
+    await pump();
+    await goOnline();
+    ch.serverSend({'type': 'block_update', 'block': serverBlock('n1', kind: 'note', title: '共享', payload: {'markdown': 'v1'}, seq: 1, updated: 10)});
+    await pump();
+    // 断网后本地修改（还没被服务器确认）
+    ch.serverClose();
+    await pump();
+    c.update('n1', payload: {'markdown': '本机离线修改'});
+    final localTs = c.byId('n1')!.updatedAt;
+    // 重连后，服务器上已经有另一台设备更晚的版本：本地版本会被判为过期
+    await Future<void>.delayed(const Duration(milliseconds: 40));
+    ch.serverSend({'type': 'auth_ok', 'user_id': 'u', 'username': 'bill'});
+    await pump();
+    ch.serverSend({'type': 'block_update', 'block': serverBlock('n1', kind: 'note', title: '共享', payload: {'markdown': '另一台设备'}, seq: 2, updated: localTs + 1000)});
+    await pump();
+    expect(c.byId('n1')!.payload['markdown'], '另一台设备');
+    final copies = c.blocks.where((b) => b.title.startsWith('共享（冲突副本')).toList();
+    expect(copies, hasLength(1));
+    expect(copies.single.payload['markdown'], '本机离线修改');
+    expect(copies.single.pending, isTrue);
+  });
+
+  test('v0.8.1: an ack of our own edit does not create a conflict copy', () async {
+    c.connect('h:1', 'tok');
+    await pump();
+    await goOnline();
+    ch.serverSend({'type': 'block_update', 'block': serverBlock('n2', kind: 'note', title: 'a', payload: {'markdown': 'v1'}, seq: 1, updated: 10)});
+    await pump();
+    final b = c.update('n2', payload: {'markdown': 'v2'})!;
+    ch.serverSend({'type': 'block_update', 'block': serverBlock('n2', kind: 'note', title: 'a', payload: {'markdown': 'v2'}, seq: 2, updated: b.updatedAt, createdBy: 'dev-a')});
+    await pump();
+    expect(c.blocks.where((x) => x.title.contains('冲突副本')), isEmpty);
+  });
 }

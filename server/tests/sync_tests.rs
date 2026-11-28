@@ -540,7 +540,11 @@ async fn calendar_block_roundtrips() {
         },
         "vendor_id": "netflix"
     });
-    send(&mut a, upsert("c1", "calendar", "网飞", payload.clone(), "global", 1)).await;
+    send(
+        &mut a,
+        upsert("c1", "calendar", "网飞", payload.clone(), "global", 1),
+    )
+    .await;
     let v = recv_type(&mut a, "block_update").await;
     assert_eq!(v["block"]["kind"], "calendar");
     assert_eq!(v["block"]["title"], "网飞");

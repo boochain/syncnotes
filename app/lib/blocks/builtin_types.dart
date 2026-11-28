@@ -527,7 +527,7 @@ class TaskType extends BlockType {
     }
     final created = saveTask(AppScope.of(context).sync, null, title: '未命名任务', data: const TaskData(), parentId: parentId);
     if (created == null || !context.mounted) return false;
-    await Navigator.of(context).push(_fade(TaskEditorPage(blockId: created.id, parentId: parentId)));
+    await Navigator.of(context).push(_fade(TaskEditorPage(blockId: created.id, parentId: parentId, discardIfEmpty: true)));
     return true;
   }
 }

@@ -113,7 +113,12 @@ pub fn resolve_layout(input: LayoutInput<'_>) -> io::Result<DataLayout> {
             }
         }
         fs::create_dir_all(&files)?;
-        return Ok(DataLayout { db: db.to_path_buf(), files, migrated_from: None, fresh: false });
+        return Ok(DataLayout {
+            db: db.to_path_buf(),
+            files,
+            migrated_from: None,
+            fresh: false,
+        });
     }
 
     fs::create_dir_all(input.data_dir)?;
@@ -156,7 +161,12 @@ pub fn resolve_layout(input: LayoutInput<'_>) -> io::Result<DataLayout> {
         }
     }
 
-    Ok(DataLayout { db, files, migrated_from: None, fresh: !existed })
+    Ok(DataLayout {
+        db,
+        files,
+        migrated_from: None,
+        fresh: !existed,
+    })
 }
 
 fn nonempty(p: Option<&Path>) -> Option<&Path> {
@@ -164,7 +174,9 @@ fn nonempty(p: Option<&Path>) -> Option<&Path> {
 }
 
 fn parent_or_dot(p: &Path) -> &Path {
-    p.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."))
+    p.parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."))
 }
 
 fn same_dir(a: &Path, b: &Path) -> bool {
@@ -232,7 +244,11 @@ mod tests {
             default_data_dir(&user),
             PathBuf::from("/home/bill/.local/share/syncnotes")
         );
-        let root = DataDirEnv { is_root: true, home: Some(PathBuf::from("/root")), ..user.clone() };
+        let root = DataDirEnv {
+            is_root: true,
+            home: Some(PathBuf::from("/root")),
+            ..user.clone()
+        };
         assert_eq!(default_data_dir(&root), PathBuf::from("/var/lib/syncnotes"));
         let over = DataDirEnv {
             override_dir: Some(PathBuf::from("/data/syncnotes")),

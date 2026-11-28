@@ -53,9 +53,17 @@ class RootBackScope extends StatefulWidget {
 class _RootBackScopeState extends State<RootBackScope> {
   final _exit = BackToExit();
   bool _busy = false;
+  static _RootBackScopeState? _active;
+
+  @override
+  void initState() {
+    super.initState();
+    _active = this;
+  }
 
   @override
   void dispose() {
+    if (identical(_active, this)) _active = null;
     _exit.dispose();
     super.dispose();
   }
@@ -81,3 +89,16 @@ class _RootBackScopeState extends State<RootBackScope> {
         child: widget.child,
       );
 }
+
+/// 桌面 Esc：逐级关闭当前层（Fluent 2 / macOS 约定），但到了根页面什么都不做——
+/// 不像 Android 返回键那样提示「再按一次退出」。
+Future<bool> escapeOneLevel(NavigatorState? root) async {
+  if (root != null && root.canPop()) {
+    await root.maybePop();
+    return true;
+  }
+  final scope = _RootBackScopeState._active;
+  if (scope == null || !scope.mounted) return false;
+  return await scope.widget.onBack?.call() ?? false;
+}
+

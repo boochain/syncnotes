@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:timezone/data/latest_all.dart' as tzdata;
+import 'package:timezone/timezone.dart' as tz;
 
 import '../blocks/block_type.dart';
 import '../models/block.dart';
@@ -128,6 +130,61 @@ class Notifier {
     }
   }
   /// 日历提醒（续费、倒数日、日程）。点按打开对应条目。
+  static const _calendarDetails = NotificationDetails(
+    android: AndroidNotificationDetails('syncnotes_calendar', '日历提醒',
+        channelDescription: '订阅续费、倒数日和日程提醒',
+        icon: '@mipmap/ic_launcher_monochrome',
+        importance: Importance.high,
+        priority: Priority.high),
+    linux: LinuxNotificationDetails(),
+    windows: WindowsNotificationDetails(),
+  );
+
+  static bool _tzReady = false;
+
+  /// 预约一条未来的日历提醒（仅 Android：应用被杀也会按时弹出；桌面常驻托盘，由定时器负责）。
+  /// 用非精确闹钟（inexactAllowWhileIdle），不需要 SCHEDULE_EXACT_ALARM，也不碰系统日历。
+  static Future<bool> scheduleReminder({
+    required int id,
+    required String title,
+    required String body,
+    required DateTime when,
+    String? payload,
+  }) async {
+    if (!Platform.isAndroid) return false;
+    if (!_ready) await init(requestPermission: false);
+    if (!_ready) return false;
+    try {
+      if (!_tzReady) {
+        tzdata.initializeTimeZones();
+        _tzReady = true;
+      }
+      await _plugin.zonedSchedule(
+        id: id,
+        title: title,
+        body: body,
+        scheduledDate: tz.TZDateTime.from(when.toUtc(), tz.UTC),
+        notificationDetails: _calendarDetails,
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        payload: payload,
+      );
+      return true;
+    } catch (e) {
+      debugPrint('calendar schedule failed: $e');
+      return false;
+    }
+  }
+
+  /// 取消一组已预约的日历提醒。
+  static Future<void> cancelReminders(Iterable<int> ids) async {
+    if (!Platform.isAndroid || !_ready) return;
+    for (final id in ids) {
+      try {
+        await _plugin.cancel(id: id);
+      } catch (_) {}
+    }
+  }
+
   static Future<void> showReminder({
     required String title,
     required String body,
@@ -141,15 +198,7 @@ class Notifier {
         id: id ?? _id++,
         title: title,
         body: body,
-        notificationDetails: const NotificationDetails(
-          android: AndroidNotificationDetails('syncnotes_calendar', '日历提醒',
-              channelDescription: '订阅续费、倒数日和日程提醒',
-              icon: '@mipmap/ic_launcher_monochrome',
-              importance: Importance.high,
-              priority: Priority.high),
-          linux: LinuxNotificationDetails(),
-          windows: WindowsNotificationDetails(),
-        ),
+        notificationDetails: _calendarDetails,
         payload: payload,
       );
     } catch (e) {

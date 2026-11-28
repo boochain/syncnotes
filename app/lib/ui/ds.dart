@@ -14,6 +14,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import 'custom_icons.dart';
+import 'glass.dart' show Glass;
 import 'tokens.dart';
 
 /// 高度阶梯：同一行内的元素使用同一高度并垂直居中。
@@ -251,7 +252,10 @@ class AppSwitch extends StatelessWidget {
       value: value,
       onChanged: onChanged,
       activeTrackColor: c.success,
-      inactiveTrackColor: dark ? const Color(0x5C787880) : const Color(0x29787880),
+      // 玻璃背景上关闭态轨道太淡，几乎看不出是开关（WCAG 1.4.11 非文本对比 3:1）→ 加深
+      inactiveTrackColor: Glass.surfaceTranslucent
+          ? (dark ? const Color(0xA6787880) : const Color(0x59000000))
+          : (dark ? const Color(0x5C787880) : const Color(0x29787880)),
     );
   }
 }

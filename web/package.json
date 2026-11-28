@@ -1,7 +1,7 @@
 {
   "name": "syncnotes-web",
   "private": true,
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "SyncNotes 网页客户端：独立静态站点，对接已部署的 SyncNotes 服务器。",
   "type": "module",
   "scripts": {
@@ -9,7 +9,8 @@
     "build": "tsc -p tsconfig.json --noEmit && vite build",
     "preview": "vite preview --host --port 4173",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "e2e": "playwright test"
   },
   "dependencies": {
     "@noble/ciphers": "^2.4.0",
@@ -19,6 +20,7 @@
     "react-dom": "^19.3.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.1",
     "@types/node": "^26.6.11",
     "@types/react": "^19.3.3",
     "@types/react-dom": "^19.3.0",

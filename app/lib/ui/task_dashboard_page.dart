@@ -8,6 +8,8 @@ import '../tasks/task_models.dart';
 import '../tasks/task_queries.dart';
 import 'ds.dart';
 import 'glass.dart';
+import 'home_page.dart' show FilterTab;
+import 'motion.dart';
 import 'task_editor_page.dart';
 import 'task_widgets.dart';
 
@@ -25,6 +27,9 @@ class _TaskDashboardPageState extends State<TaskDashboardPage> {
   String _query = '';
   final _search = TextEditingController();
   bool _searching = false;
+  // 删除 / 完成 / 在其它设备上删掉的任务淡出并收起，而不是瞬间消失（与块列表一致）
+  final _activeExits = ExitTracker();
+  final _doneExits = ExitTracker();
 
   @override
   void dispose() {
@@ -37,7 +42,7 @@ class _TaskDashboardPageState extends State<TaskDashboardPage> {
     target ??= saveTask(AppScope.of(context).sync, null, title: '未命名任务', data: const TaskData(), parentId: parentId);
     if (target == null || !mounted) return;
     await Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => TaskEditorPage(blockId: target!.id, parentId: parentId ?? target.parentId),
+      builder: (_) => TaskEditorPage(blockId: target!.id, parentId: parentId ?? target.parentId, discardIfEmpty: block == null),
     ));
   }
 
@@ -121,30 +126,38 @@ class _TaskDashboardPageState extends State<TaskDashboardPage> {
                 child: ListView(
                   key: const Key('taskViewRow'),
                   scrollDirection: Axis.horizontal,
+                  // 与首页同一个 FilterTab（胶囊、同高同色），不再用另一套描边 Chip。
                   padding: const EdgeInsets.symmetric(horizontal: Gap.l),
                   children: [
                     for (final v in TaskSmartView.values)
                       Padding(
-                        padding: const EdgeInsets.only(right: Gap.s, top: Gap.s, bottom: Gap.s),
-                        child: FilterChip(
+                        padding: const EdgeInsets.only(right: Gap.xs),
+                        child: FilterTab(
                           key: Key('taskView-${v.name}'),
-                          label: Text(taskSmartViewLabel(v)),
+                          label: taskSmartViewLabel(v),
                           selected: _view == v,
-                          visualDensity: VisualDensity.compact,
-                          onSelected: (_) => setState(() => _view = v),
+                          onTap: () => setState(() => _view = v),
+                          hitHeight: Sizes.bar,
                         ),
                       ),
                   ],
                 ),
               ),
-              if (_view == TaskSmartView.overview) _Overview(stats: stats, onTap: (v) => setState(() => _view = v)),
+              // 一条任务都没有时只显示空状态，不再摆一排全是 0 的统计卡（信息层级）。
+              if (_view == TaskSmartView.overview && s.sync.blocks.any((b) => isTaskBlock(b) && !b.deleted && b.deletedAt == null))
+                _Overview(stats: stats, onTap: (v) => setState(() => _view = v)),
               Expanded(
                 child: items.isEmpty
                     ? EmptyTasks(query: _query, onCreate: () => _open(null))
                     : ListView(
                         padding: const EdgeInsets.fromLTRB(Gap.l, Gap.s, Gap.l, Gap.x4),
                         children: [
-                          for (final b in active) _TaskTile(block: b, now: now, onTap: () => _open(b)),
+                          for (final r in _activeExits.merge(
+                            [for (final b in active) (b.id, KeyedSubtree(key: ValueKey('task-${b.id}'), child: _TaskTile(block: b, now: now, onTap: () => _open(b))))],
+                            context: '${_view.name}|$_query|${_sort.name}',
+                            onSettled: () { if (mounted) setState(() {}); },
+                          ))
+                            r.$2,
                           if (done.isNotEmpty) ...[
                             Padding(
                               padding: const EdgeInsets.fromLTRB(Gap.s, Gap.xl, Gap.s, Gap.m),
@@ -153,7 +166,12 @@ class _TaskDashboardPageState extends State<TaskDashboardPage> {
                                 style: tt.bodySmall?.copyWith(color: c.text2, fontWeight: FontWeight.w500),
                               ),
                             ),
-                            for (final b in done) _TaskTile(block: b, now: now, onTap: () => _open(b)),
+                            for (final r in _doneExits.merge(
+                              [for (final b in done) (b.id, KeyedSubtree(key: ValueKey('task-${b.id}'), child: _TaskTile(block: b, now: now, onTap: () => _open(b))))],
+                              context: '${_view.name}|$_query|${_sort.name}',
+                              onSettled: () { if (mounted) setState(() {}); },
+                            ))
+                              r.$2,
                           ],
                         ],
                       ),
@@ -258,7 +276,8 @@ class _StatCard extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text('$value', style: tt.titleMedium?.copyWith(color: color, fontWeight: FontWeight.w600, height: 1.1)),
+                // 0 用中性色；只有真的有逾期 / 风险时才用语义色提醒，避免满屏彩色数字。
+                Text('$value', style: tt.titleMedium?.copyWith(color: value == 0 ? c.text3 : color, fontWeight: FontWeight.w600, height: 1.1)),
                 const SizedBox(height: 2),
                 Text(label, style: tt.bodySmall?.copyWith(color: c.text2, fontSize: 11)),
               ],

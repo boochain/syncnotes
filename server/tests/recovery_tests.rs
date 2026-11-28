@@ -1108,3 +1108,37 @@ async fn e2e_rescue_script_reset_keeps_all_data() {
     assert!(z.file_names().any(|n| n == "markdown/回收站/旧笔记.md"));
     assert!(z.file_names().filter(|n| n.starts_with("files/")).count() == 2);
 }
+
+/// v0.8.1: repeated wrong passwords are throttled; the right password still works after reset.
+#[tokio::test]
+async fn login_is_rate_limited_per_user() {
+    let storage = Storage::in_memory().unwrap();
+    let files = tempfile::tempdir().unwrap().keep();
+    let state = AppState::new(storage, true)
+        .with_files_dir(files.clone())
+        .with_login_limits(3, 100);
+    let app = build_router(state.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await
+        .unwrap()
+    });
+    let addr = format!("127.0.0.1:{port}");
+    register(&addr, "rl", "goodpass1").await;
+    for _ in 0..3 {
+        let (st, _) = login(&addr, "rl", "wrongpass", "d1").await;
+        assert_eq!(st, 401);
+    }
+    // Fourth attempt is blocked even with the correct password.
+    let (st, _) = login(&addr, "rl", "goodpass1", "d1").await;
+    assert_eq!(st, 429);
+    // A different user from the same IP is not affected.
+    register(&addr, "other", "goodpass1").await;
+    let (st, _) = login(&addr, "other", "goodpass1", "d2").await;
+    assert_eq!(st, 200);
+}

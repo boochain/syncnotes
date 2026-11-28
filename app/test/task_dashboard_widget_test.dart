@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -54,7 +56,8 @@ void main() {
     await openTasks(tester);
     expect(find.byKey(const Key('taskDashboard')), findsOneWidget);
     expect(find.text('还没有任务'), findsOneWidget);
-    expect(find.byKey(const Key('taskOverviewRing')), findsOneWidget);
+    // v0.8.1：没有任何任务时只显示空状态，不显示全 0 的概览
+    expect(find.byKey(const Key('taskOverviewRing')), findsNothing);
 
     await tester.tap(find.byKey(const Key('newTaskButton')));
     await tester.pumpAndSettle();
@@ -100,4 +103,38 @@ void main() {
     await tester.pumpAndSettle();
     expect(taskDataOf(sync.byId(block.id)!).status, TaskStatus.done);
   });
+
+  testWidgets('v0.8.1: new task left empty is discarded on back (no junk 未命名任务 synced)', (tester) async {
+    await pumpApp(tester);
+    await openTasks(tester);
+    await tester.tap(find.byKey(const Key('newTaskButton')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('taskEditor')), findsOneWidget);
+    await back(tester);
+    expect(find.byKey(const Key('taskDashboard')), findsOneWidget);
+    expect(find.text('还没有任务'), findsOneWidget);
+    final sync = AppScope.of(tester.element(find.byKey(const Key('taskDashboard')))).sync;
+    expect(sync.blocks.where((b) => isTaskBlock(b) && !b.deleted), isEmpty);
+  });
+
+  testWidgets('v0.8.1: desktop Esc closes pages level by level and does nothing at root', (tester) async {
+    await pumpApp(tester);
+    await openTasks(tester);
+    await tester.tap(find.byKey(const Key('newTaskButton')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('taskEditor')), findsOneWidget);
+    // 焦点在标题输入框里也能用 Esc 关闭
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('taskEditor')), findsNothing);
+    expect(find.byKey(const Key('taskDashboard')), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('taskDashboard')), findsNothing);
+    expect(find.byKey(const Key('homeTitle')), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(find.text(BackToExit.message), findsNothing);
+    expect(find.byKey(const Key('homeTitle')), findsOneWidget);
+  }, skip: !(Platform.isLinux || Platform.isWindows || Platform.isMacOS));
 }

@@ -65,6 +65,11 @@ jobs:
         env:
           SYNCNOTES_SERVER_BIN: ${{ github.workspace }}/bin/syncnotes-server
         run: flutter test
+      - name: Test date math under a DST timezone
+        working-directory: app
+        env:
+          TZ: America/New_York
+        run: flutter test test/civil_date_dst_test.dart test/calendar_test.dart
 
 
   web-test:
@@ -83,6 +88,16 @@ jobs:
           npm ci
           npm test
           npm run build
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+      - name: End-to-end (real server + Chromium)
+        run: |
+          (cd server && cargo build --release)
+          cd web
+          npx playwright install --with-deps chromium
+          npm run e2e
       - uses: actions/upload-artifact@v4
         with:
           name: web-dist

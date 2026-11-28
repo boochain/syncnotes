@@ -3,8 +3,9 @@
   --bg: #07080c;
   --bg-fallback: #10131c;
   --text: #f5f5f7;
-  --text2: rgba(235, 235, 245, 0.62);
-  --text3: rgba(235, 235, 245, 0.34);
+  /* 与 App 玻璃模式同一套 AA 文字色：次要 / 三级文字在玻璃上也 ≥ 4.5:1 */
+  --text2: rgba(235, 235, 245, 0.74);
+  --text3: rgba(235, 235, 245, 0.56);
   --fill: rgba(255, 255, 255, 0.08);
   --fill2: rgba(255, 255, 255, 0.14);
   --line: rgba(84, 84, 88, 0.65);
@@ -37,15 +38,15 @@
   --bg: #e8edf6;
   --bg-fallback: #d9e3f2;
   --text: #111113;
-  --text2: rgba(60, 60, 67, 0.64);
-  --text3: rgba(60, 60, 67, 0.34);
+  --text2: #3f3f44;
+  --text3: #5e5e63;
   --fill: rgba(0, 0, 0, 0.05);
   --fill2: rgba(0, 0, 0, 0.08);
   --line: rgba(60, 60, 67, 0.22);
-  --accent: #007aff;
-  --accent-soft: rgba(0, 122, 255, 0.16);
-  --danger: #ff3b30;
-  --success: #34c759;
+  --accent: #0066dd;
+  --accent-soft: rgba(0, 102, 221, 0.14);
+  --danger: #d70015;
+  --success: #248a3d;
   --glass-tint: 255, 255, 255;
   --shadow: 0 18px 40px rgba(20, 30, 50, 0.12);
 }
@@ -81,6 +82,15 @@ button { cursor: pointer; }
   pointer-events: none;
   transform: translate3d(0, 0, 0);
   filter: url(#refract-filter);
+}
+:root[data-theme='light'] .fluid-fallback {
+  /* 没有 WebGL 时的静态背景：与 App 浅色默认预设同色（蓝 / 桃 / 粉） */
+  background:
+    radial-gradient(900px 700px at 10% 15%, rgba(110, 190, 255, 0.55), transparent 60%),
+    radial-gradient(900px 700px at 85% 10%, rgba(240, 180, 140, 0.50), transparent 58%),
+    radial-gradient(900px 700px at 35% 95%, rgba(240, 140, 170, 0.45), transparent 55%),
+    radial-gradient(800px 600px at 90% 85%, rgba(150, 180, 240, 0.40), transparent 55%),
+    var(--bg-fallback);
 }
 .fluid-fallback {
   background:
@@ -418,6 +428,38 @@ button { cursor: pointer; }
   border-radius: 28px;
 }
 .login-card h1 { margin: 0 0 4px; font-size: 26px; letter-spacing: -0.03em; }
+/* 登录页与 App 一致：360 宽单列、56px 应用图标、分组表单、44px 主按钮（圆角 8，不是胶囊）、文字链接 */
+.login-col { width: min(360px, 100%); display: flex; flex-direction: column; align-items: stretch; }
+.login-col .app-mark {
+  width: 56px; height: 56px; border-radius: 13px; align-self: center;
+  background: var(--accent); color: #fff; display: grid; place-items: center;
+}
+.login-col h1 { margin: 20px 0 4px; text-align: center; font-size: 24px; font-weight: 600; letter-spacing: -0.02em; }
+.login-col p.lead { margin: 0 0 28px; text-align: center; color: var(--text2); font-size: 14px; }
+.form-group { border-radius: 12px; overflow: hidden; }
+.form-row {
+  display: flex; align-items: center; gap: 12px; min-height: var(--h-xl); padding: 0 12px 0 16px;
+  color: var(--text2); position: relative;
+}
+.form-row + .form-row::before {
+  content: ""; position: absolute; top: 0; right: 0; left: 45px; height: 1px; background: var(--line);
+}
+.form-row input {
+  flex: 1; min-width: 0; height: var(--h-xl); border: 0; background: transparent; outline: none;
+  color: var(--text); caret-color: var(--accent); font-size: 15px;
+}
+.form-row input::placeholder { color: var(--text3); }
+.form-row:focus-within { color: var(--accent); }
+.login-col .primary.block { width: 100%; margin-top: 16px; border-radius: 8px; height: var(--h-xl); font-size: 15px; }
+.login-col .error, .login-col .hint { margin-top: 10px; }
+.center { text-align: center; }
+.links { display: flex; justify-content: center; gap: 8px; margin-top: 8px; }
+.link {
+  border: 0; background: transparent; color: var(--accent); height: var(--h-m); padding: 0 10px;
+  border-radius: 6px; font-size: 14px;
+}
+.link:hover { background: var(--accent-soft); }
+.hint.fine { margin-top: 20px; color: var(--text3); font-size: 11.5px; }
 .login-card p.lead { margin: 0 0 22px; color: var(--text2); font-size: 14px; }
 .stack { display: flex; flex-direction: column; gap: 10px; }
 .tabs { display: flex; gap: 6px; margin-bottom: 8px; }

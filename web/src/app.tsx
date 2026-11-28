@@ -232,8 +232,9 @@ export function App() {
       </div>
       {toast && <div className="toast glass">{toast}</div>}
       {recovery && (
-        <div className="login" style={{ position: 'fixed', inset: 0, zIndex: 40, background: 'rgba(0,0,0,0.35)' }} onClick={() => setRecovery(null)}>
-          <div className="login-card glass" onClick={(e) => e.stopPropagation()}>
+        // 恢复码只显示这一次：点遮罩不关闭，必须点「我已保存」，避免误触丢失（与 App 一致）。
+        <div className="login" role="dialog" aria-modal="true" aria-label="请保存恢复码" style={{ position: 'fixed', inset: 0, zIndex: 40, background: 'rgba(0,0,0,0.35)' }}>
+          <div className="login-card glass">
             <h1>请保存恢复码</h1>
             <p className="lead">这是唯一一次完整显示。以后忘记密码时用它重置，笔记数据不会丢失。</p>
             <div className="recovery">{recovery}</div>

@@ -37,6 +37,11 @@ export const Icons = {
   moon: (p: P) => <I {...p}><path d="M16 3a8 8 0 1 0 5 13 7 7 0 0 1-5-13z"/></I>,
   task: (p: P) => <I {...p}><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M8.5 12l2.5 2.5 4.5-5"/></I>,
   calendar: (p: P) => <I {...p}><rect x="4" y="5" width="16" height="15" rx="2.5"/><path d="M4 10h16M8.5 3v4M15.5 3v4"/></I>,
+  globe: (p: P) => <I {...p}><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.5 2.6 3.6 5.4 3.6 8.5s-1.1 5.9-3.6 8.5c-2.5-2.6-3.6-5.4-3.6-8.5s1.1-5.9 3.6-8.5z"/></I>,
+  person: (p: P) => <I {...p}><circle cx="12" cy="8.5" r="3.5"/><path d="M5 20c.8-3.6 3.6-5.5 7-5.5s6.2 1.9 7 5.5"/></I>,
+  lock: (p: P) => <I {...p}><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></I>,
+  key: (p: P) => <I {...p}><circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l2.5 2.5M14 9l2 2"/></I>,
+  sync: (p: P) => <I {...p}><path d="M5 9h12l-3-3M19 15H7l3 3"/></I>,
   restore: (p: P) => <I {...p}><path d="M4 12a8 8 0 1 0 2.3-5.6M4 5v5h5"/></I>,
 };
 

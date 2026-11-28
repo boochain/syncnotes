@@ -295,6 +295,39 @@ export class SyncEngine {
     this.purge(this.trash.map((b) => b.id));
   }
 
+  /** 本次运行生成的冲突副本数。 */
+  conflictCopies = 0;
+
+  /**
+   * 本地未同步的修改被另一台设备更晚的版本覆盖（LWW）时，先把本地版本另存为同级「冲突副本」，
+   * 不悄悄丢数据。与 App 端 `SyncClient._keepConflictCopy` 行为一致。
+   */
+  private keepConflictCopy(local: Block | undefined, incoming: Block): void {
+    if (!local || !local.pending || local.deleted || local.deleted_at != null) return;
+    if (incoming.deleted || incoming.deleted_at != null) return;
+    if (local.updated_at > incoming.updated_at) return;
+    if (local.kind === 'folder') return;
+    if (local.title === incoming.title && JSON.stringify(sortKeys(local.payload)) === JSON.stringify(sortKeys(incoming.payload))) return;
+    const pendingOp = this.outbox.some((o) => o.type === 'upsert_block' && o.id === local.id && Number(o.client_updated_at) === local.updated_at);
+    if (!pendingOp) return;
+    const now = nowMs();
+    const copy: Block = {
+      ...local,
+      id: newId(),
+      title: conflictTitle(local.title, new Date(local.updated_at)),
+      payload: { ...local.payload },
+      created_at: now,
+      updated_at: now,
+      created_by: this.deviceId,
+      seq: 0,
+      viewed_local: false,
+      pending: true,
+    };
+    this.blocks.set(copy.id, copy);
+    this.enqueue(toUpsertMessage(copy));
+    this.conflictCopies++;
+  }
+
   applyServerMessage(msg: Record<string, unknown>): void {
     const type = msg.type;
     if (type === 'auth_ok') {
@@ -317,7 +350,9 @@ export class SyncEngine {
         // LWW: keep the newer local edit; the outbox will replay it.
         return;
       }
-      const isNew = !local && !incoming.deleted && incoming.deleted_at == null && incoming.created_by !== this.deviceId;
+      this.keepConflictCopy(local, incoming);
+      // 首次登录 / 重连追平历史时不弹「新内容」提示，只提示实时到达的新内容。
+      const isNew = !this.catchingUp && !local && !incoming.deleted && incoming.deleted_at == null && incoming.created_by !== this.deviceId;
       this.blocks.set(incoming.id, { ...incoming, viewed_local: viewedLocal, pending: false });
       if (incoming.seq > this.lastSeq) this.lastSeq = incoming.seq;
       this.outbox = this.outbox.filter((o) => !(o.type === 'upsert_block' && o.id === incoming.id && Number(o.client_updated_at) <= incoming.updated_at));
@@ -533,4 +568,19 @@ function toBytes(data: unknown): Uint8Array {
   }
   if (typeof data === 'string') return utf8(data);
   throw new SealError('未知的套接字帧');
+}
+
+function sortKeys(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(sortKeys);
+  if (v && typeof v === 'object') {
+    const o = v as Record<string, unknown>;
+    return Object.fromEntries(Object.keys(o).sort().map((k) => [k, sortKeys(o[k])]));
+  }
+  return v;
+}
+
+export function conflictTitle(title: string, at: Date): string {
+  const two = (n: number) => String(n).padStart(2, '0');
+  const stamp = `${at.getMonth() + 1}/${at.getDate()} ${two(at.getHours())}:${two(at.getMinutes())}`;
+  return `${title.trim() ? title : '无标题'}（冲突副本 ${stamp}）`;
 }

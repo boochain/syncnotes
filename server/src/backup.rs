@@ -173,8 +173,8 @@ struct ParsedArchive {
     blocks: Vec<RestoreBlock>,
     views: Vec<(String, String, bool)>,
     pending: Vec<Value>,
-    /// file_id -> bytes
-    files: HashMap<String, Vec<u8>>,
+    /// file_id -> zip entry name (streamed on restore)
+    files: HashMap<String, String>,
 }
 
 fn open_archive(path: &Path) -> BackupResult<ParsedArchive> {
@@ -283,45 +283,51 @@ fn open_archive(path: &Path) -> BackupResult<ParsedArchive> {
         _ => Vec::new(),
     };
 
-    // Map file_id -> zip entry path from block payloads, then read bytes.
+    // Map file_id -> zip entry path. Prefer the exact name the exporter writes
+    // (`files/{fid[..8]}-{safe_name}`), then any `files/{fid[..8]}-*` entry, then a
+    // bare `files/{file_id}`. Bytes are NOT read here: restore streams each entry to
+    // disk so a multi-GB backup does not have to fit in RAM.
     let mut file_names: HashMap<String, String> = HashMap::new();
     let names: Vec<String> = zip.file_names().map(|s| s.to_string()).collect();
+    let norm: Vec<String> = names.iter().map(|n| n.replace('\\', "/")).collect();
     for b in &blocks {
-        if let Some(fid) = file_id_of(&b.payload) {
-            if let Some(rel) = names.iter().find(|n| {
-                let n = n.replace('\\', "/");
-                n.starts_with("files/") && n.contains(&fid[..fid.len().min(8)])
-            }) {
-                file_names.insert(fid, rel.clone());
-            }
+        let Some(fid) = file_id_of(&b.payload) else {
+            continue;
+        };
+        if file_names.contains_key(&fid) {
+            continue;
+        }
+        let short = &fid[..fid.len().min(8)];
+        let display = b
+            .payload
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or(&b.title);
+        let exact = format!("files/{}-{}", short, admin::safe_name(display));
+        let prefix = format!("files/{short}-");
+        let direct = format!("files/{fid}");
+        let hit = norm
+            .iter()
+            .position(|n| *n == exact)
+            .or_else(|| norm.iter().position(|n| *n == direct))
+            .or_else(|| norm.iter().position(|n| n.starts_with(&prefix)));
+        if let Some(i) = hit {
+            file_names.insert(fid, names[i].clone());
         }
     }
-    // Also accept a direct files/{file_id} layout.
-    for n in &names {
-        let n_norm = n.replace('\\', "/");
+    for (i, n_norm) in norm.iter().enumerate() {
         if let Some(rest) = n_norm.strip_prefix("files/") {
             if !rest.is_empty() && !rest.contains('/') && valid_id(rest) {
                 file_names
                     .entry(rest.to_string())
-                    .or_insert_with(|| n.clone());
+                    .or_insert_with(|| names[i].clone());
             }
         }
     }
-
-    let mut files = HashMap::new();
-    for (fid, rel) in file_names {
-        if !valid_id(&fid) {
-            continue;
-        }
-        match read_entry(&mut zip, &rel, MAX_UNCOMPRESSED) {
-            Ok(bytes) => {
-                files.insert(fid, bytes);
-            }
-            Err(_) => {
-                // Counted as missing later if a live block still references it.
-            }
-        }
-    }
+    let files: HashMap<String, String> = file_names
+        .into_iter()
+        .filter(|(fid, _)| valid_id(fid))
+        .collect();
 
     Ok(ParsedArchive {
         manifest,
@@ -330,6 +336,31 @@ fn open_archive(path: &Path) -> BackupResult<ParsedArchive> {
         pending,
         files,
     })
+}
+
+/// Copy one zip entry to `dest` without buffering it in memory; returns its SHA-256 hex.
+fn stream_entry(zip_path: &Path, entry: &str, dest: &Path) -> BackupResult<String> {
+    use std::io::Write;
+    let f = File::open(zip_path).map_err(err)?;
+    let mut zip = zip::ZipArchive::new(f).map_err(err)?;
+    let zf = zip.by_name(entry).map_err(err)?;
+    if zf.enclosed_name().is_none() {
+        return Err(format!("备份包含非法路径: {entry}"));
+    }
+    let mut src = zf.take(MAX_UNCOMPRESSED);
+    let mut out = std::io::BufWriter::new(File::create(dest).map_err(err)?);
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0u8; 256 * 1024];
+    loop {
+        let n = src.read(&mut buf).map_err(err)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+        out.write_all(&buf[..n]).map_err(err)?;
+    }
+    out.flush().map_err(err)?;
+    Ok(hex32(&hasher.finalize()))
 }
 
 fn file_id_of(payload: &Value) -> Option<String> {
@@ -359,7 +390,11 @@ fn read_entry_optional(
                 return Err(format!("{name} 过大"));
             }
             let mut buf = Vec::with_capacity(f.size() as usize);
-            f.read_to_end(&mut buf).map_err(err)?;
+            // Never trust the declared size alone (zip bombs): cap the actual read.
+            (&mut f).take(max + 1).read_to_end(&mut buf).map_err(err)?;
+            if buf.len() as u64 > max {
+                return Err(format!("{name} 过大"));
+            }
             Ok(Some(buf))
         }
         Err(zip::result::ZipError::FileNotFound) => Ok(None),
@@ -467,17 +502,20 @@ pub fn restore_from_zip(
             continue;
         };
         match parsed.files.get(&fid) {
-            Some(bytes) => {
+            Some(entry) => {
                 if written.contains_key(&fid) {
                     continue;
                 }
                 let dest = staging.join(&fid);
-                if let Err(e) = std::fs::write(&dest, bytes) {
-                    let _ = std::fs::remove_dir_all(&staging);
-                    return Err(format!("写入附件失败: {e}"));
+                match stream_entry(zip_path, entry, &dest) {
+                    Ok(sha) => {
+                        written.insert(fid, (dest, sha));
+                    }
+                    Err(e) => {
+                        let _ = std::fs::remove_dir_all(&staging);
+                        return Err(format!("写入附件失败: {e}"));
+                    }
                 }
-                let sha = hex32(&Sha256::digest(bytes));
-                written.insert(fid, (dest, sha));
             }
             None => missing += 1,
         }

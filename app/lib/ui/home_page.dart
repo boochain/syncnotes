@@ -210,10 +210,7 @@ class _HomePageState extends State<HomePage> {
                 : ListView(
                     key: const Key('filterRow'),
                     scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: Gap.l,
-                      vertical: (Sizes.bar - Sizes.compact) / 2,
-                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: Gap.l),
                     children: [
                       for (final e in _kinds.entries)
                         Padding(
@@ -223,6 +220,7 @@ class _HomePageState extends State<HomePage> {
                             label: e.value.$1,
                             selected: _kind == e.key,
                             onTap: () => setState(() => _kind = e.key),
+                            hitHeight: Sizes.bar,
                           ),
                         ),
                     ],
@@ -579,11 +577,15 @@ class FilterTab extends StatefulWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
+
+  /// 放在 44 高的筛选行里时，把上下留白也算作可点区域（HIG 44pt / M3 48dp 点击区域），视觉尺寸不变。
+  final double hitHeight;
   const FilterTab({
     super.key,
     required this.label,
     required this.selected,
     required this.onTap,
+    this.hitHeight = 0,
   });
   @override
   State<FilterTab> createState() => _FilterTabState();
@@ -611,8 +613,12 @@ class _FilterTabState extends State<FilterTab> {
         },
         onExit: (_) => setState(() => _hover = false),
         child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
           onTap: widget.onTap,
-          child: AnimatedContainer(
+          child: Container(
+            height: widget.hitHeight > 0 ? widget.hitHeight : null,
+            alignment: widget.hitHeight > 0 ? Alignment.center : null,
+            child: AnimatedContainer(
             duration: Motion.short2,
             curve: Curves.easeOutCubic,
             height: Glass.surfaceTranslucent ? 30 : Sizes.compact,
@@ -654,6 +660,7 @@ class _FilterTabState extends State<FilterTab> {
                     color: widget.selected ? c.text : c.text2,
                   ),
             ),
+          ),
           ),
         ),
       ),

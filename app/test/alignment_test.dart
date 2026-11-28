@@ -123,7 +123,10 @@ void main() {
 
     // 四个切换项 28 高居中在 44 行内；搜索在分类右侧，查看方式在搜索右侧
     final tabs = ['all', 'msg', 'page', 'file'].map((k) => find.byKey(Key('filter-$k'))).toList();
-    sameRow(tester, tabs, Sizes.compact, why: 'filter');
+    // v0.8.1：可点区域是整行 44 高（HIG 44pt），视觉胶囊仍是 28 高
+    sameRow(tester, tabs, Sizes.bar, why: 'filter hit area');
+    sameRow(tester, [for (final t in tabs) find.descendant(of: t, matching: find.byType(AnimatedContainer)).first], Sizes.compact,
+        why: 'filter visual');
     final row = r(tester, find.byKey(const Key('filterRow')));
     expect(row.height, Sizes.bar);
     expect(r(tester, tabs.first).center.dy, closeTo(row.center.dy, 0.51));

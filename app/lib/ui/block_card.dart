@@ -29,6 +29,25 @@ String relTime(int ms) {
 
 /// 便签优先级与颜色预设（同步保存在 `block.payload['sticky_color']`）。
 /// 排序时按 `priority` 从高到低排列（紧急 > 重要 > 待办 > 灵感 > 备忘 > 默认）。
+/// 标题本身就是正文第一行（消息、笔记都这样生成标题）时，预览不再重复一遍标题，
+/// 只显示后面的内容（Apple 备忘录 / Things 的做法）；只有一行时返回空，由调用方显示类型名。
+String previewWithoutTitle(String title, String body) {
+  final t = title.trim();
+  var b = body.trim();
+  if (t.isEmpty || b.isEmpty) return b;
+  if (b == t) return '';
+  if (b.startsWith(t)) {
+    final rest = b.substring(t.length);
+    // 只有在标题后面紧跟换行 / 空白，或者标题是被截断的前缀（…）时才去掉，避免误伤「会议」vs「会议纪要」
+    if (rest.startsWith('\n') || rest.startsWith(' ') || rest.startsWith('\r')) return rest.trim();
+  }
+  if (t.endsWith('…')) {
+    final stem = t.substring(0, t.length - 1);
+    if (stem.isNotEmpty && b.startsWith(stem)) return b.substring(stem.length).trim();
+  }
+  return b;
+}
+
 class StickyColorOption {
   final String key;
   final String label;
@@ -423,6 +442,7 @@ class _StickyNoteCardState extends State<StickyNoteCard> {
     } else {
       bodyText = type.previewText(context, block).trim();
     }
+    bodyText = previewWithoutTitle(block.title, bodyText);
     if (bodyText.isEmpty) bodyText = type.label;
 
     return Semantics(
@@ -698,7 +718,7 @@ class _BlockCardState extends State<BlockCard> {
         : block.kind == BlockKind.folder
             ? (block.payload['icon'] ?? 'folder') as String
             : '';
-    var preview = type.previewText(context, block);
+    var preview = previewWithoutTitle(block.title, type.previewText(context, block));
     if (preview.isEmpty) preview = type.label;
 
     final dark = Theme.of(context).brightness == Brightness.dark;
@@ -909,6 +929,8 @@ class _BlockCardState extends State<BlockCard> {
         ),
       ),
       onDismissed: (_) {
+        // 左滑已经播过滑出 + 收起动画，列表不要再播一次退出。
+        ExitTracker.skipNext(block.id);
         HapticFeedback.mediumImpact();
         _moveToTrash(context);
       },
@@ -1612,6 +1634,7 @@ class _BlockListState extends State<BlockList> {
   static var _ready = false;
 
   bool _showCompleted = true;
+  final _exits = ExitTracker();
 
   @override
   Widget build(BuildContext context) {
@@ -1685,17 +1708,31 @@ class _BlockListState extends State<BlockList> {
             return _FadeIn(key: ValueKey('enter-${b.id}'), child: card);
           }
 
-          final rows = <Widget>[
-            for (final b in activeItems) buildRow(b),
+          final keyed = <(String, Widget)>[
+            for (final b in activeItems) (b.id, buildRow(b)),
             if (completedItems.isNotEmpty) ...[
-              _CompletedSectionHeader(
-                count: completedItems.length,
-                expanded: _showCompleted,
-                onToggle: () => setState(() => _showCompleted = !_showCompleted),
+              (
+                '_completedHeader',
+                _CompletedSectionHeader(
+                  count: completedItems.length,
+                  expanded: _showCompleted,
+                  onToggle: () => setState(() => _showCompleted = !_showCompleted),
+                ),
               ),
               if (_showCompleted)
-                for (final b in completedItems) buildRow(b),
+                for (final b in completedItems) (b.id, buildRow(b)),
             ],
+          ];
+          // 删除 / 移入回收站 / 移到别处的行：淡出并收起高度后再拿掉（与进入动画对称）。
+          final rows = [
+            for (final r in _exits.merge(
+              keyed,
+              context: '$kindKey|${widget.filter}|${widget.parentId}|$_showCompleted',
+              onSettled: () {
+                if (mounted) setState(() {});
+              },
+            ))
+              KeyedSubtree(key: ValueKey('row-${r.$1}'), child: r.$2),
           ];
 
           content = ListView.builder(
