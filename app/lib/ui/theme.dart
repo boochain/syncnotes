@@ -220,7 +220,7 @@ ThemeData buildAppTheme(Brightness b, {DesignLanguage? language, String preset =
     radioTheme: RadioThemeData(fillColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? c.accent : c.text3)),
     progressIndicatorTheme: ProgressIndicatorThemeData(color: c.accent, linearTrackColor: c.fill, circularTrackColor: Colors.transparent),
     popupMenuTheme: PopupMenuThemeData(
-      color: c.elevated,
+      color: c.elevated.withValues(alpha: 1),
       surfaceTintColor: Colors.transparent,
       elevation: 8,
       shadowColor: Colors.black.withValues(alpha: 0.3),
@@ -237,8 +237,10 @@ ThemeData buildAppTheme(Brightness b, {DesignLanguage? language, String preset =
         shape: WidgetStatePropertyAll(RoundedRectangleBorder(borderRadius: rL, side: hairline)),
       ),
     ),
+    // 对话框是不透明圆角卡片；下层页面由 PopupCover 换成背景图，这里只留很淡的压暗
     dialogTheme: DialogThemeData(
-      backgroundColor: c.elevated,
+      barrierColor: const Color(0x1F000000),
+      backgroundColor: c.elevated.withValues(alpha: 1),
       surfaceTintColor: Colors.transparent,
       elevation: 12,
       titleTextStyle: text.titleMedium,
@@ -248,7 +250,8 @@ ThemeData buildAppTheme(Brightness b, {DesignLanguage? language, String preset =
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.xl), side: hairline),
     ),
     bottomSheetTheme: BottomSheetThemeData(
-      backgroundColor: c.elevated,
+      modalBarrierColor: const Color(0x1F000000),
+      backgroundColor: c.elevated.withValues(alpha: 1),
       surfaceTintColor: Colors.transparent,
       showDragHandle: true,
       dragHandleColor: c.text3,

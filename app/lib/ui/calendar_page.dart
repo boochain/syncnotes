@@ -173,7 +173,7 @@ class _CalendarPageState extends State<CalendarPage> {
   };
 
   Future<void> _pickRoleAndAdd() async {
-    final role = await showModalBottomSheet<CalendarRole>(
+    final role = await showCardSheet<CalendarRole>(
       context: context,
       showDragHandle: true,
       builder: (ctx) => SafeArea(

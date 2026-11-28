@@ -1,74 +1,99 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:syncnotes/ui/motion.dart';
 import 'package:syncnotes/ui/theme.dart';
 
-/// v0.8.1 回归：透明（液态玻璃）页面推入时，下层主页必须被新页的左边缘裁掉，
-/// 任何一帧都不能在同一位置同时画出两层字；返回动画同理（进出对称）。
+/// v0.8.2 回归：弹出页是不透明圆角卡片。卡片只要有一点可见（不透明度 > 0），
+/// 背景层就必须已经把下层页面完全盖住——任何一帧都不能让下层文字和卡片内容叠在一起。
+/// 进入、退出都逐帧检查（退出是同一条时间轴倒放）。
 void main() {
-  RenderClipRect leadingClipOf(WidgetTester tester, Finder text) {
-    RenderObject? r = tester.renderObject(text);
-    while (r != null) {
-      if (r is RenderClipRect && r.clipper != null) return r;
-      r = r.parent;
+  double fadeAbove(WidgetTester tester, Finder f) {
+    final fades = find.ancestor(of: f, matching: find.byType(FadeTransition));
+    var v = 1.0;
+    for (final e in fades.evaluate()) {
+      v *= (e.widget as FadeTransition).opacity.value;
     }
-    throw StateError('no leading clip above $text');
+    return v;
   }
 
-  Future<void> expectNoOverlap(WidgetTester tester) async {
-    final clip = leadingClipOf(tester, find.text('ROOT'));
-    final rect = clip.clipper!.getClip(clip.size);
-    final rootRight = clip.localToGlobal(Offset(rect.width, 0)).dx;
-    final pageLeft = tester.getTopLeft(find.byKey(const Key('pushed'))).dx;
-    expect(rootRight, lessThanOrEqualTo(pageLeft + 1.0), reason: 'root painted under the incoming page');
+  Future<void> checkFrames(WidgetTester tester, {required int frames, required void Function() onFrame}) async {
+    for (var i = 0; i < frames; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      if (find.byKey(const Key('cardSurface')).evaluate().isEmpty) break;
+      onFrame();
+    }
   }
 
-  testWidgets('pushed page occludes the page below during push and pop', (tester) async {
-    tester.view.physicalSize = const Size(400, 800);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
+  for (final size in [const Size(400, 800), const Size(1400, 900)]) {
+    testWidgets('card route covers the page below before the card appears (${size.width.toInt()} wide)', (tester) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final nav = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(MaterialApp(
+        navigatorKey: nav,
+        theme: buildAppTheme(Brightness.light),
+        home: const Scaffold(backgroundColor: Colors.transparent, body: Center(child: Text('ROOT'))),
+      ));
+      nav.currentState!.push(fadeRoute(const Scaffold(
+        key: Key('pushed'),
+        backgroundColor: Colors.transparent,
+        body: Center(child: Text('PAGE')),
+      )));
+      await tester.pump();
+      var sawMid = false;
+      void frame() {
+        final cover = fadeAbove(tester, find.byKey(const Key('cardBackdrop')));
+        final card = fadeAbove(tester, find.byKey(const Key('cardSurface')));
+        if (card > 0) {
+          expect(cover, greaterThanOrEqualTo(0.999), reason: 'card visible ($card) while page below still shows through (cover $cover)');
+        }
+        if (card > 0.2 && card < 0.8) sawMid = true;
+      }
+
+      await checkFrames(tester, frames: 40, onFrame: frame);
+      expect(sawMid, isTrue, reason: 'card should fade in, not pop');
+      await tester.pumpAndSettle();
+
+      // 卡片四周留边距（露出背景），带圆角
+      final rect = tester.getRect(find.byKey(const Key('cardSurface')));
+      expect(rect.left, greaterThanOrEqualTo(8));
+      expect(rect.top, greaterThanOrEqualTo(8));
+      expect(size.width - rect.right, greaterThanOrEqualTo(8));
+      expect(size.height - rect.bottom, greaterThanOrEqualTo(8));
+      final deco = tester.widget<DecoratedBox>(find.byKey(const Key('cardSurface'))).decoration as BoxDecoration;
+      expect((deco.color!).a, 1.0, reason: 'card surface must be fully opaque');
+      expect(deco.borderRadius, isNotNull);
+
+      nav.currentState!.pop();
+      await tester.pump();
+      sawMid = false;
+      await checkFrames(tester, frames: 40, onFrame: frame);
+      expect(sawMid, isTrue, reason: 'pop must play a symmetric exit');
+      await tester.pumpAndSettle();
+      expect(find.text('ROOT'), findsOneWidget);
+    });
+  }
+
+  testWidgets('dialogs cover the page below with the background only', (tester) async {
     final nav = GlobalKey<NavigatorState>();
+    final obs = PopupCoverObserver();
     await tester.pumpWidget(MaterialApp(
       navigatorKey: nav,
+      navigatorObservers: [obs],
       theme: buildAppTheme(Brightness.light),
-      home: const Scaffold(backgroundColor: Colors.transparent, body: Center(child: Text('ROOT'))),
+      home: const Scaffold(body: Center(child: Text('ROOT'))),
     ));
-    nav.currentState!.push(fadeRoute(const Scaffold(
-      key: Key('pushed'),
-      backgroundColor: Colors.transparent,
-      body: Center(child: Text('PAGE')),
-    )));
-    await tester.pump();
-    var sawPartial = false;
-    for (var i = 0; i < 24; i++) {
-      await tester.pump(const Duration(milliseconds: 16));
-      if (find.text('ROOT').evaluate().isEmpty) break;
-      final left = tester.getTopLeft(find.byKey(const Key('pushed'))).dx;
-      if (left > 1 && left < 399) sawPartial = true;
-      await expectNoOverlap(tester);
-    }
-    expect(sawPartial, isTrue, reason: 'incoming page should slide in');
+    showDialog<void>(context: nav.currentContext!, builder: (_) => const AlertDialog(content: Text('DIALOG')));
     await tester.pumpAndSettle();
-
+    final cover = tester.widget<Opacity>(find.byKey(const Key('popupCover')));
+    expect(cover.opacity, 1.0);
     nav.currentState!.pop();
-    await tester.pump();
-    var sawExit = false;
-    for (var i = 0; i < 20; i++) {
-      await tester.pump(const Duration(milliseconds: 16));
-      if (find.byKey(const Key('pushed')).evaluate().isEmpty) break;
-      final left = tester.getTopLeft(find.byKey(const Key('pushed'))).dx;
-      if (left > 1 && left < 399) sawExit = true;
-      await expectNoOverlap(tester);
-    }
-    expect(sawExit, isTrue, reason: 'pop must play a symmetric exit');
     await tester.pumpAndSettle();
-    expect(find.text('ROOT'), findsOneWidget);
+    expect(find.byKey(const Key('popupCover')), findsNothing);
   });
 
-  test('page routes share the themed transition (root receives secondaryAnimation)', () {
-    final r = fadeRoute<void>(const SizedBox());
-    expect(r, isA<MaterialPageRoute<void>>());
-    expect(MaterialPageRoute<void>(builder: (_) => const SizedBox()).canTransitionTo(r as TransitionRoute), isTrue);
+  test('page routes share the themed transition', () {
+    expect(fadeRoute<void>(const SizedBox()), isA<MaterialPageRoute<void>>());
   });
 }

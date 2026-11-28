@@ -482,6 +482,18 @@ class GlassBackdrop extends StatefulWidget {
   State<GlassBackdrop> createState() => _GlassBackdropState();
 }
 
+/// 只有背景（流动渐变 / 自定义背景图 / 纯色底），不带任何界面。弹出卡片四周和弹层下面用它
+/// 把下层页面整个盖住——透出来的只能是背景图，不能是下层的文字。完全不透明。
+class BackdropCover extends StatelessWidget {
+  const BackdropCover({super.key});
+  @override
+  Widget build(BuildContext context) => const GlassBackdrop(child: SizedBox.expand());
+}
+
+/// 所有 [GlassBackdrop] 共用一个时钟：弹出页上的背景层和窗口底层背景同相位，拼接处看不出接缝。
+final Stopwatch _fluidClock = Stopwatch()..start();
+const _fluidPeriodMs = 26000;
+
 class _GlassBackdropState extends State<GlassBackdrop>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final AnimationController _ctrl = AnimationController(
@@ -555,7 +567,7 @@ class _GlassBackdropState extends State<GlassBackdrop>
               willChange: _shouldAnimate,
               painter: _FluidMeshPainter(
                 phase: _shouldAnimate
-                    ? Glass.quantizeFluidPhase(_ctrl.value)
+                    ? Glass.quantizeFluidPhase((_fluidClock.elapsedMilliseconds % _fluidPeriodMs) / _fluidPeriodMs)
                     : 0.0,
                 dark: dark,
                 wash: wash,

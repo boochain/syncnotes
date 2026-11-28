@@ -42,6 +42,7 @@ class AppShellState extends State<AppShell> implements PageHost {
   String? _page; // null = 收件箱（宽屏）
   final _scaffold = GlobalKey<ScaffoldState>();
   final _navKey = GlobalKey<NavigatorState>();
+  final _popupObserver = PopupCoverObserver();
   bool _wide = false;
   bool _sidebarCollapsed = false;
   SyncClient? _syncForReminders;
@@ -329,6 +330,7 @@ class AppShellState extends State<AppShell> implements PageHost {
                 child: HeroControllerScope.none(
                   child: Navigator(
                     key: _navKey,
+                    observers: [_popupObserver],
                     onGenerateRoute: (_) => MaterialPageRoute(builder: (_) => const ShellHome()),
                     onDidRemovePage: (_) {},
                   ),

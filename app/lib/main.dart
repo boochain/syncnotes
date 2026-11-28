@@ -119,6 +119,7 @@ class _SyncNotesAppState extends State<SyncNotesApp> with WidgetsBindingObserver
   late AppServices _services;
   bool _loggedIn = false;
   final _rootNav = GlobalKey<NavigatorState>();
+  final _popupObserver = PopupCoverObserver();
 
   /// 桌面端 Esc 关闭当前页面：只在焦点树里没人处理 Esc 时才生效
   /// （对话框、菜单、搜索框自己的 Esc 优先），到根页面不做任何事。
@@ -225,6 +226,7 @@ class _SyncNotesAppState extends State<SyncNotesApp> with WidgetsBindingObserver
         valueListenable: _themeMode,
         builder: (context, mode, _) => MaterialApp(
         navigatorKey: _rootNav,
+        navigatorObservers: [_popupObserver],
         themeMode: mode,
         title: 'SyncNotes',
         debugShowCheckedModeBanner: false,

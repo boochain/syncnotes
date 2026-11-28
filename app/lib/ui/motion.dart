@@ -1,125 +1,250 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'glass.dart';
 import 'tokens.dart';
 
-/// 页面转场套组见 `docs/motion.md`：
-/// Material 3 Emphasized 时长/缓动 + iOS 式覆盖推入（不对正文做透明度交叉）。
+/// 页面转场套组见 `docs/motion.md`。
 ///
-/// v0.8.1：液态玻璃开启时页面本身是透明的（要透出流体背景），新页滑入时旧页的字会从
-/// 新页下面透出来（叠字）。现在旧页按新页的左边缘做「遮挡裁切」：新页盖到哪里，旧页
-/// 就只画到哪里。两层用同一条曲线、同一个时钟，任何一帧都不会在同一位置同时出现两层字，
-/// 也不需要给页面铺实心底色，玻璃与流体背景照样可见。
-Widget _buildPageCoverTransition(
+/// v0.8.2「卡片式弹出页」：所有盖在当前页之上的页面（笔记、页面、任务详情、日历编辑、
+/// 设置及子页、备份与同步、回收站……）都是一张**不透明圆角卡片**，四周留边距，边距里
+/// 只露出流动背景（[BackdropCover]），**永远不露出下层界面的文字**。
+///
+/// 动画分两段，区间不重叠，进出完全对称（返回就是同一条时间轴倒放）：
+///   0.00–0.35  背景层淡入，把下层页面整个盖住（下层文字在这段里淡出）
+///   0.35–1.00  卡片淡入（0.35–0.65）、从下方 24px 上移并从 0.96 放大到 1（emphasizedDecelerate）
+/// 卡片出现时背景层已经完全不透明，所以任何一帧都不会有下层文字和卡片内容叠在一起。
+/// 返回：卡片先淡出缩小，背景层再淡出露出下层页面。
+const kCardBackdropEnd = 0.35;
+const kCardFadeEnd = 0.65;
+
+/// 卡片外边距：手机接近全屏但保留 8dp 边距和圆角；桌面 / 宽屏四周 24，内容最宽 960 居中（Notion peek）。
+EdgeInsets cardMarginFor(MediaQueryData mq) {
+  final w = mq.size.width;
+  if (w < 600) {
+    return EdgeInsets.fromLTRB(8, mq.padding.top + 8, 8, mq.padding.bottom + 8);
+  }
+  final side = ((w - 960) / 2).clamp(24.0, double.infinity);
+  return EdgeInsets.fromLTRB(side, mq.padding.top + 24, side, mq.padding.bottom + 24);
+}
+
+double cardRadiusFor(MediaQueryData mq) => mq.size.width < 600 ? 16 : 20;
+
+/// 卡片表面：完全不透明（alpha = 1），细描边 + 柔和投影表现高度。
+class CardSurface extends StatelessWidget {
+  final Widget child;
+  final double radius;
+  const CardSurface({super.key, required this.child, required this.radius});
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final surface = dark ? const Color(0xFF1C1C1E) : const Color(0xFFFFFFFF);
+    final r = BorderRadius.circular(radius);
+    return DecoratedBox(
+      key: const Key('cardSurface'),
+      decoration: BoxDecoration(
+        color: surface,
+        borderRadius: r,
+        border: Border.all(color: dark ? const Color(0x33FFFFFF) : const Color(0x1F000000)),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withValues(alpha: dark ? 0.45 : 0.16), blurRadius: 32, offset: const Offset(0, 12)),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: r,
+        // Material 而不是 ColoredBox：卡片里的 ListTile / InkWell 水波纹画在卡片表面上
+        child: Material(color: surface, child: child),
+      ),
+    );
+  }
+}
+
+Widget _buildCardTransition(
   BuildContext context,
   Animation<double> animation,
-  Animation<double> secondaryAnimation,
   Widget child, {
   required bool isRoot,
 }) {
-  final reduce = MediaQuery.disableAnimationsOf(context);
-  final glassOn = Glass.useShader && Glass.surfaceTranslucent;
-  final surface = Theme.of(context).colorScheme.surface;
-  final dark = Theme.of(context).brightness == Brightness.dark;
-
-  final page = RepaintBoundary(
-    child: glassOn ? child : ColoredBox(color: surface, child: child),
-  );
-
-  if (reduce) return page;
-
-  // 进入与返回严格对称：同一条曲线正放 / 倒放（返回用 emphasized，略快）。
-  final incoming = CurvedAnimation(
-    parent: animation,
-    curve: MotionCurves.emphasizedDecelerate,
-    reverseCurve: MotionCurves.emphasized,
-  );
-  // 被盖住的一层必须与上层「新页」使用完全相同的曲线，才能算出新页左边缘在哪里。
-  final covered = CurvedAnimation(
-    parent: secondaryAnimation,
-    curve: MotionCurves.emphasizedDecelerate,
-    reverseCurve: MotionCurves.emphasized,
-  );
-
-  // 新页：从尾侧整页滑入，不透明度始终为 1，裁切防止字画出边界。
-  Widget layer = page;
-  if (!isRoot) {
-    layer = AnimatedBuilder(
-      animation: incoming,
-      child: page,
-      builder: (context, child) {
-        final t = incoming.value.clamp(0.0, 1.0);
-        // 结构保持不变（不在 t==1 时拆掉裁切），否则子树会重建、输入状态丢失。
-        return ClipRect(
-          child: FractionalTranslation(
-            translation: Offset(1.0 - t, 0),
-            child: child,
-          ),
-        );
-      },
-    );
+  final popups = PopupCover.maybeFor(context);
+  Widget withPopupCover(Widget page) {
+    if (popups == null) return page;
+    // 对话框、底部弹层、菜单打开时，盖住本页（只露背景图），弹层卡片在它上面。
+    return Stack(fit: StackFit.passthrough, children: [
+      page,
+      Positioned.fill(
+        child: AnimatedBuilder(
+          animation: popups,
+          builder: (context, _) {
+            final v = popups.value;
+            if (v <= 0) return const SizedBox.shrink();
+            return IgnorePointer(child: Opacity(key: const Key('popupCover'), opacity: v, child: const BackdropCover()));
+          },
+        ),
+      ),
+    ]);
   }
 
-  // 旧页（含根路由主页）：向首侧视差 30%，并且只画到新页左边缘为止；边缘处一条柔和投影表达 z 轴层级。
-  return AnimatedBuilder(
-    animation: covered,
-    child: layer,
-    builder: (context, child) {
-      final s = covered.value.clamp(0.0, 1.0);
-      // 结构恒定：s==0 时位移 0、裁切全宽、投影透明，不改变子树（保持滚动位置与输入状态）。
-      return LayoutBuilder(
-        builder: (context, box) {
-          final w = box.maxWidth;
-          final parallax = -_kParallax * s * w;
-          // 新页左边缘（导航器坐标）= (1 - s)·w；旧页自身已左移 parallax。
-          final visible = ((1.0 - s) * w - parallax).clamp(0.0, w);
-          final shadow = s <= 0.0 ? 0.0 : (dark ? 0.34 : 0.14) * (s < 0.5 ? s * 2 : 1.0);
-          return Transform.translate(
-            offset: Offset(parallax, 0),
-            child: ClipRect(
-              clipper: _LeadingClip(visible),
-              child: Stack(
-                fit: StackFit.passthrough,
-                children: [
-                  child!,
-                  Positioned(
-                    top: 0,
-                    bottom: 0,
-                    left: visible - 18,
-                    width: 18,
-                    child: IgnorePointer(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              Colors.black.withValues(alpha: 0),
-                              Colors.black.withValues(alpha: shadow),
-                            ],
-                          ),
-                        ),
-                      ),
+  if (isRoot) return withPopupCover(child);
+
+  final mq = MediaQuery.of(context);
+  final margin = cardMarginFor(mq);
+  final radius = cardRadiusFor(mq);
+  final reduce = MediaQuery.disableAnimationsOf(context);
+
+  final cover = reduce
+      ? kAlwaysCompleteAnimation
+      : CurvedAnimation(
+          parent: animation,
+          curve: const Interval(0, kCardBackdropEnd, curve: Curves.easeOut),
+          reverseCurve: const Interval(0, kCardBackdropEnd, curve: Curves.easeIn),
+        );
+  final fade = reduce
+      ? kAlwaysCompleteAnimation
+      : CurvedAnimation(
+          parent: animation,
+          curve: const Interval(kCardBackdropEnd, kCardFadeEnd, curve: Curves.easeOut),
+          reverseCurve: const Interval(kCardBackdropEnd, kCardFadeEnd, curve: Curves.easeIn),
+        );
+  final move = reduce
+      ? kAlwaysCompleteAnimation
+      : CurvedAnimation(
+          parent: animation,
+          curve: const Interval(kCardBackdropEnd, 1, curve: Easing.emphasizedDecelerate),
+          reverseCurve: const Interval(kCardBackdropEnd, 1, curve: Easing.emphasizedAccelerate),
+        );
+
+  // 卡片内部的页面不再自己处理状态栏 / 刘海：卡片已经让开了。
+  final inner = MediaQuery(
+    data: mq.removePadding(removeTop: true, removeBottom: true, removeLeft: true, removeRight: true).copyWith(
+          size: Size(mq.size.width - margin.horizontal, mq.size.height - margin.vertical),
+        ),
+    child: child,
+  );
+
+  // 结构始终不变（不在动画结束时增删包装层），避免页面状态被重建。
+  return withPopupCover(Stack(
+    fit: StackFit.expand,
+    children: [
+      FadeTransition(opacity: cover, child: const BackdropCover(key: Key('cardBackdrop'))),
+      Padding(
+        padding: margin,
+        child: AnimatedBuilder(
+          animation: move,
+          builder: (context, card) => Transform.translate(
+            offset: Offset(0, 24 * (1 - move.value)),
+            child: Transform.scale(scale: 0.96 + 0.04 * move.value, child: card),
+          ),
+          child: FadeTransition(
+            opacity: fade,
+            child: RepaintBoundary(child: CardSurface(radius: radius, child: inner)),
+          ),
+        ),
+      ),
+    ],
+  ));
+}
+
+/// 弹层（对话框、底部弹层、菜单、日期选择器……）打开时，下层页面要被背景图盖住。
+/// 每个 Navigator 挂一个 [PopupCoverObserver]；它记下本 Navigator 上所有 [PopupRoute] 的动画，
+/// 本 Navigator 里的页面用 [PopupCover.value]（取最大值）画一层背景图。弹层的进入 / 退出
+/// 动画直接驱动这一层，所以遮盖与弹层同步、进出对称。
+class PopupCover extends ChangeNotifier implements ValueListenable<double> {
+  static final Expando<PopupCover> _byNavigator = Expando('PopupCover');
+  final List<Animation<double>> _anims = [];
+
+  static PopupCover? maybeFor(BuildContext context) {
+    final nav = Navigator.maybeOf(context);
+    return nav == null ? null : _byNavigator[nav];
+  }
+
+  @override
+  double get value {
+    var v = 0.0;
+    for (final a in _anims) {
+      final t = Curves.easeOut.transform(a.value.clamp(0.0, 1.0));
+      if (t > v) v = t;
+    }
+    return v;
+  }
+
+  void _add(Animation<double> a) {
+    if (_anims.contains(a)) return;
+    _anims.add(a);
+    a.addListener(notifyListeners);
+    void status(AnimationStatus s) {
+      if (s == AnimationStatus.dismissed) {
+        a.removeListener(notifyListeners);
+        a.removeStatusListener(status);
+        _anims.remove(a);
+        notifyListeners();
+      }
+    }
+
+    a.addStatusListener(status);
+    notifyListeners();
+  }
+}
+
+/// 底部弹层也是卡片：四周留 8dp、全圆角、不透明，挂在根 Navigator 上（下层整页被背景盖住）。
+/// 进入从底部滑入、退出滑回底部（Material 默认，成对）。
+Future<T?> showCardSheet<T>({
+  required BuildContext context,
+  required WidgetBuilder builder,
+  bool isScrollControlled = false,
+  bool showDragHandle = true,
+  BoxConstraints? constraints,
+}) {
+  return showModalBottomSheet<T>(
+    context: context,
+    useRootNavigator: true,
+    isScrollControlled: isScrollControlled,
+    backgroundColor: Colors.transparent,
+    elevation: 0,
+    showDragHandle: false,
+    constraints: constraints ?? const BoxConstraints(maxWidth: 560),
+    builder: (ctx) {
+      final mq = MediaQuery.of(ctx);
+      final dark = Theme.of(ctx).brightness == Brightness.dark;
+      return Padding(
+        key: const Key('cardSheet'),
+        padding: EdgeInsets.fromLTRB(8, 8, 8, 8 + mq.padding.bottom),
+        child: CardSurface(
+          radius: 16,
+          child: MediaQuery.removePadding(
+            context: ctx,
+            removeBottom: true,
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              if (showDragHandle)
+                Center(
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(vertical: 8),
+                    width: 36,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: dark ? const Color(0x66FFFFFF) : const Color(0x4D000000),
+                      borderRadius: BorderRadius.circular(3),
                     ),
                   ),
-                ],
-              ),
-            ),
-          );
-        },
+                ),
+              Flexible(child: builder(ctx)),
+            ]),
+          ),
+        ),
       );
     },
   );
 }
 
-/// 被覆盖页的视差比例（iOS push 惯例 30%）。
-const _kParallax = 0.30;
+class PopupCoverObserver extends NavigatorObserver {
+  final cover = PopupCover();
 
-class _LeadingClip extends CustomClipper<Rect> {
-  final double width;
-  const _LeadingClip(this.width);
   @override
-  Rect getClip(Size size) => Rect.fromLTWH(0, 0, width.clamp(0.0, size.width), size.height);
-  @override
-  bool shouldReclip(_LeadingClip old) => old.width != width;
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    final nav = navigator;
+    if (nav != null) PopupCover._byNavigator[nav] = cover;
+    if (route is PopupRoute && route.animation != null) cover._add(route.animation!);
+  }
 }
 
 /// 页内内容切换器（宽屏收件箱 ⇄ 页面等）：Material 3 Fade-through。
@@ -222,13 +347,7 @@ class OpaqueFadeTransitionsBuilder extends PageTransitionsBuilder {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    return _buildPageCoverTransition(
-      context,
-      animation,
-      secondaryAnimation,
-      child,
-      isRoot: route.isFirst,
-    );
+    return _buildCardTransition(context, animation, child, isRoot: route.isFirst);
   }
 }
 

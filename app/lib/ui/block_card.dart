@@ -1119,7 +1119,7 @@ Future<void> showBlockMenu(
   }
 
   final tt = Theme.of(context).textTheme;
-  await showModalBottomSheet(
+  await showCardSheet(
     context: context,
     isScrollControlled: true,
     constraints: const BoxConstraints(maxWidth: 520),
@@ -1812,7 +1812,7 @@ Future<void> showCreateMenu(BuildContext context, {String? parentId, Offset? anc
     return;
   }
 
-  final t = await showModalBottomSheet<BlockType>(
+  final t = await showCardSheet<BlockType>(
     context: context,
     constraints: const BoxConstraints(maxWidth: 520),
     builder: (c) => SafeArea(

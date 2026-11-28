@@ -3,6 +3,7 @@ import '../ui/ds.dart';
 import '../ui/glass.dart';
 import 'dart:async';
 import '../ui/tokens.dart';
+import '../ui/motion.dart';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -360,7 +361,7 @@ class _PageScreenState extends State<PageScreen> {
   Future<void> _pickCover(Block page) async {
     final dark = Theme.of(context).brightness == Brightness.dark;
     final current = coverToneKey(page.payload['cover']);
-    final v = await showModalBottomSheet<String>(
+    final v = await showCardSheet<String>(
       context: context,
       constraints: const BoxConstraints(maxWidth: 520),
       builder: (c) {

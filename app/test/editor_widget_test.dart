@@ -189,6 +189,9 @@ void main() {
 
     await tester.tap(find.text('设置'));
     await tester.pumpAndSettle();
+    // v0.8.2：设置是带边距的卡片，主题选择器可能在折叠线下方
+    await tester.ensureVisible(find.text('深色'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('深色'));
     await tester.pumpAndSettle();
     expect(Theme.of(tester.element(find.byKey(const Key('themeSelector')))).brightness, Brightness.dark);
