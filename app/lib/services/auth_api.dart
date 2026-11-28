@@ -132,6 +132,10 @@ class AuthApi {
     await _post(server, '/api/change-password', {'old_password': oldPw, 'new_password': newPw}, token: token);
   }
 
+  /// 把已上传的备份 zip（[fileId]）还原到当前登录账号。
+  Future<Map<String, dynamic>> restoreAccount(String server, String token, String fileId) =>
+      _post(server, '/api/restore', {'file_id': fileId}, token: token);
+
   Future<Map<String, dynamic>> _post(String server, String path, Map body, {String? token}) async {
     if (!wireSeal) return _postPlain(server, path, body, token: token);
     final http.Response res;
@@ -781,6 +785,16 @@ class AuthApi {
     return b.takeBytes();
   }
 
+  /// 从服务器下载当前账号的权威备份 zip（含回收站、附件、已读状态）。
+  Future<List<int>> downloadAccountBackup(String server, String token,
+      {void Function(int done, int total)? onProgress, bool Function()? isCanceled}) async {
+    final b = BytesBuilder(copy: false);
+    await downloadStream(server, token, '', (plain) async {
+      b.add(plain);
+    }, onProgress: onProgress, isCanceled: isCanceled, op: 'backup_export');
+    return b.takeBytes();
+  }
+
   /// 流式下载到 [add]。支持可选的 [offset]/[length] 断点续传，且内置 25s 卡顿检测。
   /// 进度按明文字节计。每个明文块交给 [add] 之后再读下一块，避免把整文件堆在内存里。
   Future<void> downloadStream(String server, String token, String fileId, Future<void> Function(List<int> plain) add,
@@ -789,6 +803,7 @@ class AuthApi {
       String? expectSha256,
       int offset = 0,
       int length = 0,
+      String op = 'get',
       void Function(int total, String serverSha, int serverOffset)? onHeader,
       void Function(void Function() abort)? onCancelReady}) async {
     if (!wireSeal) {
@@ -801,9 +816,9 @@ class AuthApi {
     }
     final pub = await WireSeal.serverPublic(server, pins: pins, client: client);
     final metaMap = <String, dynamic>{
-      'op': 'get',
-      'file_id': fileId,
+      'op': op,
       'token': token,
+      if (fileId.isNotEmpty) 'file_id': fileId,
       if (offset > 0) 'offset': offset,
       if (length > 0) 'length': length,
     };
