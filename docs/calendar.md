@@ -77,7 +77,7 @@
 日历数据自包自足。任务块（`kind=task` 或 `payload.is_task=true`）按任务载荷的 `start_at` / `due_at`（Unix 毫秒，按本地时区换算成日期）叠加到格子里；`all_day=false` 时显示时刻。仍兼容早期草案里的 `start_date` / `due_date` / `end_date` 字符串。日历只读，不改任务块：
 
 - 出现记录：`id`、`blockId`、`title`、`date`、`endDate`、`allDay`、`startTime`、`source`（`calendar` 或 `task`）、`role`、`color`、`pinned`。
-- 任务在日历上可点开展示摘要，编辑仍回任务页（任务功能合并后再接 `execute`）。
+- 点日历上的任务会打开任务编辑页（与任务仪表盘同一页面），返回后回到日历。
 - 任务不进入订阅汇总，也不占用日历的新建入口。
 
 v0.8.0 已合并两项功能，协议不变。

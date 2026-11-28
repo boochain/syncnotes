@@ -86,7 +86,10 @@ class CivilDate implements Comparable<CivilDate> {
 
   @override
   bool operator ==(Object other) =>
-      other is CivilDate && other.year == year && other.month == month && other.day == day;
+      other is CivilDate &&
+      other.year == year &&
+      other.month == month &&
+      other.day == day;
 
   @override
   int get hashCode => Object.hash(year, month, day);
@@ -550,7 +553,8 @@ CivilDate lastAnniversary(CivilDate base, CivilDate onOrBefore) {
 
 int ageOn(CivilDate birth, CivilDate on) {
   var age = on.year - birth.year;
-  if (on.month < birth.month || (on.month == birth.month && on.day < birth.day)) {
+  if (on.month < birth.month ||
+      (on.month == birth.month && on.day < birth.day)) {
     age--;
   }
   return age < 0 ? 0 : age;

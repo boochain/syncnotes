@@ -12,7 +12,10 @@ import 'package:syncnotes/services/auth_api.dart';
 import 'package:syncnotes/services/settings.dart';
 import 'package:syncnotes/sync/local_store.dart';
 import 'package:syncnotes/sync/sync_client.dart';
+import 'package:syncnotes/tasks/task_actions.dart';
+import 'package:syncnotes/tasks/task_models.dart';
 import 'package:syncnotes/ui/calendar_page.dart';
+import 'package:syncnotes/ui/task_editor_page.dart';
 import 'package:syncnotes/ui/theme.dart';
 
 import 'fake_channel.dart';
@@ -100,6 +103,28 @@ void main() {
       expect(find.textContaining('每月折合'), findsOneWidget);
     });
 
+    testWidgets('日历上的任务点开进入任务编辑页，返回回到日历', (tester) async {
+      final sync = await pumpPage(tester);
+      final due = DateTime.now();
+      saveTask(
+        sync,
+        null,
+        title: '交季度报告',
+        data: TaskData(dueAt: due.millisecondsSinceEpoch),
+      );
+      await tester.pumpAndSettle();
+      final tile = find.text('交季度报告');
+      expect(tile, findsWidgets);
+      await tester.tap(tile.last);
+      await tester.pumpAndSettle();
+      expect(find.byType(TaskEditorPage), findsOneWidget);
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.byType(TaskEditorPage), findsNothing);
+      expect(find.byKey(const Key('calendarPage')), findsOneWidget);
+    });
+
     testWidgets('倒数日卡片显示剩余天数，返回键先离开编辑页', (tester) async {
       final sync = await pumpPage(tester);
       final target = CivilDate.today().addDays(10);
@@ -131,6 +156,39 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('calendarEditor')), findsNothing);
       expect(find.byKey(const Key('calendarPage')), findsOneWidget);
+    });
+
+    testWidgets('矮屏月历六周都可见且格子不溢出', (tester) async {
+      final sync = await pumpPage(tester, size: const Size(360, 640));
+      final today = CivilDate.today();
+      sync.create(
+        kind: BlockKind.calendar,
+        title: '网飞',
+        payload: CalendarItem(
+          title: '网飞',
+          role: CalendarRole.subscription,
+          startDate: today,
+          billing: const Billing(cycle: BillingCycle.monthly, amount: 18),
+        ).toPayload(),
+      );
+      sync.create(
+        kind: BlockKind.calendar,
+        title: '出发',
+        payload: CalendarItem(
+          title: '出发',
+          role: CalendarRole.countdown,
+          startDate: today.addDays(10),
+        ).toPayload(),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      final last = startOfIsoWeek(startOfMonth(today)).addDays(41);
+      final finder = find.byKey(Key('calendarDay-${last.ymd}'));
+      expect(finder, findsOneWidget);
+      final rect = tester.getRect(finder);
+      expect(rect.height, greaterThan(16));
+      expect(rect.bottom, lessThanOrEqualTo(640.5));
     });
   });
 
