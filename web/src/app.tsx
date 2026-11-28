@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { changePassword, forgetServerPub, logout, regenerateRecoveryCode, type PinStore } from './api/http';
 import { FluidBackdrop, applyChrome } from './ui/glass';
+import { CardLayer, Popup } from './ui/presence';
+import { DialogHost, askConfirm, askText } from './ui/dialog';
 import { Icons, KindIcon } from './ui/icons';
 import { LoginView } from './views/Login';
 import { NoteEditor, cycleColor, toggleComplete } from './views/NoteEditor';
@@ -231,20 +233,22 @@ export function App() {
         )}
       </div>
       {toast && <div className="toast glass">{toast}</div>}
-      {recovery && (
-        // 恢复码只显示这一次：点遮罩不关闭，必须点「我已保存」，避免误触丢失（与 App 一致）。
-        <div className="login" role="dialog" aria-modal="true" aria-label="请保存恢复码" style={{ position: 'fixed', inset: 0, zIndex: 40, background: 'rgba(0,0,0,0.35)' }}>
-          <div className="login-card glass">
+      <DialogHost />
+      {/* 恢复码只显示这一次：点空白不关闭，必须点「我已保存」，避免误触丢失（与 App 一致）。
+          v0.8.2：对话框是不透明卡片，打开时下层界面整体淡出，只露流动背景。 */}
+      <Popup open={!!recovery} label="请保存恢复码">
+        <div className="login" role="dialog" aria-modal="true" aria-label="请保存恢复码" style={{ position: 'fixed', inset: 0, zIndex: 41, pointerEvents: 'none' }}>
+          <div className="login-card popup-card" style={{ pointerEvents: 'auto' }}>
             <h1>请保存恢复码</h1>
             <p className="lead">这是唯一一次完整显示。以后忘记密码时用它重置，笔记数据不会丢失。</p>
             <div className="recovery">{recovery}</div>
             <div className="stack" style={{ marginTop: 16 }}>
-              <button className="primary" onClick={() => { void navigator.clipboard.writeText(recovery); showToast('已复制恢复码'); }}>复制</button>
+              <button className="primary" onClick={() => { if (recovery) void navigator.clipboard.writeText(recovery); showToast('已复制恢复码'); }}>复制</button>
               <button className="ghost" onClick={() => setRecovery(null)}>我已保存</button>
             </div>
           </div>
         </div>
-      )}
+      </Popup>
       {/* tick is read so the tree refreshes with the engine */}
       <span hidden>{tick}</span>
     </div>
@@ -385,11 +389,20 @@ function Shell(props: {
 
   const noteBlock = route.name === 'note' && route.id ? sync.byId(route.id) ?? null : null;
   const pageBlock = route.name === 'page' ? sync.byId(route.id) : undefined;
+  const fabRef = useRef<HTMLButtonElement>(null);
+  // 新建菜单挂在 body 上，按「+」按钮的位置定位在它上方
+  const plusMenuPos = (): CSSProperties => {
+    const r = fabRef.current?.getBoundingClientRect();
+    if (!r) return { position: 'fixed', right: 16, bottom: 80 };
+    return { position: 'fixed', right: Math.max(8, window.innerWidth - r.right), bottom: window.innerHeight - r.top + 10, top: 'auto', left: 'auto' };
+  };
+  const [covered, setCoveredState] = useState(false);
+  const setCovered = useCallback((c: boolean) => setCoveredState(c), []);
   const overlay = route.name === 'note' || route.name === 'page' || route.name === 'trash' || route.name === 'transfers' || route.name === 'settings' || route.name === 'tasks' || route.name === 'calendar';
 
   return (
     <div
-      className={`shell ${wide ? '' : 'no-side'}`}
+      className={`shell ${wide ? '' : 'no-side'} ${covered ? 'covered' : ''}`}
       onDragOver={(e) => { e.preventDefault(); }}
       onDrop={(e) => { e.preventDefault(); if (e.dataTransfer.files.length) void uploadFiles(e.dataTransfer.files); }}
       onClick={() => { props.setPlusOpen(false); props.setCtx(null); }}
@@ -506,12 +519,13 @@ function Shell(props: {
         </div>
         <form className="composer glass" onSubmit={(e) => { e.preventDefault(); sendMessage(); }} onClick={(e) => e.stopPropagation()}>
           <input className="field" placeholder="写一条消息，回车发送" value={props.compose} onChange={(e) => props.setCompose(e.target.value)} />
-          <button className="fab" type="button" onClick={(e) => { e.stopPropagation(); props.setPlusOpen(!props.plusOpen); }} aria-label="新建"><Icons.plus /></button>
-          {props.plusOpen && (
-            <div className="menu glass">
+          <button ref={fabRef} className="fab" type="button" onClick={(e) => { e.stopPropagation(); props.setPlusOpen(!props.plusOpen); }} aria-label="新建"><Icons.plus /></button>
+        </form>
+        <Popup open={props.plusOpen} onClose={() => props.setPlusOpen(false)} label="新建">
+          <div className="menu popup-card" style={plusMenuPos()} onClick={(e) => e.stopPropagation()}>
               <button type="button" onClick={() => { props.setPlusOpen(false); setRoute({ name: 'note', parentId }); }}><Icons.note size={16} /> Markdown 笔记</button>
               <button type="button" onClick={() => { props.setPlusOpen(false); const p = sync.create({ kind: 'page', title: '无标题页面', parentId, viewedMode: settings.defaultViewedMode }); setRoute({ name: 'page', id: p.id }); }}><Icons.page size={16} /> 页面</button>
-              <button type="button" onClick={() => { props.setPlusOpen(false); const name = prompt('文件夹名称'); if (name) sync.create({ kind: 'folder', title: name.trim(), parentId, viewedMode: settings.defaultViewedMode, payload: { icon: 'folder' } }); }}><Icons.folder size={16} /> 文件夹</button>
+              <button type="button" onClick={() => { props.setPlusOpen(false); void askText('文件夹名称', { ok: '创建' }).then((name) => { if (name) sync.create({ kind: 'folder', title: name.trim(), parentId, viewedMode: settings.defaultViewedMode, payload: { icon: 'folder' } }); }); }}><Icons.folder size={16} /> 文件夹</button>
               <button type="button" onClick={() => {
                 props.setPlusOpen(false);
                 const input = document.createElement('input');
@@ -521,10 +535,8 @@ function Shell(props: {
                 input.click();
               }}><Icons.file size={16} /> 文件</button>
             </div>
-          )}
-        </form>
-        {overlay && (
-          <div style={{ position: 'absolute', inset: 0, zIndex: 5 }}>
+        </Popup>
+        <CardLayer open={overlay} onCover={setCovered}>
             {route.name === 'note' && (
               <NoteEditor sync={sync} block={noteBlock} parentId={route.parentId ?? parentId} onClose={goBack} />
             )}
@@ -554,9 +566,9 @@ function Shell(props: {
                 }}
               />
             )}
-          </div>
-        )}
+        </CardLayer>
       </main>
+      <Popup open={!!props.ctx} onClose={() => props.setCtx(null)} label="上下文菜单">
       {props.ctx && (
         <ContextMenu
           x={props.ctx.x}
@@ -568,6 +580,7 @@ function Shell(props: {
           onDownload={(b) => void downloadBlock(b)}
         />
       )}
+      </Popup>
     </div>
   );
 
@@ -735,7 +748,7 @@ function useWide() {
 function ContextMenu({ x, y, block, sync, onClose, onOpen, onDownload }: { x: number; y: number; block?: Block; sync: SyncEngine; onClose: () => void; onOpen: () => void; onDownload: (b: Block) => void }) {
   if (!block) return null;
   return (
-    <div className="ctx glass" style={{ left: Math.min(x, window.innerWidth - 220), top: Math.min(y, window.innerHeight - 240) }} onClick={(e) => e.stopPropagation()}>
+    <div className="ctx popup-card" style={{ left: Math.min(x, window.innerWidth - 220), top: Math.min(y, window.innerHeight - 240) }} onClick={(e) => e.stopPropagation()}>
       <button className="side-item" onClick={() => { onOpen(); onClose(); }}>打开</button>
       <button className="side-item" onClick={() => { cycleColor(sync, block); onClose(); }}>切换优先级</button>
       <button className="side-item" onClick={() => { if (isTaskBlock(block)) sync.update(block.id, { payload: toggledTaskPayload(block) }); else toggleComplete(sync, block); onClose(); }}>{isCompleted(block) ? '取消完成' : '标为已完成'}</button>
@@ -754,7 +767,7 @@ function TrashPage({ sync, onClose, onToast }: { sync: SyncEngine; onClose: () =
       <header className="page-head">
         <button className="icon-btn" onClick={onClose} aria-label="返回"><Icons.back /></button>
         <h2>回收站</h2>
-        <button className="ghost" onClick={() => { if (confirm('清空回收站？此操作不可恢复。')) { sync.emptyTrash(); onToast('已清空'); } }}>清空</button>
+        <button className="ghost" onClick={() => { void askConfirm('清空回收站？此操作不可恢复。', { danger: true, ok: '清空' }).then((ok) => { if (ok) { sync.emptyTrash(); onToast('已清空'); } }); }}>清空</button>
       </header>
       <div className="page-body">
         <p className="hint">默认保留 {sync.trashRetentionDays || '永久'}{sync.trashRetentionDays ? ' 天' : ''}。恢复后旧数据仍在。</p>
@@ -768,7 +781,7 @@ function TrashPage({ sync, onClose, onToast }: { sync: SyncEngine; onClose: () =
               <div className="hint">{kindLabel(b.kind)}{sync.trashChildCount(b.id) ? ` · ${sync.trashChildCount(b.id)} 个子项` : ''}</div>
             </div>
             <button className="pill" onClick={() => sync.restoreAll([b.id])}>恢复</button>
-            <button className="pill danger" onClick={() => { if (confirm('彻底删除？不可恢复。')) sync.purge([b.id]); }}>删除</button>
+            <button className="pill danger" onClick={() => { void askConfirm('彻底删除？不可恢复。', { danger: true, ok: '删除' }).then((ok) => { if (ok) sync.purge([b.id]); }); }}>删除</button>
           </div>
         ))}
       </div>

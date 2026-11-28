@@ -31,6 +31,10 @@
   --h-l: 36px;
   --h-xl: 44px;
   --h-xxl: 56px;
+  /* v0.8.2 卡片表面：不透明，任何时候都不透出下层文字 */
+  --card: #1c1c1e;
+  --card-line: rgba(255, 255, 255, 0.2);
+  --card-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
 }
 
 :root[data-theme='light'] {
@@ -49,6 +53,9 @@
   --success: #248a3d;
   --glass-tint: 255, 255, 255;
   --shadow: 0 18px 40px rgba(20, 30, 50, 0.12);
+  --card: #ffffff;
+  --card-line: rgba(0, 0, 0, 0.12);
+  --card-shadow: 0 12px 32px rgba(20, 30, 50, 0.18);
 }
 
 * { box-sizing: border-box; }
@@ -350,17 +357,64 @@ button { cursor: pointer; }
 
 .page {
   position: absolute;
-  inset: 8px;
-  border-radius: 24px;
+  /* 卡片：四周留边，宽屏内容区最大 960px 居中 */
+  inset: 16px max(16px, calc((100% - 960px) / 2));
+  border-radius: 20px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  animation: rise 280ms var(--ease);
 }
-@keyframes rise {
-  from { opacity: 0; transform: translateY(16px) scale(0.985); }
-  to { opacity: 1; transform: none; }
+
+/* ===== v0.8.2 卡片式弹层（与 App motion.dart 同一时间轴） =====
+ * 进入：0–140ms 下层界面淡出（只剩流动背景）→ 140–440ms 卡片淡入并上移 24px、0.96→1 放大。
+ * 退出：倒放，卡片 200ms 淡出下沉 → 下层 140ms 淡入。两段不重叠，任何一帧都不会叠字。 */
+.page, .page.glass, .popup-card, .popup-card.glass {
+  background: var(--card);
+  border: 1px solid var(--card-line);
+  box-shadow: var(--card-shadow);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
+.page.glass::after, .popup-card.glass::after, .toast.glass::after { display: none; }
+.toast.glass { background: var(--card); border: 1px solid var(--card-line); box-shadow: var(--card-shadow); backdrop-filter: none; -webkit-backdrop-filter: none; }
+.card-layer { position: absolute; inset: 0; z-index: 5; pointer-events: none; }
+.card-layer > * { pointer-events: auto; }
+.card-layer[data-state='in'] > .page { animation: card-in 300ms cubic-bezier(0.05, 0.7, 0.1, 1) 140ms both; }
+.card-layer[data-state='out'] > .page { animation: card-out 200ms cubic-bezier(0.3, 0, 0.8, 0.15) both; pointer-events: none; }
+@keyframes card-in {
+  0% { opacity: 0; transform: translateY(24px) scale(0.96); }
+  45% { opacity: 1; }
+  100% { opacity: 1; transform: none; }
+}
+@keyframes card-out {
+  0% { opacity: 1; transform: none; }
+  55% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(24px) scale(0.96); }
+}
+/* 下层：先淡出再出卡片；卡片退完再淡入（退出时 covered 在卡片动画结束后才移除） */
+.shell > .sidebar, .main > .topbar, .main > .toolbar, .main > .inbox, .main > .composer, .shell { transition: opacity 140ms ease-out; }
+.shell.covered > .sidebar, .shell.covered .main > .topbar, .shell.covered .main > .toolbar,
+.shell.covered .main > .inbox, .shell.covered .main > .composer { opacity: 0; pointer-events: none; }
+/* 卡片铺在整个窗口上（侧栏也淡出），四周只露流动背景 */
+.card-layer { position: fixed; }
+html.popup-open .shell, html.popup-open .login > .login-col { opacity: 0; }
+.popup-root { position: fixed; inset: 0; z-index: 40; }
+.popup-scrim { position: absolute; inset: 0; }
+.popup-root[data-state='out'] { pointer-events: none; }
+.popup-root[data-state='in'] .popup-card { animation: pop-in 220ms cubic-bezier(0.05, 0.7, 0.1, 1) 140ms both; }
+.popup-root[data-state='out'] .popup-card { animation: pop-out 160ms cubic-bezier(0.3, 0, 0.8, 0.15) both; }
+@keyframes pop-in { from { opacity: 0; transform: translateY(8px) scale(0.96); } to { opacity: 1; transform: none; } }
+@keyframes pop-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(8px) scale(0.96); } }
+.popup-root .ctx, .popup-root .menu { z-index: 1; }
+.dialog-wrap { position: absolute; inset: 0; display: grid; place-items: center; padding: 16px; pointer-events: none; }
+.dialog { pointer-events: auto; width: min(400px, 100%); border-radius: 20px; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.dialog h3 { margin: 0; font-size: 16px; font-weight: 600; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.primary.danger-fill { background: var(--danger); border-color: var(--danger); }
+@media (prefers-reduced-motion: reduce) {
+  .card-layer > .page, .popup-card { animation-duration: 1ms !important; animation-delay: 0ms !important; }
+}
+
 .page-head {
   display: flex;
   align-items: center;
@@ -523,7 +577,7 @@ input[type='range'] { width: 160px; accent-color: var(--accent); }
   .shell { grid-template-columns: 1fr; }
   .sidebar { display: none; }
   .editor-split { grid-template-columns: 1fr; }
-  .page { inset: 0; border-radius: 0; }
+  .page { inset: 8px; border-radius: 16px; }
 }
 
 .low-end .glass, .low-end .search, .low-end .glass-lite, .low-end .composer {
