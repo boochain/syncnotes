@@ -207,16 +207,16 @@ class _SyncNotesAppState extends State<SyncNotesApp> with WidgetsBindingObserver
   Widget build(BuildContext context) {
     return AppScope(
       services: _services,
-      child: ValueListenableBuilder<String>(
-        valueListenable: Glass.preset,
-        builder: (context, preset, _) => ValueListenableBuilder<ThemeMode>(
+      child: ListenableBuilder(
+        listenable: Listenable.merge([Glass.preset, Glass.enabled, Glass.bgImage]),
+        builder: (context, _) => ValueListenableBuilder<ThemeMode>(
         valueListenable: _themeMode,
         builder: (context, mode, _) => MaterialApp(
         themeMode: mode,
         title: 'SyncNotes',
         debugShowCheckedModeBanner: false,
-        theme: buildAppTheme(Brightness.light, preset: preset),
-        darkTheme: buildAppTheme(Brightness.dark, preset: preset),
+        theme: buildAppTheme(Brightness.light, preset: Glass.preset.value, glass: Glass.surfaceTranslucent),
+        darkTheme: buildAppTheme(Brightness.dark, preset: Glass.preset.value, glass: Glass.surfaceTranslucent),
         locale: const Locale('zh', 'CN'),
         supportedLocales: const [Locale('zh', 'CN'), Locale('en')],
         localizationsDelegates: GlobalMaterialLocalizations.delegates,

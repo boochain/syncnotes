@@ -7,7 +7,7 @@ import 'package:syncnotes/ui/theme.dart';
 import 'package:syncnotes/ui/tokens.dart';
 
 void main() {
-  testWidgets('page switch drops the previous surface', (tester) async {
+  testWidgets('page switch fades the old view out before the new one fades in', (tester) async {
     final page = ValueNotifier(0);
     await tester.pumpWidget(MaterialApp(
       home: ValueListenableBuilder<int>(
@@ -17,10 +17,22 @@ void main() {
     ));
     expect(find.text('0'), findsOneWidget);
     page.value = 1;
-    await tester.pump();
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    double op(String t) => tester
+        .widgetList<Opacity>(find.ancestor(of: find.text(t), matching: find.byType(Opacity)))
+        .fold(1.0, (a, o) => a * o.opacity);
+    // 每一帧：两层不能同时可见（不叠字），旧层有退出动画（不是瞬间消失）。
+    var sawOldFading = false;
+    for (var ms = 0; ms <= 300; ms += 16) {
+      await tester.pump(const Duration(milliseconds: 16));
+      final a = find.text('0').evaluate().isEmpty ? 0.0 : op('0');
+      final b = op('1');
+      if (a > 0 && a < 1) sawOldFading = true;
+      expect(a > 0.01 && b > 0.01, isFalse, reason: 't=${ms}ms old=$a new=$b');
+    }
+    expect(sawOldFading, isTrue);
     await tester.pumpAndSettle();
+    expect(find.text('0'), findsNothing);
+    expect(op('1'), 1.0);
   });
 
   test('glass theme keeps the page opaque', () {

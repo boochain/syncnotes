@@ -8,6 +8,7 @@ import '../calendar/lunar.dart';
 import 'calendar_editor_page.dart';
 import 'task_editor_page.dart';
 import 'ds.dart';
+import 'tokens.dart';
 import 'glass.dart';
 import 'motion.dart';
 
@@ -163,8 +164,8 @@ class _CalendarPageState extends State<CalendarPage> {
   ];
 
   String _titleForView() => switch (_view) {
-    CalendarView.month ||
-    CalendarView.week => '${_cursor.year}年${_cursor.month}月',
+    // 月 / 周视图下方已有「‹ 2026年11月 ›」导航，标题栏不再重复同一行字（信息层级）。
+    CalendarView.month || CalendarView.week => '日历',
     CalendarView.year => '${_cursor.year}年',
     CalendarView.agenda => '议程',
     CalendarView.subscriptions => '订阅',
@@ -360,18 +361,19 @@ class _CalendarPageState extends State<CalendarPage> {
     final onDay = all.where((o) => o.covers(day)).toList();
     final lunar = _showLunar ? solarToLunar(day.dateTime) : null;
     final dark = Theme.of(context).brightness == Brightness.dark;
+    // HIG 日历：今天 = 强调色实心圆；选中的其他日期 = 正文色实心圆；不再叠一层灰色方块。
+    final circle = isToday ? c.accent : (selected ? c.text : null);
     return InkWell(
       key: Key('calendarDay-${day.ymd}'),
+      borderRadius: BorderRadius.circular(AppRadius.m),
       onTap: () => setState(() {
         _selected = day;
         _cursor = day;
       }),
       onLongPress: () => _add(date: day),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: selected ? c.selected : Colors.transparent,
-          borderRadius: BorderRadius.circular(AppRadius.s),
-        ),
+      child: Semantics(
+        selected: selected,
+        label: '${day.month}月${day.day}日${isToday ? '，今天' : ''}',
         child: Padding(
           padding: const EdgeInsets.only(top: 2),
           child: FittedBox(
@@ -380,18 +382,21 @@ class _CalendarPageState extends State<CalendarPage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Container(
-                  width: 24,
-                  height: 24,
+                AnimatedContainer(
+                  duration: Motion.short3,
+                  curve: MotionCurves.standard,
+                  width: 28,
+                  height: 28,
                   alignment: Alignment.center,
-                  decoration: isToday
-                      ? BoxDecoration(color: c.accent, shape: BoxShape.circle)
-                      : null,
+                  decoration: BoxDecoration(
+                    color: circle ?? Colors.transparent,
+                    shape: BoxShape.circle,
+                  ),
                   child: Text(
                     '${day.day}',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: isToday
-                          ? Colors.white
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: circle != null
+                          ? (isToday ? Colors.white : c.bg.withValues(alpha: 1))
                           : (inMonth ? c.text : c.text3),
                       fontWeight: isToday || selected
                           ? FontWeight.w600
@@ -405,9 +410,9 @@ class _CalendarPageState extends State<CalendarPage> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      fontSize: 9,
-                      color: c.text3,
-                      height: 1.1,
+                      fontSize: 10,
+                      color: inMonth ? c.text2 : c.text3,
+                      height: 1.15,
                     ),
                   ),
                 if (onDay.isNotEmpty)

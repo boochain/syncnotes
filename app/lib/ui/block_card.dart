@@ -909,6 +909,8 @@ class _BlockCardState extends State<BlockCard> {
         ),
       ),
       onDismissed: (_) {
+        // 左滑已经播过滑出 + 收起动画，列表不要再播一次退出。
+        ExitTracker.skipNext(block.id);
         HapticFeedback.mediumImpact();
         _moveToTrash(context);
       },
@@ -1612,6 +1614,7 @@ class _BlockListState extends State<BlockList> {
   static var _ready = false;
 
   bool _showCompleted = true;
+  final _exits = ExitTracker();
 
   @override
   Widget build(BuildContext context) {
@@ -1685,17 +1688,31 @@ class _BlockListState extends State<BlockList> {
             return _FadeIn(key: ValueKey('enter-${b.id}'), child: card);
           }
 
-          final rows = <Widget>[
-            for (final b in activeItems) buildRow(b),
+          final keyed = <(String, Widget)>[
+            for (final b in activeItems) (b.id, buildRow(b)),
             if (completedItems.isNotEmpty) ...[
-              _CompletedSectionHeader(
-                count: completedItems.length,
-                expanded: _showCompleted,
-                onToggle: () => setState(() => _showCompleted = !_showCompleted),
+              (
+                '_completedHeader',
+                _CompletedSectionHeader(
+                  count: completedItems.length,
+                  expanded: _showCompleted,
+                  onToggle: () => setState(() => _showCompleted = !_showCompleted),
+                ),
               ),
               if (_showCompleted)
-                for (final b in completedItems) buildRow(b),
+                for (final b in completedItems) (b.id, buildRow(b)),
             ],
+          ];
+          // 删除 / 移入回收站 / 移到别处的行：淡出并收起高度后再拿掉（与进入动画对称）。
+          final rows = [
+            for (final r in _exits.merge(
+              keyed,
+              context: '$kindKey|${widget.filter}|${widget.parentId}|$_showCompleted',
+              onSettled: () {
+                if (mounted) setState(() {});
+              },
+            ))
+              KeyedSubtree(key: ValueKey('row-${r.$1}'), child: r.$2),
           ];
 
           content = ListView.builder(
