@@ -38,11 +38,16 @@ class AppShell extends StatefulWidget {
   State<AppShell> createState() => AppShellState();
 }
 
-class AppShellState extends State<AppShell> implements PageHost {
+class AppShellState extends State<AppShell> with SingleTickerProviderStateMixin implements PageHost {
   String? _page; // null = 收件箱（宽屏）
   final _scaffold = GlobalKey<ScaffoldState>();
   final _navKey = GlobalKey<NavigatorState>();
   final _popupObserver = PopupCoverObserver();
+  // v0.8.2：窄屏抽屉也是卡片；打开时下层页面模糊并被背景图盖住（与弹层同一套 CoverLayer）
+  late final AnimationController _drawerCover = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 140),
+  );
   bool _wide = false;
   bool _sidebarCollapsed = false;
   SyncClient? _syncForReminders;
@@ -115,6 +120,7 @@ class AppShellState extends State<AppShell> implements PageHost {
 
   @override
   void dispose() {
+    _drawerCover.dispose();
     _syncForReminders?.removeListener(_onCalendarReminders);
     _reminderTick?.cancel();
     _rescheduleDebounce?.cancel();
@@ -362,24 +368,27 @@ class AppShellState extends State<AppShell> implements PageHost {
                   backgroundColor: glassOn ? Colors.transparent : pal.bg,
                   // 禁用 Flutter 默认的 20dp 边缘拖出抽屉，彻底避免与 Android 系统左右边缘返回手势冲突
                   drawerEnableOpenDragGesture: false,
+                  drawerScrimColor: Colors.transparent,
+                  onDrawerChanged: (open) => open ? _drawerCover.forward() : _drawerCover.reverse(),
                   drawer: _wide
                       ? null
                       : Drawer(
-                          backgroundColor: glassOn ? Colors.transparent : pal.sidebar,
-                          elevation: glassOn ? 0 : 16,
-                          shape: const RoundedRectangleBorder(
-                            borderRadius: BorderRadius.horizontal(right: Radius.circular(AppRadius.xl)),
-                          ),
-                          child: ClipRRect(
-                            borderRadius: const BorderRadius.horizontal(right: Radius.circular(AppRadius.xl)),
-                            child: Frosted(
-                              color: pal.sidebar,
-                              border: Border(right: BorderSide(color: pal.separator)),
-                              child: sidebar,
+                          key: const Key('drawerCard'),
+                          backgroundColor: Colors.transparent,
+                          elevation: 0,
+                          shadowColor: Colors.transparent,
+                          shape: const RoundedRectangleBorder(),
+                          width: (MediaQuery.sizeOf(context).width - 48).clamp(240.0, 320.0),
+                          child: SafeArea(
+                            right: false,
+                            child: Padding(
+                              padding: const EdgeInsets.all(8),
+                              child: CardSurface(radius: 16, child: sidebar),
                             ),
                           ),
                         ),
-                  body: Column(children: [
+                  body: Stack(fit: StackFit.expand, children: [
+                    Column(children: [
                     Expanded(
                       child: showSidebar
                           ? Row(children: [
@@ -410,6 +419,17 @@ class AppShellState extends State<AppShell> implements PageHost {
                               : narrowBody),
                     ),
                     TransferStrip(onOpen: _transfers),
+                  ]),
+                    // 抽屉打开时盖住正文（只露背景）；抽屉画在 body 之上，不受影响
+                    Positioned.fill(
+                      child: AnimatedBuilder(
+                        animation: _drawerCover,
+                        builder: (context, _) {
+                          final t = Curves.easeOut.transform(_drawerCover.value);
+                          return t <= 0 ? const SizedBox.shrink() : CoverLayer(t: t, coverKey: const Key('drawerCover'));
+                        },
+                      ),
+                    ),
                   ]),
                 );
                 return GlassBackdrop(child: shell);
