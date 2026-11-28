@@ -99,6 +99,16 @@ ThemeData buildAppTheme(Brightness b, {DesignLanguage? language, String preset =
     focusColor: c.accent.withValues(alpha: 0.12),
     cupertinoOverrideTheme: CupertinoThemeData(primaryColor: c.accent, brightness: b),
     iconTheme: IconThemeData(color: c.text2, size: Sizes.iconSm),
+    // 主操作按钮：实色强调色 + 白色图标（M3 FAB / HIG 主按钮），不随玻璃变透明。
+    floatingActionButtonTheme: FloatingActionButtonThemeData(
+      backgroundColor: c.accent,
+      foregroundColor: Colors.white,
+      elevation: 3,
+      focusElevation: 4,
+      hoverElevation: 4,
+      highlightElevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    ),
     // v0.8.1：默认返回 / 关闭 / 菜单按钮统一用应用自己的 Cupertino 图标集。
     // 之前沿用 Material 字体图标，在 Linux/Windows 上渲染成一个像「楼房」的错字形，
     // 用户看不出那是返回键（导航层级断掉）。HIG：返回用尾部开口的 chevron。

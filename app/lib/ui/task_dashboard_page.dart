@@ -8,6 +8,7 @@ import '../tasks/task_models.dart';
 import '../tasks/task_queries.dart';
 import 'ds.dart';
 import 'glass.dart';
+import 'home_page.dart' show FilterTab;
 import 'task_editor_page.dart';
 import 'task_widgets.dart';
 
@@ -37,7 +38,7 @@ class _TaskDashboardPageState extends State<TaskDashboardPage> {
     target ??= saveTask(AppScope.of(context).sync, null, title: '未命名任务', data: const TaskData(), parentId: parentId);
     if (target == null || !mounted) return;
     await Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => TaskEditorPage(blockId: target!.id, parentId: parentId ?? target.parentId),
+      builder: (_) => TaskEditorPage(blockId: target!.id, parentId: parentId ?? target.parentId, discardIfEmpty: block == null),
     ));
   }
 
@@ -121,23 +122,25 @@ class _TaskDashboardPageState extends State<TaskDashboardPage> {
                 child: ListView(
                   key: const Key('taskViewRow'),
                   scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: Gap.l),
+                  // 与首页同一个 FilterTab（胶囊、同高同色），不再用另一套描边 Chip。
+                  padding: const EdgeInsets.symmetric(horizontal: Gap.l, vertical: (Sizes.bar - Sizes.compact) / 2),
                   children: [
                     for (final v in TaskSmartView.values)
                       Padding(
-                        padding: const EdgeInsets.only(right: Gap.s, top: Gap.s, bottom: Gap.s),
-                        child: FilterChip(
+                        padding: const EdgeInsets.only(right: Gap.xs),
+                        child: FilterTab(
                           key: Key('taskView-${v.name}'),
-                          label: Text(taskSmartViewLabel(v)),
+                          label: taskSmartViewLabel(v),
                           selected: _view == v,
-                          visualDensity: VisualDensity.compact,
-                          onSelected: (_) => setState(() => _view = v),
+                          onTap: () => setState(() => _view = v),
                         ),
                       ),
                   ],
                 ),
               ),
-              if (_view == TaskSmartView.overview) _Overview(stats: stats, onTap: (v) => setState(() => _view = v)),
+              // 一条任务都没有时只显示空状态，不再摆一排全是 0 的统计卡（信息层级）。
+              if (_view == TaskSmartView.overview && s.sync.blocks.any((b) => isTaskBlock(b) && !b.deleted && b.deletedAt == null))
+                _Overview(stats: stats, onTap: (v) => setState(() => _view = v)),
               Expanded(
                 child: items.isEmpty
                     ? EmptyTasks(query: _query, onCreate: () => _open(null))
@@ -258,7 +261,8 @@ class _StatCard extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text('$value', style: tt.titleMedium?.copyWith(color: color, fontWeight: FontWeight.w600, height: 1.1)),
+                // 0 用中性色；只有真的有逾期 / 风险时才用语义色提醒，避免满屏彩色数字。
+                Text('$value', style: tt.titleMedium?.copyWith(color: value == 0 ? c.text3 : color, fontWeight: FontWeight.w600, height: 1.1)),
                 const SizedBox(height: 2),
                 Text(label, style: tt.bodySmall?.copyWith(color: c.text2, fontSize: 11)),
               ],

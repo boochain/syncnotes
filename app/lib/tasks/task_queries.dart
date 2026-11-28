@@ -44,7 +44,7 @@ class TaskDashboardStats {
 
 TaskDashboardStats dashboardStats(SyncClient sync, {DateTime? now}) {
   final t = now ?? DateTime.now();
-  final weekStart = DateTime(t.year, t.month, t.day).subtract(Duration(days: t.weekday - 1));
+  final weekStart = DateTime(t.year, t.month, t.day - (t.weekday - 1));
   final byId = taskIndexOf(sync);
   final roots = rootTasksOf(sync);
   var overdue = 0, today = 0, inProgress = 0, atRisk = 0, completedThisWeek = 0, active = 0, milestones = 0;

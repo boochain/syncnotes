@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../app_scope.dart';
 import '../models/block.dart';
+import '../sync/sync_client.dart';
 import '../tasks/task_actions.dart';
 import '../tasks/task_models.dart';
 import '../tasks/task_queries.dart';
@@ -14,7 +15,10 @@ import 'task_widgets.dart';
 class TaskEditorPage extends StatefulWidget {
   final String? blockId;
   final String? parentId;
-  const TaskEditorPage({super.key, this.blockId, this.parentId});
+
+  /// 刚为这次编辑新建的任务：什么都没填就返回时直接丢弃，不同步一条空任务。
+  final bool discardIfEmpty;
+  const TaskEditorPage({super.key, this.blockId, this.parentId, this.discardIfEmpty = false});
 
   @override
   State<TaskEditorPage> createState() => _TaskEditorPageState();
@@ -39,6 +43,7 @@ class _TaskEditorPageState extends State<TaskEditorPage> {
     if (_ready) return;
     _ready = true;
     final sync = AppScope.of(context).sync;
+    _sync = sync;
     final existing = widget.blockId == null ? null : sync.byId(widget.blockId!);
     if (existing != null) {
       _id = existing.id;
@@ -62,8 +67,37 @@ class _TaskEditorPageState extends State<TaskEditorPage> {
     });
   }
 
+  SyncClient? _sync;
+
+  /// 新建后什么都没填就返回：不要在所有设备上留下一条「未命名任务」（Things / Todoist 同样会丢弃空草稿）。
+  static bool isPristineTask(Block b) {
+    if (b.title != '未命名任务' && b.title.trim().isNotEmpty) return false;
+    final d = taskDataOf(b);
+    return d.items.isEmpty &&
+        d.startAt == null &&
+        d.dueAt == null &&
+        d.notes.trim().isEmpty &&
+        d.status == TaskStatus.todo &&
+        d.priority == TaskPriority.none &&
+        !d.flagged &&
+        !d.milestone;
+  }
+
   @override
   void dispose() {
+    final id = _id, sync = _sync;
+    if (widget.discardIfEmpty && id != null && sync != null && _title.text.trim().isEmpty) {
+      final b = sync.byId(id);
+      final hasChildren = sync.blocks.any((x) => x.parentId == id && !x.deleted);
+      if (b != null && !b.deleted && !hasChildren && isPristineTask(b)) {
+        // dispose 期间不能通知监听者（会在卸载中 setState），等这一帧结束再删。
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          final latest = sync.byId(id);
+          if (latest != null && !latest.deleted && isPristineTask(latest)) sync.purge([id]);
+        });
+        WidgetsBinding.instance.scheduleFrame();
+      }
+    }
     _title.dispose();
     _notes.dispose();
     super.dispose();

@@ -54,7 +54,8 @@ void main() {
     await openTasks(tester);
     expect(find.byKey(const Key('taskDashboard')), findsOneWidget);
     expect(find.text('还没有任务'), findsOneWidget);
-    expect(find.byKey(const Key('taskOverviewRing')), findsOneWidget);
+    // v0.8.1：没有任何任务时只显示空状态，不显示全 0 的概览
+    expect(find.byKey(const Key('taskOverviewRing')), findsNothing);
 
     await tester.tap(find.byKey(const Key('newTaskButton')));
     await tester.pumpAndSettle();
@@ -99,5 +100,18 @@ void main() {
     await tester.tap(find.byKey(Key('taskComplete-${block.id}')));
     await tester.pumpAndSettle();
     expect(taskDataOf(sync.byId(block.id)!).status, TaskStatus.done);
+  });
+
+  testWidgets('v0.8.1: new task left empty is discarded on back (no junk 未命名任务 synced)', (tester) async {
+    await pumpApp(tester);
+    await openTasks(tester);
+    await tester.tap(find.byKey(const Key('newTaskButton')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('taskEditor')), findsOneWidget);
+    await back(tester);
+    expect(find.byKey(const Key('taskDashboard')), findsOneWidget);
+    expect(find.text('还没有任务'), findsOneWidget);
+    final sync = AppScope.of(tester.element(find.byKey(const Key('taskDashboard')))).sync;
+    expect(sync.blocks.where((b) => isTaskBlock(b) && !b.deleted), isEmpty);
   });
 }

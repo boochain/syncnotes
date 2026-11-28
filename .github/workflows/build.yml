@@ -65,6 +65,11 @@ jobs:
         env:
           SYNCNOTES_SERVER_BIN: ${{ github.workspace }}/bin/syncnotes-server
         run: flutter test
+      - name: Test date math under a DST timezone
+        working-directory: app
+        env:
+          TZ: America/New_York
+        run: flutter test test/civil_date_dst_test.dart test/calendar_test.dart
 
 
   web-test:

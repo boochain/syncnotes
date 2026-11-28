@@ -55,8 +55,11 @@ class CivilDate implements Comparable<CivilDate> {
   /// 1 = 周一 … 7 = 周日（与 [DateTime.weekday] 相同）。
   int get weekday => dateTime.weekday;
 
-  CivilDate addDays(int n) =>
-      CivilDate.fromDateTime(dateTime.add(Duration(days: n)));
+  /// 用 UTC 做日期算术：本地午夜 + 24h 在夏令时切换日会落回同一天 / 跳过一天。
+  CivilDate addDays(int n) {
+    final u = DateTime.utc(year, month, day + n);
+    return CivilDate(u.year, u.month, u.day);
+  }
 
   /// 按日历月加减；没有那一天时落到该月最后一天（1 月 31 日 + 1 个月 = 2 月 28/29 日）。
   CivilDate addMonths(int n) {
@@ -69,8 +72,9 @@ class CivilDate implements Comparable<CivilDate> {
 
   CivilDate addYears(int n) => addMonths(n * 12);
 
-  int differenceInDays(CivilDate other) =>
-      other.dateTime.difference(dateTime).inDays;
+  int differenceInDays(CivilDate other) => DateTime.utc(other.year, other.month, other.day)
+      .difference(DateTime.utc(year, month, day))
+      .inDays;
 
   bool isBefore(CivilDate o) => compareTo(o) < 0;
   bool isAfter(CivilDate o) => compareTo(o) > 0;
@@ -964,10 +968,10 @@ List<ReminderInstant> reminderSchedule(
         when = DateTime(
           o.date.year,
           o.date.month,
-          o.date.day,
+          o.date.day - offset, // 按日历日减，跨夏令时也保持同一钟点
           hm.$1,
           hm.$2,
-        ).subtract(Duration(days: offset));
+        );
       }
       // 刚过点的提醒也保留，方便应用回到前台时补发。
       if (when.isBefore(now.subtract(const Duration(hours: 2)))) continue;
