@@ -132,6 +132,39 @@ void main() {
       expect(find.byKey(const Key('calendarEditor')), findsNothing);
       expect(find.byKey(const Key('calendarPage')), findsOneWidget);
     });
+
+    testWidgets('矮屏月历六周都可见且格子不溢出', (tester) async {
+      final sync = await pumpPage(tester, size: const Size(360, 640));
+      final today = CivilDate.today();
+      sync.create(
+        kind: BlockKind.calendar,
+        title: '网飞',
+        payload: CalendarItem(
+          title: '网飞',
+          role: CalendarRole.subscription,
+          startDate: today,
+          billing: const Billing(cycle: BillingCycle.monthly, amount: 18),
+        ).toPayload(),
+      );
+      sync.create(
+        kind: BlockKind.calendar,
+        title: '出发',
+        payload: CalendarItem(
+          title: '出发',
+          role: CalendarRole.countdown,
+          startDate: today.addDays(10),
+        ).toPayload(),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      final last = startOfIsoWeek(startOfMonth(today)).addDays(41);
+      final finder = find.byKey(Key('calendarDay-${last.ymd}'));
+      expect(finder, findsOneWidget);
+      final rect = tester.getRect(finder);
+      expect(rect.height, greaterThan(16));
+      expect(rect.bottom, lessThanOrEqualTo(640.5));
+    });
   });
 
   group('侧边栏入口与系统返回', () {

@@ -283,14 +283,21 @@ class _CalendarPageState extends State<CalendarPage> {
           flex: 5,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: Gap.s),
-            child: GridView.builder(
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 7,
-                childAspectRatio: 0.85,
-              ),
-              itemCount: 42,
-              itemBuilder: (ctx, i) => _dayCell(days[i], today, first, occ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final cellW = constraints.maxWidth / 7;
+                final cellH = constraints.maxHeight / 6;
+                final ratio = cellW > 0 && cellH > 0 ? cellW / cellH : 0.85;
+                return GridView.builder(
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 7,
+                    childAspectRatio: ratio,
+                  ),
+                  itemCount: 42,
+                  itemBuilder: (ctx, i) => _dayCell(days[i], today, first, occ),
+                );
+              },
             ),
           ),
         ),
@@ -356,69 +363,74 @@ class _CalendarPageState extends State<CalendarPage> {
         ),
         child: Padding(
           padding: const EdgeInsets.only(top: 2),
-          child: Column(
-            children: [
-              Container(
-                width: 24,
-                height: 24,
-                alignment: Alignment.center,
-                decoration: isToday
-                    ? BoxDecoration(color: c.accent, shape: BoxShape.circle)
-                    : null,
-                child: Text(
-                  '${day.day}',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: isToday
-                        ? Colors.white
-                        : (inMonth ? c.text : c.text3),
-                    fontWeight: isToday || selected
-                        ? FontWeight.w600
-                        : FontWeight.w400,
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.topCenter,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 24,
+                  height: 24,
+                  alignment: Alignment.center,
+                  decoration: isToday
+                      ? BoxDecoration(color: c.accent, shape: BoxShape.circle)
+                      : null,
+                  child: Text(
+                    '${day.day}',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: isToday
+                          ? Colors.white
+                          : (inMonth ? c.text : c.text3),
+                      fontWeight: isToday || selected
+                          ? FontWeight.w600
+                          : FontWeight.w400,
+                    ),
                   ),
                 ),
-              ),
-              if (lunar != null)
-                Text(
-                  lunar.shortLabel,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    fontSize: 9,
-                    color: c.text3,
-                    height: 1.1,
+                if (lunar != null)
+                  Text(
+                    lunar.shortLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontSize: 9,
+                      color: c.text3,
+                      height: 1.1,
+                    ),
                   ),
-                ),
-              if (onDay.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 1),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      for (final o in onDay.take(3))
-                        Container(
-                          width: o.pinned ? 6 : 5,
-                          height: o.pinned ? 6 : 5,
-                          margin: const EdgeInsets.symmetric(horizontal: 0.5),
-                          decoration: BoxDecoration(
-                            shape: o.pinned
-                                ? BoxShape.rectangle
-                                : BoxShape.circle,
-                            borderRadius: o.pinned
-                                ? BorderRadius.circular(1)
-                                : null,
-                            color: calendarTint(o.color, dark: dark),
+                if (onDay.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 1),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        for (final o in onDay.take(3))
+                          Container(
+                            width: o.pinned ? 6 : 5,
+                            height: o.pinned ? 6 : 5,
+                            margin: const EdgeInsets.symmetric(horizontal: 0.5),
+                            decoration: BoxDecoration(
+                              shape: o.pinned
+                                  ? BoxShape.rectangle
+                                  : BoxShape.circle,
+                              borderRadius: o.pinned
+                                  ? BorderRadius.circular(1)
+                                  : null,
+                              color: calendarTint(o.color, dark: dark),
+                            ),
                           ),
-                        ),
-                      if (onDay.length > 3)
-                        Text(
-                          '+${onDay.length - 3}',
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(fontSize: 8, color: c.text3),
-                        ),
-                    ],
+                        if (onDay.length > 3)
+                          Text(
+                            '+${onDay.length - 3}',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(fontSize: 8, color: c.text3),
+                          ),
+                      ],
+                    ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
