@@ -1,3 +1,5 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
@@ -14,6 +16,8 @@ import 'tokens.dart';
 ///   0.00–0.35  背景层淡入，把下层页面整个盖住（下层文字在这段里淡出）
 ///   0.35–1.00  卡片淡入（0.35–0.65）、从下方 24px 上移并从 0.96 放大到 1（emphasizedDecelerate）
 /// 卡片出现时背景层已经完全不透明，所以任何一帧都不会有下层文字和卡片内容叠在一起。
+/// 背景层淡入的同时，下层页面从第一帧起就被高斯模糊到不可读（[CoverLayer]），
+/// 所以淡出过程中的任何一帧也读不到下层文字。
 /// 返回：卡片先淡出缩小，背景层再淡出露出下层页面。
 const kCardBackdropEnd = 0.35;
 const kCardFadeEnd = 0.65;
@@ -60,6 +64,32 @@ class CardSurface extends StatelessWidget {
   }
 }
 
+/// 盖住下层页面的一层：t>0 的第一帧起就把下层模糊到不可读（σ=20，不过渡），
+/// 再用不透明的流动背景淡入盖住。t=0 / t=1 时不做模糊（静止时零开销）。
+class CoverLayer extends StatelessWidget {
+  final double t;
+  final Key? coverKey;
+  const CoverLayer({super.key, required this.t, this.coverKey});
+
+  static double sigmaFor(double t) => t <= 0 || t >= 1 ? 0 : 20;
+
+  @override
+  Widget build(BuildContext context) {
+    final sigma = sigmaFor(t);
+    return IgnorePointer(
+      child: Stack(fit: StackFit.expand, children: [
+        BackdropFilter(
+          key: const Key('coverBlur'),
+          enabled: sigma > 0,
+          filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma, tileMode: TileMode.clamp),
+          child: const SizedBox.expand(),
+        ),
+        Opacity(key: coverKey, opacity: t.clamp(0.0, 1.0), child: const BackdropCover()),
+      ]),
+    );
+  }
+}
+
 Widget _buildCardTransition(
   BuildContext context,
   Animation<double> animation,
@@ -78,7 +108,7 @@ Widget _buildCardTransition(
           builder: (context, _) {
             final v = popups.value;
             if (v <= 0) return const SizedBox.shrink();
-            return IgnorePointer(child: Opacity(key: const Key('popupCover'), opacity: v, child: const BackdropCover()));
+            return CoverLayer(t: v, coverKey: const Key('popupCover'));
           },
         ),
       ),
@@ -126,7 +156,10 @@ Widget _buildCardTransition(
   return withPopupCover(Stack(
     fit: StackFit.expand,
     children: [
-      FadeTransition(opacity: cover, child: const BackdropCover(key: Key('cardBackdrop'))),
+      AnimatedBuilder(
+        animation: cover,
+        builder: (context, _) => CoverLayer(t: cover.value, coverKey: const Key('cardBackdrop')),
+      ),
       Padding(
         padding: margin,
         child: AnimatedBuilder(
@@ -162,7 +195,8 @@ class PopupCover extends ChangeNotifier implements ValueListenable<double> {
   double get value {
     var v = 0.0;
     for (final a in _anims) {
-      final t = Curves.easeOut.transform(a.value.clamp(0.0, 1.0));
+      // 遮盖比弹层自身先到位：弹层动画前 30% 内背景层就完全不透明（模糊从第一帧开始）
+      final t = Curves.easeOut.transform((a.value / 0.3).clamp(0.0, 1.0));
       if (t > v) v = t;
     }
     return v;
@@ -319,9 +353,15 @@ class _FadeThrough extends StatelessWidget {
           opacity = t;
           scale = 0.96 + 0.04 * t;
         }
+        // 离开的视图淡出时同时模糊到不可读，避免中间帧还能读到旧内容
+        final blur = leaving && opacity < 1 ? 16.0 : 0.0;
         return Opacity(
           opacity: opacity.clamp(0.0, 1.0),
-          child: Transform.scale(scale: scale, child: child),
+          child: ImageFiltered(
+            enabled: blur > 0,
+            imageFilter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+            child: Transform.scale(scale: scale, child: child),
+          ),
         );
       },
     );

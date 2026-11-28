@@ -43,8 +43,16 @@ void main() {
       await tester.pump();
       var sawMid = false;
       void frame() {
-        final cover = fadeAbove(tester, find.byKey(const Key('cardBackdrop')));
+        final layer = tester.widget<CoverLayer>(
+          find.ancestor(of: find.byKey(const Key('cardBackdrop')), matching: find.byType(CoverLayer)),
+        );
+        final cover = layer.t;
         final card = fadeAbove(tester, find.byKey(const Key('cardSurface')));
+        // 背景层半透明的帧里，下层必须已经模糊到不可读
+        if (cover > 0 && cover < 1) {
+          expect(CoverLayer.sigmaFor(cover), greaterThanOrEqualTo(10), reason: 'page below readable mid-fade (cover $cover)');
+          expect(tester.widget<BackdropFilter>(find.byKey(const Key('coverBlur'))).enabled, isTrue);
+        }
         if (card > 0) {
           expect(cover, greaterThanOrEqualTo(0.999), reason: 'card visible ($card) while page below still shows through (cover $cover)');
         }
