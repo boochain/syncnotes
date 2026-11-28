@@ -53,6 +53,10 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- Impeller is the default renderer; keep it explicit so 120Hz 设备走 GPU 路径。 -->
+        <meta-data
+            android:name="io.flutter.embedding.android.EnableImpeller"
+            android:value="true" />
         <!-- 状态栏小图标：白色剪影，不能用彩色启动器图标 -->
         <meta-data
             android:name="com.syncnotes.service_icon"

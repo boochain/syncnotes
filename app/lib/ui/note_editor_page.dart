@@ -12,6 +12,7 @@ import '../sync/sync_client.dart';
 import 'block_card.dart';
 import 'ds.dart';
 import 'motion.dart';
+import 'glass.dart';
 import 'tokens.dart';
 
 enum _NoteViewMode { edit, split, preview }
@@ -195,6 +196,13 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
 
   @override
   Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: Glass.backdropListenable,
+      builder: (context, _) => _buildEditor(context),
+    );
+  }
+
+  Widget _buildEditor(BuildContext context) {
     final c = AppColors.of(context);
     final tt = Theme.of(context).textTheme;
     final dark = Theme.of(context).brightness == Brightness.dark;
@@ -204,22 +212,30 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
     final completed = currentBlock != null && isBlockCompleted(currentBlock);
     final stickyColor = currentBlock == null ? stickyColorOptions.last : stickyColorOf(currentBlock);
 
-    Widget paneCard({required Widget child}) => Container(
-          decoration: BoxDecoration(
-            color: c.elevated,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: c.separator.withValues(alpha: dark ? 0.65 : 0.85)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: dark ? 0.22 : 0.05),
-                blurRadius: 16,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: child,
+    Widget paneCard({required Widget child}) {
+      if (Glass.surfaceTranslucent) {
+        return SpecularGlassCard(
+          radius: 18,
+          child: ClipRRect(borderRadius: BorderRadius.circular(18), child: child),
         );
+      }
+      return Container(
+        decoration: BoxDecoration(
+          color: c.elevated,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: c.separator.withValues(alpha: dark ? 0.65 : 0.85)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: dark ? 0.22 : 0.05),
+              blurRadius: 16,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: child,
+      );
+    }
 
     Widget fmtBtn(String tip, IconData icon, VoidCallback onTap) => Tooltip(
           message: tip,
@@ -394,9 +410,9 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
           if (_dirtyNotifier.value) _save();
         },
         child: Scaffold(
-          backgroundColor: c.bg,
+          backgroundColor: Glass.scaffoldBg(context) ?? c.bg,
           appBar: AppBar(
-            backgroundColor: c.bg,
+            backgroundColor: Glass.scaffoldBg(context) ?? c.bg,
             surfaceTintColor: Colors.transparent,
             titleSpacing: Gap.s,
             title: Row(

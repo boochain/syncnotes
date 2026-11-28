@@ -4,6 +4,7 @@ import 'package:syncnotes/platform/desktop.dart';
 import 'package:syncnotes/ui/glass.dart';
 import 'package:syncnotes/ui/motion.dart';
 import 'package:syncnotes/ui/theme.dart';
+import 'package:syncnotes/ui/tokens.dart';
 
 void main() {
   testWidgets('page switch drops the previous surface', (tester) async {
@@ -57,11 +58,39 @@ void main() {
     );
   });
 
-  test('refraction is off at phone scale so the page is not drawn twice', () {
+  test('library thickness stays off at phone scale so the page is not drawn twice', () {
     expect(Glass.refractsAt(1), isTrue);
     expect(Glass.refractsAt(2), isTrue);
     expect(Glass.refractsAt(2.5), isFalse);
     expect(Glass.refractsAt(3.5), isFalse);
+  });
+
+  test('refraction slider still has visible strength at phone scale', () {
+    expect(Glass.refractionStrength(1.00, 'standard'), 0);
+    expect(Glass.refractionStrength(1.06, 'standard'), closeTo(0.5, 0.0001));
+    expect(Glass.refractionStrength(1.12, 'standard'), 1);
+    expect(Glass.refractionStrength(1.06, 'premium'), greaterThan(Glass.refractionStrength(1.06, 'standard')));
+    expect(Glass.refractionStrength(1.12, 'minimal'), lessThan(Glass.refractionStrength(1.12, 'standard')));
+  });
+
+  test('quality tier changes fluid repaint cost', () {
+    final prev = Glass.quality.value;
+    addTearDown(() => Glass.quality.value = prev);
+    Glass.quality.value = 'standard';
+    expect(Glass.fluidPhaseStep(), closeTo(1 / (30 * 26), 0.0001));
+    expect(Glass.quantizeFluidPhase(0.0101), closeTo(Glass.quantizeFluidPhase(0.0102), 0.0001));
+    Glass.quality.value = 'premium';
+    expect(Glass.fluidPhaseStep(), closeTo(1 / (60 * 26), 0.0001));
+    Glass.quality.value = 'minimal';
+    expect(Glass.fluidPhaseStep(), 1);
+    expect(Glass.quantizeFluidPhase(0.4), 0);
+  });
+
+  test('page routes use the documented motion tokens', () {
+    expect(Motion.medium4, const Duration(milliseconds: 400));
+    expect(Motion.medium2, const Duration(milliseconds: 300));
+    expect(MotionCurves.enter, MotionCurves.emphasizedDecelerate);
+    expect(MotionCurves.exit, MotionCurves.emphasizedAccelerate);
   });
 
   testWidgets('high dpi still frosts the glass instead of a flat fill', (tester) async {

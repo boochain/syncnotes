@@ -698,7 +698,7 @@ class _BlockCardState extends State<BlockCard> {
         : c.elevated;
     final cardBg = _hover
         ? (translucent ? baseGlass.withValues(alpha: dark ? 0.56 : 0.78) : c.hover)
-        : (translucent ? baseGlass.withValues(alpha: dark ? 0.30 : 0.48) : Colors.transparent);
+        : (translucent ? baseGlass.withValues(alpha: dark ? 0.22 : 0.36) : Colors.transparent);
 
     final rowWidget = Semantics(
       button: true,
@@ -716,10 +716,13 @@ class _BlockCardState extends State<BlockCard> {
             showBlockMenu(context, block);
           },
           onSecondaryTapUp: (d) => showBlockMenu(context, block, anchor: d.globalPosition),
-          child: AnimatedContainer(
+          child: GlassSheen(
+            radius: translucent ? AppRadius.l : AppRadius.m,
+            accent: accentTint,
+            child: AnimatedContainer(
             key: ValueKey('card-${block.id}'),
             duration: Motion.short2,
-            curve: Curves.easeOutCubic,
+            curve: MotionCurves.standard,
             constraints: const BoxConstraints(minHeight: Sizes.listRow),
             margin: EdgeInsets.symmetric(horizontal: translucent ? Gap.xl : Gap.m, vertical: translucent ? 4 : 0),
             padding: const EdgeInsets.only(left: Gap.s, right: Gap.xs),
@@ -864,6 +867,7 @@ class _BlockCardState extends State<BlockCard> {
                 ),
               ),
             ]),
+          ),
           ),
         ),
       ),

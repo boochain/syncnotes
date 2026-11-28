@@ -43,8 +43,16 @@ class Glass extends StatelessWidget {
   static final bgDim = ValueNotifier<double>(0.35);
 
   /// 合并监听所有液态玻璃光学参数与背景变化。
-  static Listenable get backdropListenable =>
-      Listenable.merge([enabled, fluidBg, preset, bgImage, bgDim, opacity, refraction, quality]);
+  static Listenable get backdropListenable => Listenable.merge([
+    enabled,
+    fluidBg,
+    preset,
+    bgImage,
+    bgDim,
+    opacity,
+    refraction,
+    quality,
+  ]);
 
   /// 是否设置了有效的自定义背景图片。
   static bool get hasCustomBg {
@@ -53,18 +61,36 @@ class Glass extends StatelessWidget {
   }
 
   /// 真实运行时且开启液态玻璃或自定义背景图时，允许内层 Scaffold 透出底层 GlassBackdrop 流体光场/壁纸。
-  static bool get surfaceTranslucent => useShader && (enabled.value || hasCustomBg);
+  static bool get surfaceTranslucent =>
+      useShader && (enabled.value || hasCustomBg);
 
   /// 内层页面 Scaffold 背景色：开启液态玻璃或壁纸时透明（由 GlassBackdrop 统一绘制），测试或关闭时保持主题底色。
-  static Color? scaffoldBg(BuildContext context) => surfaceTranslucent ? Colors.transparent : null;
+  static Color? scaffoldBg(BuildContext context) =>
+      surfaceTranslucent ? Colors.transparent : null;
 
-  /// 折射只在较低缩放比上打开。3.5x 上折射会复制出第二层画面。
+  /// 第三方液态玻璃着色器的「厚度 / IOR 采样」只在较低设备像素比上打开。
+  /// 在 2.5x 及以上（主流手机、部分高分屏 Windows）该采样会把图层再画一遍，造成叠字。
+  /// 折射率滑块的可见效果不依赖这项：边缘色散、镜面高光、饱和与光晕在任何 DPR 都会跟随滑块。
   static bool refractsAt(double dpr) => dpr > 0 && dpr < 2.5;
 
+  /// 流体背景重绘步进：把 26s 周期量化到档位对应的帧率，避免在 120Hz 上每帧全屏重绘。
+  /// standard ≈ 30fps，premium ≈ 60fps，minimal 静止（只保留光场，不驱动动画）。
+  static double fluidPhaseStep() => switch (quality.value) {
+    'premium' => 1 / (60 * 26),
+    'minimal' => 1,
+    _ => 1 / (30 * 26),
+  };
+
+  static double quantizeFluidPhase(double phase) {
+    final step = fluidPhaseStep();
+    if (step >= 1) return 0;
+    return (phase / step).round() * step;
+  }
+
   static GlassQuality resolveQuality(String q) => switch (q) {
-        'premium' => GlassQuality.premium,
-        _ => GlassQuality.standard,
-      };
+    'premium' => GlassQuality.premium,
+    _ => GlassQuality.standard,
+  };
 
   /// 折射滑块归一化强度 0.0 – 1.0，供所有液态玻璃表面实时联动光学参数。
   static double refractionStrength(double ior, String qName) {
@@ -76,14 +102,17 @@ class Glass extends StatelessWidget {
     };
   }
 
-  /// 动态模糊半径：随质量档位和透明度联动，保证肉眼清晰分辨。
+  /// 动态模糊半径：档位必须改变代价。minimal 轻模糊，premium 才上重模糊。
   static double blurSigmaFor(double alpha, String qName) {
     final base = switch (qName) {
-      'minimal' => 14.0,
-      'premium' => 30.0,
-      _ => 22.0,
+      'minimal' => 8.0,
+      'premium' => 26.0,
+      _ => 16.0,
     };
-    return (base + (1.0 - alpha) * 8.0).clamp(12.0, 36.0);
+    final extra = qName == 'premium' ? 8.0 : (qName == 'minimal' ? 4.0 : 6.0);
+    final lo = qName == 'minimal' ? 6.0 : 10.0;
+    final hi = qName == 'premium' ? 34.0 : (qName == 'minimal' ? 14.0 : 22.0);
+    return (base + (1.0 - alpha) * extra).clamp(lo, hi);
   }
 
   final Widget child;
@@ -102,7 +131,11 @@ class Glass extends StatelessWidget {
     this.strong = true,
   });
 
-  static Color tint(BuildContext context, {required bool frosted, double alpha = 0.42}) {
+  static Color tint(
+    BuildContext context, {
+    required bool frosted,
+    double alpha = 0.42,
+  }) {
     final base = AppColors.of(context).elevated;
     if (!frosted) return base;
     return base.withValues(alpha: alpha);
@@ -117,7 +150,9 @@ class Glass extends StatelessWidget {
         final alpha = opacity.value;
         final ior = refraction.value;
         final qName = quality.value;
-        final inner = padding == null ? child : Padding(padding: padding!, child: child);
+        final inner = padding == null
+            ? child
+            : Padding(padding: padding!, child: child);
         final deco = floatingDecoration(context, radius: radius);
         final dpr = MediaQuery.devicePixelRatioOf(context);
         final bend = refractsAt(dpr);
@@ -125,7 +160,8 @@ class Glass extends StatelessWidget {
         final q = resolveQuality(qName);
         final rStr = refractionStrength(ior, qName);
         final blur = blurSigmaFor(alpha, qName);
-        final shaderActive = useShader && on && qName != 'minimal' && radius > 0;
+        final shaderActive =
+            useShader && on && qName != 'minimal' && radius > 0;
 
         final Widget body;
         if (shaderActive) {
@@ -135,7 +171,11 @@ class Glass extends StatelessWidget {
             clipBehavior: Clip.antiAlias,
             shape: LiquidRoundedSuperellipse(borderRadius: radius),
             settings: LiquidGlassSettings(
-              glassColor: tint(context, frosted: true, alpha: (alpha * (dark ? 0.56 : 0.68)).clamp(0.14, 0.72)),
+              glassColor: tint(
+                context,
+                frosted: true,
+                alpha: (alpha * (dark ? 0.56 : 0.68)).clamp(0.14, 0.72),
+              ),
               blur: blur,
               thickness: bend ? (14.0 + rStr * 22.0) : 0,
               refractiveIndex: bend ? ior : 1.0,
@@ -159,9 +199,14 @@ class Glass extends StatelessWidget {
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      Colors.white.withValues(alpha: (dark ? 0.14 : 0.50) + rStr * (dark ? 0.10 : 0.18)),
+                      Colors.white.withValues(
+                        alpha:
+                            (dark ? 0.14 : 0.50) + rStr * (dark ? 0.10 : 0.18),
+                      ),
                       Colors.transparent,
-                      Colors.white.withValues(alpha: (dark ? 0.05 : 0.14) + rStr * 0.06),
+                      Colors.white.withValues(
+                        alpha: (dark ? 0.05 : 0.14) + rStr * 0.06,
+                      ),
                     ],
                     stops: const [0.0, 0.48, 1.0],
                   ),
@@ -193,7 +238,11 @@ class Glass extends StatelessWidget {
                           Colors.white.withValues(alpha: dark ? 0.12 : 0.48),
                           tint(context, frosted: true, alpha: alpha),
                         ),
-                        tint(context, frosted: true, alpha: (alpha + 0.06).clamp(0.18, 0.84)),
+                        tint(
+                          context,
+                          frosted: true,
+                          alpha: (alpha + 0.06).clamp(0.18, 0.84),
+                        ),
                       ],
                     ),
                   ),
@@ -204,7 +253,10 @@ class Glass extends StatelessWidget {
           );
         } else {
           body = DecoratedBox(
-            decoration: BoxDecoration(color: tint(context, frosted: false), borderRadius: BorderRadius.circular(radius)),
+            decoration: BoxDecoration(
+              color: tint(context, frosted: false),
+              borderRadius: BorderRadius.circular(radius),
+            ),
             child: inner,
           );
         }
@@ -246,16 +298,20 @@ class _LiquidRimPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (size.isEmpty) return;
     final rect = Offset.zero & size;
-    final rrect = RRect.fromRectAndRadius(rect.deflate(0.7), Radius.circular(radius));
+    final rrect = RRect.fromRectAndRadius(
+      rect.deflate(0.7),
+      Radius.circular(radius),
+    );
 
     // 1. 主 Fresnel 液态高光描边（左上/右上明亮折光 → 中段通透 → 底部柔和回光）
-    final topAlpha = ((dark ? 0.40 : 0.90) + strength * (dark ? 0.36 : 0.10)).clamp(0.0, 1.0);
+    final topAlpha = ((dark ? 0.40 : 0.90) + strength * (dark ? 0.36 : 0.10))
+        .clamp(0.0, 1.0);
     final midAlpha = ((dark ? 0.10 : 0.28) + strength * 0.12).clamp(0.0, 1.0);
     final botAlpha = ((dark ? 0.24 : 0.62) + strength * 0.22).clamp(0.0, 1.0);
 
     final rimPaint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.15 + strength * 0.42
+      ..strokeWidth = 1.2 + strength * 1.35
       ..shader = LinearGradient(
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
@@ -269,12 +325,18 @@ class _LiquidRimPainter extends CustomPainter {
     canvas.drawRRect(rrect, rimPaint);
 
     // 2. 色散棱镜内边（随折射滑块与 premium 档位增强）
-    if (strength > 0.10 || premium) {
-      final chromaAlpha = (strength * (premium ? 0.44 : 0.26)).clamp(0.0, 0.56);
-      final innerRect = RRect.fromRectAndRadius(rect.deflate(2.0), Radius.circular((radius - 1.5).clamp(0.0, radius)));
+    if (strength > 0.02 || premium) {
+      final chromaAlpha = (0.08 + strength * (premium ? 0.72 : 0.50)).clamp(
+        0.0,
+        0.86,
+      );
+      final innerRect = RRect.fromRectAndRadius(
+        rect.deflate(2.0),
+        Radius.circular((radius - 1.5).clamp(0.0, radius)),
+      );
       final chromaPaint = Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = premium ? 1.35 : 0.95
+        ..strokeWidth = (premium ? 1.7 : 1.25) + strength * 1.1
         ..shader = LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -291,27 +353,49 @@ class _LiquidRimPainter extends CustomPainter {
     // 3. 顶部微弱镜面高光（仅在宽卡片/胶囊上绘制，避免在小圆形按钮上产生白斑）
     if (size.width >= 96 && size.height >= 28) {
       final glintCx = (size.width * glintBias)
-          .clamp(radius + 18.0, math.max(radius + 18.0, size.width - radius - 18.0))
+          .clamp(
+            radius + 18.0,
+            math.max(radius + 18.0, size.width - radius - 18.0),
+          )
           .toDouble();
       final specWidth = (size.width * 0.44).clamp(32.0, 160.0).toDouble();
       final startX = (glintCx - specWidth / 2).clamp(radius * 0.65, size.width);
-      final endX = (glintCx + specWidth / 2).clamp(0.0, size.width - radius * 0.65);
+      final endX = (glintCx + specWidth / 2).clamp(
+        0.0,
+        size.width - radius * 0.65,
+      );
 
       if (endX > startX + 12) {
-        final bloomRect = Rect.fromCenter(center: Offset(glintCx, 1.0), width: specWidth * 0.85, height: 10);
+        final bloomRect = Rect.fromCenter(
+          center: Offset(glintCx, 1.0),
+          width: specWidth * 0.85,
+          height: 10,
+        );
         final bloomPaint = Paint()
           ..shader = RadialGradient(
             center: Alignment.center,
             radius: 0.62,
             colors: [
-              Colors.white.withValues(alpha: ((dark ? 0.22 : 0.40) + strength * 0.12).clamp(0.0, 0.56)),
-              Colors.white.withValues(alpha: ((dark ? 0.06 : 0.12) + strength * 0.04).clamp(0.0, 0.22)),
+              Colors.white.withValues(
+                alpha: ((dark ? 0.22 : 0.40) + strength * 0.12).clamp(
+                  0.0,
+                  0.56,
+                ),
+              ),
+              Colors.white.withValues(
+                alpha: ((dark ? 0.06 : 0.12) + strength * 0.04).clamp(
+                  0.0,
+                  0.22,
+                ),
+              ),
               Colors.transparent,
             ],
             stops: const [0.0, 0.45, 1.0],
           ).createShader(bloomRect);
         canvas.save();
-        canvas.clipRRect(RRect.fromRectAndRadius(rect, Radius.circular(radius)));
+        canvas.clipRRect(
+          RRect.fromRectAndRadius(rect, Radius.circular(radius)),
+        );
         canvas.drawOval(bloomRect, bloomPaint);
         canvas.restore();
 
@@ -322,7 +406,12 @@ class _LiquidRimPainter extends CustomPainter {
           ..shader = LinearGradient(
             colors: [
               Colors.transparent,
-              Colors.white.withValues(alpha: ((dark ? 0.55 : 0.82) + strength * 0.12).clamp(0.0, 0.94)),
+              Colors.white.withValues(
+                alpha: ((dark ? 0.55 : 0.82) + strength * 0.12).clamp(
+                  0.0,
+                  0.94,
+                ),
+              ),
               Colors.transparent,
             ],
           ).createShader(Rect.fromLTWH(startX, 0, endX - startX, 2));
@@ -339,14 +428,26 @@ class _LiquidRimPainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.15
         ..strokeCap = StrokeCap.round
-        ..shader = LinearGradient(
-          colors: [
-            Colors.transparent,
-            Colors.white.withValues(alpha: ((dark ? 0.26 : 0.58) + strength * 0.14).clamp(0.0, 0.82)),
-            Colors.transparent,
-          ],
-        ).createShader(Rect.fromLTWH(botStart, size.height - 2, botEnd - botStart, 2));
-      canvas.drawLine(Offset(botStart, size.height - 1.1), Offset(botEnd, size.height - 1.1), botPaint);
+        ..shader =
+            LinearGradient(
+              colors: [
+                Colors.transparent,
+                Colors.white.withValues(
+                  alpha: ((dark ? 0.26 : 0.58) + strength * 0.14).clamp(
+                    0.0,
+                    0.82,
+                  ),
+                ),
+                Colors.transparent,
+              ],
+            ).createShader(
+              Rect.fromLTWH(botStart, size.height - 2, botEnd - botStart, 2),
+            );
+      canvas.drawLine(
+        Offset(botStart, size.height - 1.1),
+        Offset(botEnd, size.height - 1.1),
+        botPaint,
+      );
     }
   }
 
@@ -381,14 +482,19 @@ class GlassBackdrop extends StatefulWidget {
   State<GlassBackdrop> createState() => _GlassBackdropState();
 }
 
-class _GlassBackdropState extends State<GlassBackdrop> with SingleTickerProviderStateMixin {
+class _GlassBackdropState extends State<GlassBackdrop>
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final AnimationController _ctrl = AnimationController(
     vsync: this,
     duration: const Duration(seconds: 26),
   );
 
   bool get _shouldAnimate =>
-      Glass.useShader && Glass.enabled.value && Glass.fluidBg.value && !Glass.hasCustomBg;
+      Glass.useShader &&
+      Glass.enabled.value &&
+      Glass.fluidBg.value &&
+      !Glass.hasCustomBg &&
+      Glass.quality.value != 'minimal';
 
   void _syncTicker() {
     if (_shouldAnimate) {
@@ -401,12 +507,23 @@ class _GlassBackdropState extends State<GlassBackdrop> with SingleTickerProvider
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     Glass.backdropListenable.addListener(_syncTicker);
     _syncTicker();
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) {
+      if (_ctrl.isAnimating) _ctrl.stop();
+    } else {
+      _syncTicker();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     Glass.backdropListenable.removeListener(_syncTicker);
     _ctrl.dispose();
     super.dispose();
@@ -422,7 +539,8 @@ class _GlassBackdropState extends State<GlassBackdrop> with SingleTickerProvider
         final on = Glass.enabled.value;
         final imgPath = Glass.bgImage.value;
         final dim = Glass.bgDim.value;
-        final hasImg = imgPath != null && imgPath.isNotEmpty && File(imgPath).existsSync();
+        final hasImg =
+            imgPath != null && imgPath.isNotEmpty && File(imgPath).existsSync();
         if (!on && !hasImg) {
           return ColoredBox(color: base, child: widget.child);
         }
@@ -433,8 +551,12 @@ class _GlassBackdropState extends State<GlassBackdrop> with SingleTickerProvider
           child: AnimatedBuilder(
             animation: _ctrl,
             builder: (context, _) => CustomPaint(
+              isComplex: true,
+              willChange: _shouldAnimate,
               painter: _FluidMeshPainter(
-                phase: _shouldAnimate ? _ctrl.value : 0.0,
+                phase: _shouldAnimate
+                    ? Glass.quantizeFluidPhase(_ctrl.value)
+                    : 0.0,
                 dark: dark,
                 wash: wash,
               ),
@@ -469,9 +591,7 @@ class _GlassBackdropState extends State<GlassBackdrop> with SingleTickerProvider
             ),
             if (dim > 0.01)
               Positioned.fill(
-                child: ColoredBox(
-                  color: scrimColor.withValues(alpha: dim),
-                ),
+                child: ColoredBox(color: scrimColor.withValues(alpha: dim)),
               ),
             widget.child,
           ],
@@ -489,11 +609,7 @@ class _FluidMeshPainter extends CustomPainter {
   final bool dark;
   final Color? wash;
 
-  const _FluidMeshPainter({
-    required this.phase,
-    required this.dark,
-    this.wash,
-  });
+  const _FluidMeshPainter({required this.phase, required this.dark, this.wash});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -508,27 +624,108 @@ class _FluidMeshPainter extends CustomPainter {
     // 1. 基础底色
     canvas.drawRect(
       rect,
-      Paint()..color = dark ? const Color(0xFF060A16) : const Color(0xFFEDF3FC),
+      Paint()..color = dark ? const Color(0xFF070B18) : const Color(0xFFE8F0FB),
     );
 
     // 2. 调色板（对齐概念图日/夜双色域，若用户选了背景预设则柔和融合）
-    Color mix(Color target, double amount) => wash == null ? target : Color.lerp(target, wash!, amount)!;
+    Color mix(Color target, double amount) =>
+        wash == null ? target : Color.lerp(target, wash!, amount)!;
 
     final orbs = dark
         ? <(Color, double, double, double, double, double, double)>[
             // (color, baseX, baseY, driftX, driftY, radiusFactor, alpha)
-            (mix(const Color(0xFF6D28D9), 0.25), 0.44, 0.28, 0.10, 0.08, 0.62, 0.54),
-            (mix(const Color(0xFF0D9488), 0.22), 0.84, 0.34, -0.09, 0.10, 0.56, 0.48),
-            (mix(const Color(0xFF2563EB), 0.25), 0.26, 0.78, 0.11, -0.09, 0.60, 0.52),
-            (mix(const Color(0xFF7C3AED), 0.20), 0.72, 0.76, -0.08, -0.08, 0.50, 0.36),
-            (mix(const Color(0xFF0284C7), 0.20), 0.18, 0.18, 0.07, 0.09, 0.48, 0.34),
+            (
+              mix(const Color(0xFF7C3AED), 0.18),
+              0.44,
+              0.28,
+              0.10,
+              0.08,
+              0.68,
+              0.70,
+            ),
+            (
+              mix(const Color(0xFF14B8A6), 0.16),
+              0.84,
+              0.34,
+              -0.09,
+              0.10,
+              0.62,
+              0.64,
+            ),
+            (
+              mix(const Color(0xFF3B82F6), 0.18),
+              0.26,
+              0.78,
+              0.11,
+              -0.09,
+              0.66,
+              0.68,
+            ),
+            (
+              mix(const Color(0xFFA855F7), 0.14),
+              0.72,
+              0.76,
+              -0.08,
+              -0.08,
+              0.56,
+              0.52,
+            ),
+            (
+              mix(const Color(0xFF0EA5E9), 0.14),
+              0.18,
+              0.18,
+              0.07,
+              0.09,
+              0.54,
+              0.50,
+            ),
           ]
         : <(Color, double, double, double, double, double, double)>[
-            (mix(const Color(0xFF7DD3FC), 0.22), 0.20, 0.16, 0.10, 0.08, 0.64, 0.72),
-            (mix(const Color(0xFFC4B5FD), 0.24), 0.52, 0.26, -0.10, 0.09, 0.56, 0.68),
-            (mix(const Color(0xFFFDBA74), 0.20), 0.80, 0.40, -0.08, -0.09, 0.54, 0.66),
-            (mix(const Color(0xFFFCA5A5), 0.18), 0.32, 0.78, 0.11, -0.08, 0.56, 0.62),
-            (mix(const Color(0xFF93C5FD), 0.22), 0.76, 0.84, -0.09, 0.07, 0.52, 0.54),
+            (
+              mix(const Color(0xFF38BDF8), 0.16),
+              0.20,
+              0.16,
+              0.10,
+              0.08,
+              0.70,
+              0.90,
+            ),
+            (
+              mix(const Color(0xFFA78BFA), 0.16),
+              0.52,
+              0.26,
+              -0.10,
+              0.09,
+              0.62,
+              0.86,
+            ),
+            (
+              mix(const Color(0xFFFB923C), 0.14),
+              0.80,
+              0.40,
+              -0.08,
+              -0.09,
+              0.60,
+              0.84,
+            ),
+            (
+              mix(const Color(0xFFFB7185), 0.12),
+              0.32,
+              0.78,
+              0.11,
+              -0.08,
+              0.62,
+              0.80,
+            ),
+            (
+              mix(const Color(0xFF60A5FA), 0.16),
+              0.76,
+              0.84,
+              -0.09,
+              0.07,
+              0.58,
+              0.74,
+            ),
           ];
 
     // 3. 逐层绘制平滑 Lissajous 流体光团
@@ -593,13 +790,19 @@ class SpecularGlassCard extends StatelessWidget {
 
         if (!translucent) {
           final solid = tintAccent != null
-              ? Color.lerp(hover ? c.hover : c.elevated, tintAccent, dark ? 0.22 : 0.14)!
+              ? Color.lerp(
+                  hover ? c.hover : c.elevated,
+                  tintAccent,
+                  dark ? 0.22 : 0.14,
+                )!
               : (hover ? c.hover : c.elevated);
           return DecoratedBox(
             decoration: BoxDecoration(
               color: solid,
               borderRadius: BorderRadius.circular(radius),
-              border: Border.all(color: tintAccent?.withValues(alpha: 0.45) ?? c.separator),
+              border: Border.all(
+                color: tintAccent?.withValues(alpha: 0.45) ?? c.separator,
+              ),
             ),
             child: child,
           );
@@ -610,22 +813,42 @@ class SpecularGlassCard extends StatelessWidget {
         final active = hover || elevated;
         // 保持高通透度，让底层流体极光清晰折射穿透玻璃卡片
         final baseAlpha = dark
-            ? (active ? (alpha * 0.58).clamp(0.18, 0.56) : (alpha * 0.38).clamp(0.12, 0.44))
-            : (active ? (alpha * 0.84).clamp(0.26, 0.68) : (alpha * 0.62).clamp(0.20, 0.56));
+            ? (active
+                  ? (alpha * 0.58).clamp(0.18, 0.56)
+                  : (alpha * 0.38).clamp(0.12, 0.44))
+            : (active
+                  ? (alpha * 0.84).clamp(0.26, 0.68)
+                  : (alpha * 0.62).clamp(0.20, 0.56));
         final baseColor = tintAccent != null
-            ? Color.lerp(c.elevated, tintAccent, dark ? 0.30 : 0.20)!.withValues(alpha: baseAlpha)
+            ? Color.lerp(
+                c.elevated,
+                tintAccent,
+                dark ? 0.30 : 0.20,
+              )!.withValues(alpha: baseAlpha)
             : c.elevated.withValues(alpha: baseAlpha);
 
         return AnimatedContainer(
           duration: Motion.short3,
-          curve: Curves.easeOutCubic,
+          curve: MotionCurves.standard,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(radius),
             boxShadow: [
               BoxShadow(
-                color: (tintAccent != null && active ? tintAccent! : Colors.black).withValues(
-                  alpha: dark ? (elevated ? 0.58 : hover ? 0.46 : 0.34) : (elevated ? 0.18 : hover ? 0.12 : 0.07),
-                ),
+                color:
+                    (tintAccent != null && active ? tintAccent! : Colors.black)
+                        .withValues(
+                          alpha: dark
+                              ? (elevated
+                                    ? 0.58
+                                    : hover
+                                    ? 0.46
+                                    : 0.34)
+                              : (elevated
+                                    ? 0.18
+                                    : hover
+                                    ? 0.12
+                                    : 0.07),
+                        ),
                 blurRadius: elevated ? 34 : (hover ? 26 : 18),
                 spreadRadius: elevated ? 2 : 0,
                 offset: Offset(0, elevated ? 16 : (hover ? 10 : 6)),
@@ -634,8 +857,9 @@ class SpecularGlassCard extends StatelessWidget {
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(radius),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+            child: _maybeBlur(
+              enabled: qName == 'premium',
+              sigma: blur,
               child: CustomPaint(
                 foregroundPainter: _LiquidRimPainter(
                   radius: radius,
@@ -653,12 +877,18 @@ class SpecularGlassCard extends StatelessWidget {
                       end: Alignment.bottomRight,
                       colors: [
                         Color.alphaBlend(
-                          Colors.white.withValues(alpha: (dark ? 0.12 : 0.52) + rStr * (dark ? 0.08 : 0.14)),
+                          Colors.white.withValues(
+                            alpha:
+                                (dark ? 0.12 : 0.52) +
+                                rStr * (dark ? 0.08 : 0.14),
+                          ),
                           baseColor,
                         ),
                         baseColor,
                         Color.alphaBlend(
-                          (tintAccent ?? Colors.black).withValues(alpha: dark ? 0.18 : 0.04),
+                          (tintAccent ?? Colors.black).withValues(
+                            alpha: dark ? 0.18 : 0.04,
+                          ),
                           baseColor,
                         ),
                       ],
@@ -682,8 +912,11 @@ class SpecularGlassCard extends StatelessWidget {
                                 radius: 0.72,
                                 colors: [
                                   Colors.white.withValues(
-                                    alpha: ((dark ? 0.16 : 0.38) + rStr * (dark ? 0.12 : 0.20) + (active ? 0.08 : 0.0))
-                                        .clamp(0.0, 0.78),
+                                    alpha:
+                                        ((dark ? 0.16 : 0.38) +
+                                                rStr * (dark ? 0.12 : 0.20) +
+                                                (active ? 0.08 : 0.0))
+                                            .clamp(0.0, 0.78),
                                   ),
                                   Colors.transparent,
                                 ],
@@ -699,6 +932,56 @@ class SpecularGlassCard extends StatelessWidget {
               ),
             ),
           ),
+        );
+      },
+    );
+  }
+
+  static Widget _maybeBlur({
+    required bool enabled,
+    required double sigma,
+    required Widget child,
+  }) {
+    if (!enabled) return child;
+    return BackdropFilter(
+      filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+      child: child,
+    );
+  }
+}
+
+/// 列表卡片用的轻量玻璃边：只画折射边缘与高光，不做 BackdropFilter，以免一行一张模糊层打掉 120fps。
+class GlassSheen extends StatelessWidget {
+  final Widget child;
+  final double radius;
+  final Color? accent;
+  const GlassSheen({
+    super.key,
+    required this.child,
+    this.radius = AppRadius.l,
+    this.accent,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (!Glass.surfaceTranslucent) return child;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return ListenableBuilder(
+      listenable: Listenable.merge([Glass.refraction, Glass.quality]),
+      builder: (context, _) {
+        final rStr = Glass.refractionStrength(
+          Glass.refraction.value,
+          Glass.quality.value,
+        );
+        return CustomPaint(
+          foregroundPainter: _LiquidRimPainter(
+            radius: radius,
+            dark: dark,
+            strength: rStr,
+            premium: Glass.quality.value == 'premium',
+            accent: accent,
+          ),
+          child: child,
         );
       },
     );
@@ -751,7 +1034,9 @@ class Frosted extends StatelessWidget {
             clipBehavior: Clip.antiAlias,
             shape: LiquidRoundedSuperellipse(borderRadius: radius),
             settings: LiquidGlassSettings(
-              glassColor: color.withValues(alpha: (alpha * 0.76).clamp(0.16, 0.76)),
+              glassColor: color.withValues(
+                alpha: (alpha * 0.76).clamp(0.16, 0.76),
+              ),
               blur: blur,
               thickness: bend ? (10.0 + rStr * 16.0) : 0,
               refractiveIndex: bend ? ior : 1.0,
@@ -813,7 +1098,11 @@ class Frosted extends StatelessWidget {
 }
 
 /// Spotlight 全屏检视浮窗（96.4vw × 95.6vh 液态玻璃浮层，四周保留极窄呼吸留白）。
-Future<void> showSpotlightModal(BuildContext context, {required String title, required Widget child}) {
+Future<void> showSpotlightModal(
+  BuildContext context, {
+  required String title,
+  required Widget child,
+}) {
   return showGeneralDialog<void>(
     context: context,
     barrierDismissible: true,
@@ -847,7 +1136,11 @@ Future<void> showSpotlightModal(BuildContext context, {required String title, re
                       ),
                       child: Row(
                         children: [
-                          Icon(CupertinoIcons.sparkles, size: Sizes.iconSm, color: c.accent),
+                          Icon(
+                            CupertinoIcons.sparkles,
+                            size: Sizes.iconSm,
+                            color: c.accent,
+                          ),
                           const SizedBox(width: Gap.m),
                           Expanded(
                             child: Text(
@@ -860,7 +1153,10 @@ Future<void> showSpotlightModal(BuildContext context, {required String title, re
                           IconButton(
                             key: const Key('closeSpotlight'),
                             tooltip: '退出全屏 (Esc)',
-                            icon: const Icon(CupertinoIcons.fullscreen_exit, size: Sizes.iconSm + 2),
+                            icon: const Icon(
+                              CupertinoIcons.fullscreen_exit,
+                              size: Sizes.iconSm + 2,
+                            ),
                             onPressed: () => Navigator.of(ctx).pop(),
                           ),
                         ],
@@ -868,7 +1164,9 @@ Future<void> showSpotlightModal(BuildContext context, {required String title, re
                     ),
                     Expanded(
                       child: ColoredBox(
-                        color: c.bg.withValues(alpha: Glass.surfaceTranslucent ? 0.86 : 1.0),
+                        color: c.bg.withValues(
+                          alpha: Glass.surfaceTranslucent ? 0.86 : 1.0,
+                        ),
                         child: child,
                       ),
                     ),
@@ -891,7 +1189,10 @@ ThemeData glassTheme(ThemeData base, bool on) {
   final bg = base.scaffoldBackgroundColor;
   return base.copyWith(
     scaffoldBackgroundColor: bg,
-    appBarTheme: base.appBarTheme.copyWith(backgroundColor: bg, surfaceTintColor: Colors.transparent),
+    appBarTheme: base.appBarTheme.copyWith(
+      backgroundColor: bg,
+      surfaceTintColor: Colors.transparent,
+    ),
   );
 }
 
