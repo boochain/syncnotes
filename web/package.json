@@ -1,7 +1,7 @@
 {
   "name": "syncnotes-web",
   "private": true,
-  "version": "0.7.2",
+  "version": "0.8.0",
   "description": "SyncNotes 网页客户端：独立静态站点，对接已部署的 SyncNotes 服务器。",
   "type": "module",
   "scripts": {

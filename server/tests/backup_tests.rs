@@ -12,6 +12,7 @@ use syncnotes_server::{admin, backup, build_router, AppState, Storage};
 #[path = "common/wire.rs"]
 mod wire;
 
+#[allow(clippy::too_many_arguments)]
 fn applied(
     st: &Storage,
     uid: &str,

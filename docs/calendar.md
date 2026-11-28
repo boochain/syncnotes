@@ -1,6 +1,6 @@
 # SyncNotes 日历
 
-本文是 `feature/calendar` 的设计说明。实现以它为准。基准版本：v0.7.2（`9890161`）。
+本文是日历功能的设计说明，随 v0.8.0 发布。
 
 ## 调研后融入的能力
 
@@ -70,21 +70,21 @@
 
 ### 客户端原始 kind 保留
 
-旧客户端把不认识的 `kind` 解析成枚举 `unknown`，若再整包回传（例如以后的“一键立即同步”），可能把 `calendar` 写成 `unknown`。本改动在 `Block` 上保留 `kindRaw`，读写都用原始字符串。日历还会把 `kindRaw == "task"` 的块当作只读日程叠加（见下节），即使当前构建没有 `BlockKind.task`。
+旧客户端把不认识的 `kind` 解析成枚举 `unknown`，若再整包回传（例如以后的“一键立即同步”），可能把 `calendar` 写成 `unknown`。本改动在 `Block` 上保留 `kindRaw`，读写都用原始字符串。v0.8.0 起任务仪表盘也用同一个 `kindRaw`，日历把任务块当作只读日程叠加（见下节）。
 
 ### 与任务仪表盘的对接（不阻塞任何一方）
 
-日历数据自包自足，不依赖 `feature/task-dashboard`。任务仪表盘若用块类型 `task`（或载荷里带 `start_date` / `due_date` / `end_date` 的同类结构），日历用下面的只读出现（occurrence）接口叠加到格子里，不改任务块：
+日历数据自包自足。任务块（`kind=task` 或 `payload.is_task=true`）按任务载荷的 `start_at` / `due_at`（Unix 毫秒，按本地时区换算成日期）叠加到格子里；`all_day=false` 时显示时刻。仍兼容早期草案里的 `start_date` / `due_date` / `end_date` 字符串。日历只读，不改任务块：
 
 - 出现记录：`id`、`blockId`、`title`、`date`、`endDate`、`allDay`、`startTime`、`source`（`calendar` 或 `task`）、`role`、`color`、`pinned`。
 - 任务在日历上可点开展示摘要，编辑仍回任务页（任务功能合并后再接 `execute`）。
 - 任务不进入订阅汇总，也不占用日历的新建入口。
 
-在任务分支合并前，日历单独工作；合并后只要任务块 kind 为 `task` 且日期字段兼容，无需再改协议。
+v0.8.0 已合并两项功能，协议不变。
 
 ### 与备份 / 立即同步
 
-日历块走同一套 LWW upsert 和离线队列，会进入现有“导出我的数据”和将来的备份包（备份以当前账号可见块为准）。不引入存储加密。
+日历块走同一套 LWW upsert 和离线队列，会进入“导出我的数据”和 v0.8.0 的一键备份 / 恢复（备份以当前账号可见块为准，服务器测试覆盖了任务和日历块的备份还原）。不引入存储加密。
 
 ## 界面
 
