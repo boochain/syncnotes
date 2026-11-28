@@ -2,16 +2,22 @@
 
 一个可自部署的多设备实时同步笔记、便签、消息与文件工具：在任意一台设备上发消息、写笔记、整理便签或传文件，其他设备**立即**同步。
 
-> **当前版本**：[v0.7.2](https://github.com/boochain/syncnotes/releases/latest) · [更新日志](docs/release-notes/v0.7.2.md) · [设计系统](docs/design-system.md) · [服务端管理脚本](docs/server-script.md) · [密码找回与数据救援](docs/password-recovery.md)
+> **当前版本**：[v0.8.0](https://github.com/boochain/syncnotes/releases/latest) · [更新日志](docs/release-notes/v0.8.0.md) · [动效规范](docs/motion.md) · [设计系统](docs/design-system.md) · [服务端管理脚本](docs/server-script.md) · [密码找回与数据救援](docs/password-recovery.md) · [任务仪表盘](docs/task-dashboard.md) · [日历](docs/calendar.md) · [同步、备份与恢复](docs/backup-restore.md) · [网页版部署](docs/web-client.md)
 
 ---
 
-## 核心特性（v0.7.2）
+## 核心特性（v0.8.0）
 
+- **v0.8.0 新增**
+  - **任务仪表盘**：侧边栏「任务」；重要程度、起止 / 完成时间、自定义加权进度组成项、子任务起止时间与进度滚入、智能列表与风险提示。见 [`docs/task-dashboard.md`](docs/task-dashboard.md)。
+  - **日历**：会员订阅（自动续费 / 单月 / 单季度 / 单年等）、重要日期、倒数日，任务日期只读叠加。见 [`docs/calendar.md`](docs/calendar.md)。
+  - **一键立即同步、备份与恢复**：增量上传未同步内容；备份打包服务器内容 + 本机未同步修改；恢复到当前账号，便于迁移账号或服务器。见 [`docs/backup-restore.md`](docs/backup-restore.md)。
+  - **独立网页版**：`web/` 静态站点，连接已部署的服务器；可看任务、勾选完成，日历只读。见 [`docs/web-client.md`](docs/web-client.md)。
+  - **动效与流畅度**：统一的覆盖推入转场（不再闪烁、不叠字）、手机顶栏重排、玻璃与流体背景全页面可见、Android 120Hz。见 [`docs/motion.md`](docs/motion.md)。
 - **全新液态玻璃与流体动态背景**
   - 重做的 Liquid Glass 光学材质：支持折射、Fresnel 高光描边、色散棱镜内边与顶部聚焦光斑；设置页拖动透明度、折射率、画质档位实时生效。
   - 内置深/浅两套**流体动态背景**，可在「设置 → 外观」自由开关；也支持选择本地图片作为自定义壁纸并调节遮罩深浅。
-  - 居中标题与实时连接状态、左侧集中操作栏、悬浮分类胶囊（右侧带搜索）、底部常驻消息发送框 + 右侧独立圆形「+」新建按钮；打开子页时以不透明页面卡片平滑弹出覆盖主页。
+  - 居中标题与实时连接状态、左侧集中操作栏、悬浮分类胶囊（右侧带搜索）、底部常驻消息发送框 + 右侧独立圆形「+」新建按钮；打开子页时新页从侧边整页滑入覆盖主页，背景仍透出流体光场（v0.8.0）。
 - **自由拖拽便签画布、优先级排序与完成标记**
   - 收件箱支持**自由便签画布**与**普通列表视图**一键切换。
   - 桌面/平板可在画布上自由拖拽与层叠便签、右上角一键整理排列；窄屏自动适配网格布局。
@@ -29,6 +35,8 @@
 - **回收站与轻量 Rust 服务端**
   - 删除内容先进入**回收站**（支持撤销、搜索、批量恢复/彻底删除、多端同步，默认保留 30 天自动清理并回收附件空间）。
   - 服务端为单个 Rust 可执行文件 + SQLite，支持局域网 mDNS 自动发现、恢复码自助找回以及 Linux/Windows 一键管理与救援脚本。
+- **日历、订阅与倒数日**
+  - 侧边栏「日历」入口：月 / 周 / 年 / 议程视图，会员订阅（自动续费或单月 / 单季 / 单年等）、重要日期和倒数日；花费汇总、续费提醒与农历显示。数据作为 `calendar` 块同步，旧客户端可原样保存。说明见 [`docs/calendar.md`](docs/calendar.md)。
 
 > 显卡较旧或在远程桌面中运行时，可设置环境变量 `SYNCNOTES_GLASS=0`，改用轻量的毛玻璃效果。
 
@@ -47,7 +55,7 @@ Linux 与 Windows 服务器压缩包内已分别附带管理脚本（也可从�
 ```bash
 sudo ./syncnotes-server.sh            # 打开中文菜单：临时运行 / 持久运行 / 安装为服务并开机自启 / 停止 / 状态 / 更新 / 卸载
 sudo ./syncnotes-server.sh install    # 直接安装为系统服务并开机自启（会逐项询问端口、目录等，回车用默认值）
-sudo ./syncnotes-server.sh update ./syncnotes-server-v0.7.0-linux-x86_64.tar.gz   # 升级，失败自动回滚
+sudo ./syncnotes-server.sh update ./syncnotes-server-v0.8.0-linux-x86_64.tar.gz   # 升级，失败自动回滚
 ```
 
 脚本会自动识别旧安装（旧 systemd 服务、nohup 或手动进程及其数据库），备份后再迁移到 `/opt/syncnotes`，配置保存在 `/etc/syncnotes/syncnotes.env`。脚本默认不修改防火墙（仅在交互确认或显式传入 `--open-firewall` 时放行）。详细说明见 [`docs/server-script.md`](docs/server-script.md)。
@@ -67,14 +75,17 @@ powershell -ExecutionPolicy Bypass -File .\syncnotes-server.ps1 status    # 查�
 sudo ./syncnotes-rescue.sh reset bill                    # 密码重置为默认 syncnotes123456，登录后强制修改
 sudo ./syncnotes-rescue.sh reset bill --password 新密码   # 或通过 SYNCNOTES_RESCUE_PASSWORD 传入
 sudo ./syncnotes-rescue.sh export bill bill.zip          # 导出全部数据（含回收站和附件）
+sudo ./syncnotes-rescue.sh restore bill bill.zip         # 把备份还原到该用户（先自动备份当前数据）
 
 # Windows
 powershell -ExecutionPolicy Bypass -File .\syncnotes-server.ps1 reset-password bill
 powershell -ExecutionPolicy Bypass -File .\syncnotes-server.ps1 export bill .\bill.zip
+powershell -ExecutionPolicy Bypass -File .\syncnotes-server.ps1 restore bill .\bill.zip
 powershell -ExecutionPolicy Bypass -File .\syncnotes-server.ps1 backup
 ```
 
 用户自助找回（恢复码）和全部救援命令见 [`docs/password-recovery.md`](docs/password-recovery.md)。
+一键同步、备份与恢复见 [`docs/backup-restore.md`](docs/backup-restore.md)。
 
 ### 方式 1：直接运行预编译文件
 
@@ -87,8 +98,8 @@ powershell -ExecutionPolicy Bypass -File .\syncnotes-server.ps1 backup
 压缩包内包含服务器程序、管理/救援脚本、README 和 `deploy/`（systemd / Docker / Caddy / Nginx 示例配置）。
 
 ```bash
-tar xzf syncnotes-server-v0.7.0-linux-x86_64.tar.gz
-cd syncnotes-server-v0.7.0-linux-x86_64
+tar xzf syncnotes-server-v0.8.0-linux-x86_64.tar.gz
+cd syncnotes-server-v0.8.0-linux-x86_64
 ./syncnotes-server --bind 0.0.0.0:7700
 ```
 
@@ -168,6 +179,20 @@ Android 上若搜索不到，请直接手动填写 IP（部分路由器/系统�
 | Windows | `SyncNotes-windows-x64.zip` | 解压后运行 `SyncNotes\syncnotes.exe`（已附带 VC++ 运行库） |
 | Linux | `SyncNotes-linux-x64.tar.gz` | 解压后运行 `SyncNotes/syncnotes`（需要 GTK3；托盘需 `libayatana-appindicator3-1`） |
 | Android | `SyncNotes-android.apk` | 允许“安装未知来源应用”后安装 |
+| 网页版 | `SyncNotes-web-v0.8.0.zip` | 解压后把 `syncnotes-web/` 放到任意静态主机，打开后填服务器地址；见 [`docs/web-client.md`](docs/web-client.md) |
+
+### 网页版（独立站点）
+
+网页版是可以单独部署的静态站点，用浏览器打开，填写已部署的 SyncNotes 服务器地址即可使用。它和服务器是两样东西，不内嵌在 Rust 进程里，也不需要在服务器上放 Flutter 工程。
+
+```bash
+cd web
+npm ci
+npm test
+npm run build    # 把 dist/ 拷到 Nginx、Caddy 或任意静态主机
+```
+
+同源反代（同一域名既提供网页又转发 `/health`、`/api/`、`/ws`）的示例在 `web/deploy/`。详细说明见 [docs/web-client.md](docs/web-client.md)。
 
 ### 首次登录
 
@@ -194,7 +219,7 @@ Android 上若搜索不到，请直接手动填写 IP（部分路由器/系统�
 
 - **外观与液态玻璃**：浅色 / 深色 / 跟随系统、液态玻璃开关、流体动态背景开关、透明度 / 折射率 / 画质调节、自定义本地背景图片与遮罩深浅
 - **启动与后台**：登录系统时自动启动（桌面）/ 开机自启与前台常驻服务（Android）、启动时最小化到托盘、新内容通知
-- **同步与安全**：默认全局已读、传输加密指纹管理、密码与恢复码管理、导出本地备份、清除本地缓存并重新同步
+- **同步与安全**：默认全局已读、传输加密指纹管理、密码与恢复码管理、立即同步、备份与恢复、导出本地数据、清除本地缓存并重新同步
 
 ---
 
@@ -211,14 +236,16 @@ syncnotes/
 │   │   ├── files.rs      分片断点续传 / 范围下载
 │   │   ├── seal.rs       应用层传输加密（syncnotes-seal-v1）
 │   │   ├── recovery.rs   恢复码与账号找回
-│   │   └── admin.rs      管理员救援子命令（重置密码 / 导出 / 备份）
+│   │   ├── backup.rs     账号备份 / 恢复（替换当前账号数据）
+│   │   └── admin.rs      管理员救援子命令（重置密码 / 导出 / 还原 / 备份）
 │   └── tests/            集成测试
+├── web/             独立网页客户端（Vite 静态站点，部署说明见 docs/web-client.md）
 ├── app/             Flutter 客户端（Windows / Linux / Android）
 │   ├── lib/
 │   │   ├── models/       块模型
 │   │   ├── blocks/       可扩展块类型注册表 + 内置类型
 │   │   ├── sync/         同步引擎（离线队列、重连、增量追赶）
-│   │   ├── services/     认证、分片传输队列、局域网发现、设置与导出
+│   │   ├── services/     认证、分片传输队列、局域网发现、设置、导出与备份恢复
 │   │   ├── platform/     托盘/窗口、自启动、通知、单实例、Android 前台服务
 │   │   └── ui/           液态玻璃、流体背景、便签画布、Markdown/块编辑器
 │   └── test/             单元 / 组件 / 布局回归 / 真实服务端 E2E 测试
@@ -250,8 +277,8 @@ SYNCNOTES_SERVER_BIN="$(pwd)/../server/target/release/syncnotes-server" flutter 
 3. 提交并推送 `v*` 标签，GitHub Actions 将自动测试、构建 6 平台产物并发布到 Releases：
 
 ```bash
-git tag -a v0.7.0 -m "SyncNotes v0.7.0"
-git push origin v0.7.0
+git tag -a v0.8.0 -m "SyncNotes v0.8.0"
+git push origin v0.8.0
 ```
 
 <details>
@@ -275,7 +302,7 @@ git push origin v0.7.0
 
 服务器 → 客户端：`auth_ok` / `auth_error` / `block_update {block}` / `viewed_update {block_id, viewed, device_id?, seq}` / `sync_complete {latest_seq}` / `error` / `pong`
 
-每个用户维护单调递增的序号 `seq`；每次变更都会分配新序号，客户端记录收到的最大序号，重连时只拉取之后的变更。删除分两步：移入回收站设置 `deleted_at` 与 `deleted_by`（LWW 同步、支持离线排队）；彻底删除写入墓碑（`deleted=true`）并级联清理子块与服务端文件。`/health` 返回 `protocol: 2`、`features: ["trash"]` 与 `trash_retention_days`，数据库启动时自动迁移。
+每个用户维护单调递增的序号 `seq`；每次变更都会分配新序号，客户端记录收到的最大序号，重连时只拉取之后的变更。删除分两步：移入回收站设置 `deleted_at` 与 `deleted_by`（LWW 同步、支持离线排队）；彻底删除写入墓碑（`deleted=true`）并级联清理子块与服务端文件。`/health` 返回 `protocol: 3`、`features: ["trash", "seal", "tasks"]` 与 `trash_retention_days`，数据库启动时自动迁移。任务块的 kind 为 `task`，旧客户端按未知类型同步，payload 保持不透明。详见 [`docs/task-dashboard.md`](docs/task-dashboard.md)。
 
 </details>
 

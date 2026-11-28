@@ -56,11 +56,22 @@ List<SwitcherResult> searchAll(SyncClient sync, String q) {
     out.add(SwitcherResult(p, p.title.isEmpty ? '无标题' : p.title, snippet, icon(p)));
   }
   // 收件箱条目
-  for (final b in all.where((b) => b.kind == BlockKind.message || b.kind == BlockKind.note || b.kind == BlockKind.file)) {
-    final hay = '${b.title} ${b.payload['text'] ?? ''} ${b.payload['markdown'] ?? ''}'.toLowerCase();
+  for (final b in all.where((b) => b.kind == BlockKind.message || b.kind == BlockKind.note || b.kind == BlockKind.file || b.kind == BlockKind.task || b.kind == BlockKind.calendar)) {
+    final hay = '${b.title} ${b.payload['text'] ?? ''} ${b.payload['markdown'] ?? ''} ${b.payload['notes'] ?? ''}'.toLowerCase();
     if (hay.contains(query) && seen.add(b.id)) {
-      final ic = switch (b.kind) { BlockKind.message => 'chat', BlockKind.file => 'clip', _ => 'note' };
-      out.add(SwitcherResult(b, b.title, '收件箱', ic));
+      final ic = switch (b.kind) {
+        BlockKind.message => 'chat',
+        BlockKind.file => 'clip',
+        BlockKind.task => 'check',
+        BlockKind.calendar => 'cal',
+        _ => 'note',
+      };
+      final where = switch (b.kind) {
+        BlockKind.task => '任务',
+        BlockKind.calendar => '日历',
+        _ => '收件箱',
+      };
+      out.add(SwitcherResult(b, b.title, where, ic));
     }
   }
   return out.take(50).toList();

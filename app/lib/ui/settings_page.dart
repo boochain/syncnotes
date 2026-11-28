@@ -14,6 +14,7 @@ import '../sync/sync_client.dart';
 import '../sync/wire_seal.dart';
 import 'ds.dart';
 import 'glass.dart';
+import 'backup_ui.dart';
 import 'recovery_ui.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -203,11 +204,33 @@ class _SettingsPageState extends State<SettingsPage> {
                     if (ok != null && context.mounted) showToast(context, '密码已修改，其他设备需要重新登录');
                   },
                 ),
+                const SettingsSection('备份与同步'),
+                SettingsRow(
+                  key: const Key('settingsSyncNow'),
+                  icon: CupertinoIcons.arrow_up_arrow_down,
+                  title: '立即同步',
+                  subtitle: '把本机尚未同步的修改增量上传到服务器。已经同步过的内容不会重传。',
+                  onTap: () => runImmediateSync(context, s),
+                ),
+                SettingsRow(
+                  key: const Key('settingsBackupNow'),
+                  icon: CupertinoIcons.archivebox,
+                  title: '备份',
+                  subtitle: '把服务器上的内容和本机尚未同步的修改打包成 zip。你能看到的都会进备份。',
+                  onTap: () => runBackup(context, s),
+                ),
+                SettingsRow(
+                  key: const Key('settingsRestoreBackup'),
+                  icon: CupertinoIcons.arrow_counterclockwise,
+                  title: '恢复',
+                  subtitle: '把备份 zip 上传到当前登录的账号，替换为备份时的状态。用于迁移账号或服务器。恢复前会先备份当前数据。',
+                  onTap: () => runRestore(context, s),
+                ),
                 SettingsRow(
                   key: const Key('settingsExportData'),
                   icon: CupertinoIcons.arrow_down_doc,
                   title: '导出我的数据',
-                  subtitle: '把本机缓存的全部笔记、回收站和附件导出为 zip（不需要服务器）',
+                  subtitle: '只打包本机缓存（不需要连服务器）。服务器丢失时也能救出数据。',
                   onTap: () => exportMyData(context, s),
                 ),
                 const SettingsSection('外观'),
@@ -563,7 +586,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 }
 
-const appVersion = '0.7.2';
+const appVersion = '0.8.0';
 
 /// 设置分组标题：12/500 次级色，上 24 下 4（Notion 设置分组）
 class SettingsSection extends StatelessWidget {

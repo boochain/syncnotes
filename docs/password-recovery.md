@@ -22,6 +22,7 @@ sudo ./syncnotes-rescue.sh reset bill            # 重置密码为默认 syncnot
 sudo ./syncnotes-rescue.sh reset bill --password 新密码       # 指定密码
 SYNCNOTES_RESCUE_PASSWORD=新密码 sudo -E ./syncnotes-rescue.sh reset bill   # 或用环境变量
 sudo ./syncnotes-rescue.sh export bill bill.zip  # 导出全部数据（含回收站和附件）
+sudo ./syncnotes-rescue.sh restore bill bill.zip # 把备份还原到该用户（先自动备份当前数据）
 sudo ./syncnotes-rescue.sh backup                # 在线备份数据库
 # 也可以：sudo ./syncnotes-server.sh reset-password bill [--password X] / export bill [out.zip] / list-users / backup
 ```
@@ -32,6 +33,7 @@ sudo ./syncnotes-rescue.sh backup                # 在线备份数据库
 syncnotes-server admin list-users --db /opt/syncnotes/data/syncnotes.db
 syncnotes-server admin reset-password bill [--password-stdin | --password X] [--no-force-change]
 syncnotes-server admin export bill bill.zip --db ... --files-dir ...
+syncnotes-server admin restore bill bill.zip --db ... --files-dir ...
 syncnotes-server admin backup /root/syncnotes-backup.db
 ```
 
@@ -56,3 +58,5 @@ syncnotes-server admin backup /root/syncnotes-backup.db
 已下载到本机的附件（在线时会补充下载）打包为 zip，格式与服务器导出相同。
 
 截图：`docs/screenshots/recovery-*.png`（手机 390 宽 / 桌面 1280 宽，浅色 / 深色）。
+
+日常的一键同步、备份（服务器内容 + 本机未同步修改）和在客户端恢复到当前登录账号，见 [`docs/backup-restore.md`](backup-restore.md)。

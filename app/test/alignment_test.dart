@@ -60,6 +60,13 @@ void main() {
     await pump(tester, const Size(400, 760));
     await tester.tap(find.byKey(const Key('homeSettings')));
     await tester.pumpAndSettle();
+    // v0.8.0 在「外观」上方加了「备份与同步」分组，窄屏下需要先滚到主题选择器。
+    await tester.dragUntilVisible(
+      find.byKey(const Key('themeSelector')),
+      find.byKey(const Key('settingsSyncNow')),
+      const Offset(0, -200),
+    );
+    await tester.pumpAndSettle();
     expect(r(tester, find.byKey(const Key('themeSelector'))).height, Sizes.control);
     await tester.tap(find.byKey(const Key('seg-2')));
     await tester.pumpAndSettle();
@@ -96,33 +103,38 @@ void main() {
     expect(more.center.dy, closeTo(card.center.dy, 0.51));
   });
 
-  testWidgets('home header: left buttons 32, title centered with status below; filter tabs 28 with search on right in 44 row',
+  testWidgets('home header: avatar left, title center, settings right; search then view mode on the category row',
       (tester) async {
     await pump(tester, const Size(400, 760));
-    // 视觉尺寸 32（按钮的 Material 外观）；触屏点击区扩大到 48 宽、占满 44 高的顶栏
+    // 视觉尺寸 32（按钮的 Material 外观）；触屏点击区扩大到 48 宽、占满 44 高的所在行
     Finder visual(String k) => find.descendant(of: find.byKey(Key(k)), matching: find.byType(Material)).first;
-    sameRow(tester, [visual('menuButton'), visual('viewModeToggle'), visual('homeSettings')], Sizes.control, why: 'header');
-    for (final k in ['menuButton', 'viewModeToggle', 'homeSettings', 'homeSearch']) {
+    sameRow(tester, [visual('menuButton'), visual('homeSettings')], Sizes.control, why: 'header');
+    for (final k in ['menuButton', 'homeSettings', 'homeSearch', 'viewModeToggle']) {
       final hit = r(tester, find.byKey(Key(k)));
       expect(hit.width, greaterThanOrEqualTo(48), reason: '$k touch target width');
       expect(hit.height, greaterThanOrEqualTo(Sizes.bar - 1), reason: '$k touch target height');
     }
-    // 按钮集中在左侧，标题在右侧居中区域，连接状态在标题下方
+    // 头像最左，设置最右，标题居中，连接状态在标题下方
     final titleRect = r(tester, find.byKey(const Key('homeTitle')));
     final connRect = r(tester, find.byKey(const Key('connDot')));
-    expect(r(tester, find.byKey(const Key('homeSettings'))).right, lessThanOrEqualTo(titleRect.left + 1));
+    expect(r(tester, find.byKey(const Key('menuButton'))).right, lessThanOrEqualTo(titleRect.left + 1));
+    expect(r(tester, find.byKey(const Key('homeSettings'))).left, greaterThanOrEqualTo(titleRect.right - 1));
     expect(connRect.top, greaterThanOrEqualTo(titleRect.bottom - 2));
 
-    // 四个切换项 28 高居中在 44 行内，搜索按钮紧跟在四个切换项右侧
+    // 四个切换项 28 高居中在 44 行内；搜索在分类右侧，查看方式在搜索右侧
     final tabs = ['all', 'msg', 'page', 'file'].map((k) => find.byKey(Key('filter-$k'))).toList();
     sameRow(tester, tabs, Sizes.compact, why: 'filter');
     final row = r(tester, find.byKey(const Key('filterRow')));
     expect(row.height, Sizes.bar);
     expect(r(tester, tabs.first).center.dy, closeTo(row.center.dy, 0.51));
     final searchVisual = visual('homeSearch');
+    final viewVisual = visual('viewModeToggle');
     expect(r(tester, searchVisual).height, closeTo(Sizes.control, 0.01));
     expect(r(tester, searchVisual).center.dy, closeTo(row.center.dy, 0.51));
+    expect(r(tester, viewVisual).height, closeTo(Sizes.control, 0.01));
+    expect(r(tester, viewVisual).center.dy, closeTo(row.center.dy, 0.51));
     expect(r(tester, find.byKey(const Key('homeSearch'))).left, greaterThanOrEqualTo(r(tester, tabs.last).right));
+    expect(r(tester, find.byKey(const Key('viewModeToggle'))).left, greaterThanOrEqualTo(r(tester, find.byKey(const Key('homeSearch'))).right));
   });
 
   testWidgets('sidebar: nav rows and page tree rows are all 32 high; header 44', (tester) async {

@@ -66,6 +66,44 @@ jobs:
           SYNCNOTES_SERVER_BIN: ${{ github.workspace }}/bin/syncnotes-server
         run: flutter test
 
+
+  web-test:
+    name: Web client tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install, test, build
+        working-directory: web
+        run: |
+          npm ci
+          npm test
+          npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+          retention-days: 14
+      - name: Package static site (release asset)
+        run: |
+          VER="${GITHUB_REF_NAME}"
+          case "$VER" in v*) ;; *) VER="v$(node -p "require('./web/package.json').version")" ;; esac
+          mkdir -p web-pkg/syncnotes-web
+          cp -r web/dist/. web-pkg/syncnotes-web/
+          rm -f web-pkg/syncnotes-web/assets/*.map
+          cp web/README.md web-pkg/syncnotes-web/README-web.md
+          cp -r web/deploy web-pkg/syncnotes-web/deploy
+          (cd web-pkg && zip -qr "SyncNotes-web-${VER}.zip" syncnotes-web)
+          ls -l web-pkg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-web
+          path: web-pkg/*.zip
+
   server-build:
     name: Server ${{ matrix.name }}
     needs: server-test
@@ -231,7 +269,7 @@ jobs:
   release:
     name: Publish release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [server-build, app-linux, app-windows, app-android]
+    needs: [server-build, app-linux, app-windows, app-android, web-test]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -3,71 +3,75 @@ import 'package:flutter/material.dart';
 import 'glass.dart';
 import 'tokens.dart';
 
-/// 轻量 GPU 卡片弹出转场：
-/// - 根路由（主页）保持透明以展示流体/壁纸背景，不被强制遮盖；
-/// - 推入的新页面（笔记编辑器、页面、文件夹、设置、回收站、传输等）作为不透明页面卡片
-///   从微缩+轻位移平滑弹出盖住主页，附带柔和暗幕与投影，杜绝透明叠字重影与逐帧模糊卡顿。
-Widget _buildPageCardTransition(
+/// 页面转场套组见 `docs/motion.md`：
+/// Material 3 Emphasized 时长/缓动 + iOS 式覆盖推入（不对正文做透明度交叉）。
+Widget _buildPageCoverTransition(
   BuildContext context,
   Animation<double> animation,
+  Animation<double> secondaryAnimation,
   Widget child, {
   required bool isRoot,
 }) {
-  if (isRoot) return child;
+  final reduce = MediaQuery.disableAnimationsOf(context);
+  final glassOn = Glass.useShader && Glass.surfaceTranslucent;
   final surface = Theme.of(context).colorScheme.surface;
   final dark = Theme.of(context).brightness == Brightness.dark;
-  final opaqueCard = RepaintBoundary(
-    child: ColoredBox(color: surface, child: child),
+
+  final page = RepaintBoundary(
+    child: glassOn ? child : ColoredBox(color: surface, child: child),
   );
-  if (!Glass.useShader) return opaqueCard;
 
+  if (reduce) return page;
+
+  final incoming = CurvedAnimation(
+    parent: animation,
+    curve: MotionCurves.emphasizedDecelerate,
+    reverseCurve: MotionCurves.emphasized,
+  );
+  final covered = CurvedAnimation(
+    parent: secondaryAnimation,
+    curve: MotionCurves.emphasizedAccelerate,
+    reverseCurve: MotionCurves.emphasizedDecelerate,
+  );
+
+  // 新页：从尾侧整页滑入，不透明度始终为 1，裁切防止字画出边界。
+  Widget layer = page;
+  if (!isRoot) {
+    layer = AnimatedBuilder(
+      animation: incoming,
+      child: page,
+      builder: (context, child) {
+        final t = incoming.value.clamp(0.0, 1.0);
+        return ClipRect(
+          child: FractionalTranslation(
+            translation: Offset(1.0 - t, 0),
+            child: child,
+          ),
+        );
+      },
+    );
+  }
+
+  // 旧页（含根路由主页）：向首侧视差 30%，上面压暗。正文保持不透明，避免与新页叠字。
   return AnimatedBuilder(
-    animation: animation,
-    child: opaqueCard,
-    builder: (context, card) {
-      final raw = animation.value.clamp(0.0, 1.0);
-      final reverse = animation.status == AnimationStatus.reverse;
-      final v = reverse ? 1.0 - Curves.easeInCubic.transform(1.0 - raw) : Curves.easeOutCubic.transform(raw);
-      if (v >= 0.999) return card!;
-
-      // 仅在极短的首尾边缘平滑收口，其余全程保持 100% 不透明，杜绝页面文字穿透叠加
-      final cardOpacity = (v / 0.14).clamp(0.0, 1.0);
-      final scale = 0.96 + 0.04 * v;
-      final dyFrac = 0.08 * (1.0 - v);
-      final radius = 20.0 * (1.0 - v);
-      final scrimAlpha = (dark ? 0.38 : 0.16) * v;
-
+    animation: covered,
+    child: layer,
+    builder: (context, child) {
+      final s = covered.value.clamp(0.0, 1.0);
+      final content = ClipRect(
+        child: FractionalTranslation(
+          translation: Offset(-0.30 * s, 0),
+          child: child,
+        ),
+      );
+      if (s <= 0.0) return content;
+      final scrim = (dark ? 0.38 : 0.16) * s;
       return Stack(
         fit: StackFit.expand,
         children: [
+          content,
           IgnorePointer(
-            child: ColoredBox(color: Colors.black.withValues(alpha: scrimAlpha)),
-          ),
-          Opacity(
-            opacity: cardOpacity,
-            child: FractionalTranslation(
-              translation: Offset(0, dyFrac),
-              child: Transform.scale(
-                scale: scale,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(radius),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: (dark ? 0.44 : 0.15) * v),
-                        blurRadius: 28,
-                        spreadRadius: -2,
-                        offset: const Offset(0, 10),
-                      ),
-                    ],
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(radius),
-                    child: card!,
-                  ),
-                ),
-              ),
-            ),
+            child: ColoredBox(color: Colors.black.withValues(alpha: scrim)),
           ),
         ],
       );
@@ -75,7 +79,7 @@ Widget _buildPageCardTransition(
   );
 }
 
-/// 零叠层内容切换器：仅渲染当前子视图，采用纯 GPU 淡入+微缩放，无逐帧模糊开销。
+/// 零叠层内容切换器：只渲染当前子视图，采用套组内的短时进入曲线。
 class MotionSwitch extends StatelessWidget {
   final Widget child;
   final Duration duration;
@@ -89,29 +93,22 @@ class MotionSwitch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final reduce = MediaQuery.disableAnimationsOf(context);
+    if (reduce) return child;
     return AnimatedSwitcher(
       duration: duration,
       reverseDuration: Duration.zero,
-      switchInCurve: Curves.easeOutCubic,
-      layoutBuilder: (currentChild, previousChildren) => currentChild ?? const SizedBox.shrink(),
-      transitionBuilder: (child, animation) => AnimatedBuilder(
-        animation: animation,
-        builder: (context, c) {
-          final v = animation.value.clamp(0.0, 1.0);
-          final scale = 0.988 + 0.012 * v;
-          return Opacity(
-            opacity: v,
-            child: Transform.scale(scale: scale, child: c),
-          );
-        },
-        child: child,
-      ),
+      switchInCurve: MotionCurves.emphasizedDecelerate,
+      layoutBuilder: (currentChild, previousChildren) =>
+          currentChild ?? const SizedBox.shrink(),
+      transitionBuilder: (child, animation) =>
+          FadeTransition(opacity: animation, child: child),
       child: child,
     );
   }
 }
 
-/// 全局页面路由转场：推入页面作为不透明卡片平滑弹出盖住主页。
+/// 全局页面路由转场：与 [fadeRoute] 使用同一套覆盖推入。
 class OpaqueFadeTransitionsBuilder extends PageTransitionsBuilder {
   const OpaqueFadeTransitionsBuilder();
 
@@ -123,22 +120,37 @@ class OpaqueFadeTransitionsBuilder extends PageTransitionsBuilder {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    return _buildPageCardTransition(context, animation, child, isRoot: route.isFirst);
+    return _buildPageCoverTransition(
+      context,
+      animation,
+      secondaryAnimation,
+      child,
+      isRoot: route.isFirst,
+    );
   }
 }
 
-/// 独立页面弹出路由（笔记编辑器、页面、文件夹、设置等）：
-/// 以不透明页面卡片弹出覆盖主页，关闭时平滑收回。
-PageRoute<T> fadeRoute<T>(Widget page, {Duration? duration, Duration? reverse}) => PageRouteBuilder<T>(
-      opaque: true,
-      pageBuilder: (ctx, a1, a2) => page,
-      transitionDuration: duration ?? const Duration(milliseconds: 240),
-      reverseTransitionDuration: reverse ?? const Duration(milliseconds: 190),
-      transitionsBuilder: (context, animation, secondaryAnimation, child) =>
-          _buildPageCardTransition(context, animation, child, isRoot: false),
-    );
+/// 独立页面路由（笔记编辑器、页面、文件夹、设置等）。
+PageRoute<T> fadeRoute<T>(
+  Widget page, {
+  Duration? duration,
+  Duration? reverse,
+}) => PageRouteBuilder<T>(
+  opaque: true,
+  pageBuilder: (ctx, a1, a2) => page,
+  transitionDuration: duration ?? Motion.medium4,
+  reverseTransitionDuration: reverse ?? Motion.medium2,
+  transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+      _buildPageCoverTransition(
+        context,
+        animation,
+        secondaryAnimation,
+        child,
+        isRoot: false,
+      ),
+);
 
-/// 对话框 / 快速切换器出现动画（纯 GPU 缩放淡入，零模糊卡顿）。
+/// 对话框 / 快速切换器：浮层允许透明度 + 微缩放，仍使用同一套进入/退出曲线。
 class MotionFade extends StatelessWidget {
   final Animation<double> animation;
   final Widget child;
@@ -146,16 +158,23 @@ class MotionFade extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (MediaQuery.disableAnimationsOf(context)) return child;
     return AnimatedBuilder(
       animation: animation,
       builder: (context, inner) {
         final raw = animation.value.clamp(0.0, 1.0);
         final reverse = animation.status == AnimationStatus.reverse;
-        final v = reverse ? 1.0 - Curves.easeInCubic.transform(1.0 - raw) : Curves.easeOutCubic.transform(raw);
+        final v = reverse
+            ? 1.0 - MotionCurves.emphasizedAccelerate.transform(1.0 - raw)
+            : MotionCurves.emphasizedDecelerate.transform(raw);
         final scale = 0.96 + 0.04 * v;
         return Opacity(
           opacity: v,
-          child: Transform.scale(scale: scale, child: inner),
+          child: Transform.scale(
+            scale: scale,
+            filterQuality: FilterQuality.none,
+            child: inner,
+          ),
         );
       },
       child: child,

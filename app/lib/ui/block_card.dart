@@ -9,6 +9,8 @@ import '../blocks/block_type.dart';
 import '../models/block.dart';
 import '../platform/desktop.dart';
 import '../sync/sync_client.dart';
+import '../tasks/task_actions.dart';
+import '../tasks/task_models.dart';
 import 'context_menu.dart';
 import 'ds.dart';
 import 'glass.dart';
@@ -60,8 +62,11 @@ int blockPriorityOf(Block block) {
   return stickyColorOf(block).priority;
 }
 
-/// 块是否已标记为完成（同步保存在 `block.payload['completed']`）。
-bool isBlockCompleted(Block block) => block.payload['completed'] == true;
+/// 块是否已标记为完成（同步保存在 `block.payload['completed']`；任务还看 status）。
+bool isBlockCompleted(Block block) {
+  if (isTaskBlock(block)) return taskDataOf(block).status == TaskStatus.done;
+  return block.payload['completed'] == true;
+}
 
 void setStickyColor(SyncClient sync, Block block, String colorKey) {
   final next = Map<String, dynamic>.from(block.payload);
@@ -74,6 +79,10 @@ void setStickyColor(SyncClient sync, Block block, String colorKey) {
 }
 
 void setBlockCompleted(SyncClient sync, Block block, bool completed) {
+  if (isTaskBlock(block)) {
+    setTaskCompleted(sync, block, completed);
+    return;
+  }
   final next = Map<String, dynamic>.from(block.payload);
   if (completed) {
     next['completed'] = true;
@@ -384,6 +393,8 @@ class _StickyNoteCardState extends State<StickyNoteCard> {
         BlockKind.folder => const Color(0xFFF59E0B),
         BlockKind.file => const Color(0xFF38BDF8),
         BlockKind.page || BlockKind.note => const Color(0xFF8B5CF6),
+        BlockKind.task => const Color(0xFF007AFF),
+        BlockKind.calendar => const Color(0xFFFF9500),
         BlockKind.message || BlockKind.text || BlockKind.unknown => null,
       };
 
@@ -698,7 +709,7 @@ class _BlockCardState extends State<BlockCard> {
         : c.elevated;
     final cardBg = _hover
         ? (translucent ? baseGlass.withValues(alpha: dark ? 0.56 : 0.78) : c.hover)
-        : (translucent ? baseGlass.withValues(alpha: dark ? 0.30 : 0.48) : Colors.transparent);
+        : (translucent ? baseGlass.withValues(alpha: dark ? 0.22 : 0.36) : Colors.transparent);
 
     final rowWidget = Semantics(
       button: true,
@@ -716,10 +727,13 @@ class _BlockCardState extends State<BlockCard> {
             showBlockMenu(context, block);
           },
           onSecondaryTapUp: (d) => showBlockMenu(context, block, anchor: d.globalPosition),
-          child: AnimatedContainer(
+          child: GlassSheen(
+            radius: translucent ? AppRadius.l : AppRadius.m,
+            accent: accentTint,
+            child: AnimatedContainer(
             key: ValueKey('card-${block.id}'),
             duration: Motion.short2,
-            curve: Curves.easeOutCubic,
+            curve: MotionCurves.standard,
             constraints: const BoxConstraints(minHeight: Sizes.listRow),
             margin: EdgeInsets.symmetric(horizontal: translucent ? Gap.xl : Gap.m, vertical: translucent ? 4 : 0),
             padding: const EdgeInsets.only(left: Gap.s, right: Gap.xs),
@@ -864,6 +878,7 @@ class _BlockCardState extends State<BlockCard> {
                 ),
               ),
             ]),
+          ),
           ),
         ),
       ),

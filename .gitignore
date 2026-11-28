@@ -25,3 +25,7 @@ app/android/key.properties
 .DS_Store
 .vscode/
 dist/
+
+# Web client
+web/node_modules/
+web/.vite/
