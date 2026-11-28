@@ -59,41 +59,47 @@ class _HomePageState extends State<HomePage> {
     }
 
     Widget buildSearchField({bool pill = false}) => SizedBox(
-          height: pill ? 30 : 32,
-          child: CallbackShortcuts(
-            bindings: {
-              const SingleActivator(LogicalKeyboardKey.escape): () => setState(() {
-                    _searching = false;
-                    _filter = '';
-                  }),
-            },
-            child: TextField(
-              key: const ValueKey('search'),
-              autofocus: true,
-              style: tt.bodyMedium?.copyWith(fontSize: 13.5),
-              onChanged: (v) => setState(() => _filter = v),
-              decoration: InputDecoration(
-                hintText: '搜索笔记、消息、文件…',
-                filled: !pill,
-                fillColor: pill ? Colors.transparent : null,
-                prefixIcon: const Icon(CupertinoIcons.search, size: 15),
-                prefixIconConstraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-                contentPadding: EdgeInsets.symmetric(horizontal: Gap.m, vertical: pill ? 5 : 6),
-                isDense: true,
-                border: pill ? InputBorder.none : null,
-                enabledBorder: pill ? InputBorder.none : null,
-                focusedBorder: pill ? InputBorder.none : null,
-              ),
+      height: pill ? 30 : 32,
+      child: CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.escape): () => setState(() {
+            _searching = false;
+            _filter = '';
+          }),
+        },
+        child: TextField(
+          key: const ValueKey('search'),
+          autofocus: true,
+          style: tt.bodyMedium?.copyWith(fontSize: 13.5),
+          onChanged: (v) => setState(() => _filter = v),
+          decoration: InputDecoration(
+            hintText: '搜索笔记、消息、文件…',
+            filled: !pill,
+            fillColor: pill ? Colors.transparent : null,
+            prefixIcon: const Icon(CupertinoIcons.search, size: 15),
+            prefixIconConstraints: const BoxConstraints(
+              minWidth: 30,
+              minHeight: 30,
             ),
+            contentPadding: EdgeInsets.symmetric(
+              horizontal: Gap.m,
+              vertical: pill ? 5 : 6,
+            ),
+            isDense: true,
+            border: pill ? InputBorder.none : null,
+            enabledBorder: pill ? InputBorder.none : null,
+            focusedBorder: pill ? InputBorder.none : null,
           ),
-        );
+        ),
+      ),
+    );
 
     ButtonStyle compactStyle(double dim) => IconButton.styleFrom(
-          fixedSize: Size.square(dim),
-          minimumSize: Size.square(dim),
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          padding: EdgeInsets.zero,
-        );
+      fixedSize: Size.square(dim),
+      minimumSize: Size.square(dim),
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      padding: EdgeInsets.zero,
+    );
 
     // 软件标题居中，连接状态位于标题正下方
     final centeredTitle = MediaQuery.withClampedTextScaling(
@@ -107,40 +113,53 @@ class _HomePageState extends State<HomePage> {
             key: const Key('homeTitle'),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600, fontSize: 15.5, height: 1.15),
+            style: tt.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+              fontSize: 15.5,
+              height: 1.15,
+            ),
           ),
           const SizedBox(height: 1),
           ListenableBuilder(
             listenable: s.sync,
-            builder: (context, _) => ConnectionBadge(sync: s.sync, compact: true),
+            builder: (context, _) =>
+                ConnectionBadge(sync: s.sync, compact: true),
           ),
         ],
       ),
     );
 
-    // 常规（非玻璃/测试）顶栏：按钮集中在左侧，标题居中、连接状态在标题下方
-    final regularLeftButtons = Row(
+    // 顶栏：头像/菜单最左，标题与状态居中，设置（及桌面窗口缩放）最右。
+    final leadingButtons = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         if (widget.onMenu != null)
           IconButton(
             key: const Key('menuButton'),
-            icon: const Icon(CupertinoIcons.sidebar_left),
-            tooltip: '菜单',
+            icon: Icon(
+              widget.embedded
+                  ? CupertinoIcons.sidebar_left
+                  : CupertinoIcons.person_crop_circle_fill,
+            ),
+            tooltip: widget.embedded ? '展开侧边栏' : '菜单与侧边栏',
             onPressed: widget.onMenu,
           ),
-        IconButton(
-          key: const Key('viewModeToggle'),
-          tooltip: isGrid ? '切换为普通列表视图' : '切换为自由便签画布',
-          icon: Icon(isGrid ? CupertinoIcons.list_bullet : CupertinoIcons.square_grid_2x2),
-          onPressed: toggleViewMode,
-        ),
+      ],
+    );
+
+    final trailingButtons = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
         if (isDesktop)
           ValueListenableBuilder<bool>(
             valueListenable: DesktopShell.instance.expanded,
             builder: (c, ex, _) => IconButton(
               tooltip: ex ? '收起为小窗' : '展开窗口',
-              icon: Icon(ex ? CupertinoIcons.arrow_down_right_arrow_up_left : CupertinoIcons.arrow_up_left_arrow_down_right),
+              icon: Icon(
+                ex
+                    ? CupertinoIcons.arrow_down_right_arrow_up_left
+                    : CupertinoIcons.arrow_up_left_arrow_down_right,
+              ),
               onPressed: DesktopShell.instance.toggleExpanded,
             ),
           ),
@@ -149,7 +168,8 @@ class _HomePageState extends State<HomePage> {
             key: const Key('homeSettings'),
             tooltip: '设置',
             icon: const Icon(CupertinoIcons.gear),
-            onPressed: () => Navigator.of(context).push(fadeRoute(const SettingsPage())),
+            onPressed: () =>
+                Navigator.of(context).push(fadeRoute(const SettingsPage())),
           ),
       ],
     );
@@ -158,33 +178,25 @@ class _HomePageState extends State<HomePage> {
       height: Sizes.bar,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: Gap.xs),
-        child: LayoutBuilder(
-          builder: (context, bc) {
-            if (bc.maxWidth >= 420) {
-              return Stack(
-                alignment: Alignment.center,
-                children: [
-                  Align(alignment: Alignment.centerLeft, child: regularLeftButtons),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 148),
-                    child: centeredTitle,
-                  ),
-                ],
-              );
-            }
-            return Row(
-              children: [
-                regularLeftButtons,
-                Expanded(child: Center(child: centeredTitle)),
-                const SizedBox(width: Gap.s),
-              ],
-            );
-          },
+        child: Row(
+          children: [
+            leadingButtons,
+            Expanded(child: Center(child: centeredTitle)),
+            trailingButtons,
+          ],
         ),
       ),
     );
 
-    // 四个切换项 + 右侧搜索按钮
+    // 分类行：胶囊分类、搜索，查看方式紧挨搜索右侧。
+    final viewModeButton = IconButton(
+      key: const Key('viewModeToggle'),
+      tooltip: isGrid ? '切换为普通列表视图' : '切换为自由便签画布',
+      icon: Icon(
+        isGrid ? CupertinoIcons.list_bullet : CupertinoIcons.square_grid_2x2,
+      ),
+      onPressed: toggleViewMode,
+    );
     final filterAndSearchRow = SizedBox(
       height: Sizes.bar,
       child: Row(
@@ -198,7 +210,10 @@ class _HomePageState extends State<HomePage> {
                 : ListView(
                     key: const Key('filterRow'),
                     scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: Gap.l, vertical: (Sizes.bar - Sizes.compact) / 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: Gap.l,
+                      vertical: (Sizes.bar - Sizes.compact) / 2,
+                    ),
                     children: [
                       for (final e in _kinds.entries)
                         Padding(
@@ -216,9 +231,12 @@ class _HomePageState extends State<HomePage> {
           IconButton(
             key: const Key('homeSearch'),
             tooltip: _searching ? '关闭搜索' : '搜索',
-            icon: Icon(_searching ? CupertinoIcons.xmark : CupertinoIcons.search),
+            icon: Icon(
+              _searching ? CupertinoIcons.xmark : CupertinoIcons.search,
+            ),
             onPressed: toggleSearch,
           ),
+          viewModeButton,
           const SizedBox(width: Gap.xs),
         ],
       ),
@@ -232,24 +250,32 @@ class _HomePageState extends State<HomePage> {
           color: c.danger.withValues(alpha: 0.14),
           borderRadius: BorderRadius.circular(AppRadius.m),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: Gap.l, vertical: Gap.xs),
-            child: Row(children: [
-              Expanded(
-                child: Text(s.sync.lastError ?? '服务器指纹和上次不一致', style: tt.bodySmall?.copyWith(color: c.danger)),
-              ),
-              TextButton(
-                key: const Key('trustFingerprintHome'),
-                onPressed: () {
-                  final server = s.settings.server;
-                  if (server != null) {
-                    s.settings.clearSealPin(server);
-                    WireSeal.forget(server);
-                  }
-                  s.sync.reconnectNow();
-                },
-                child: const Text('改用新指纹'),
-              ),
-            ]),
+            padding: const EdgeInsets.symmetric(
+              horizontal: Gap.l,
+              vertical: Gap.xs,
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    s.sync.lastError ?? '服务器指纹和上次不一致',
+                    style: tt.bodySmall?.copyWith(color: c.danger),
+                  ),
+                ),
+                TextButton(
+                  key: const Key('trustFingerprintHome'),
+                  onPressed: () {
+                    final server = s.settings.server;
+                    if (server != null) {
+                      s.settings.clearSealPin(server);
+                      WireSeal.forget(server);
+                    }
+                    s.sync.reconnectNow();
+                  },
+                  child: const Text('改用新指纹'),
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -272,7 +298,9 @@ class _HomePageState extends State<HomePage> {
                   )
                 : ConstrainedBox(
                     key: const Key('filterRow'),
-                    constraints: BoxConstraints(maxWidth: (maxW - 12).clamp(180.0, 440.0)),
+                    constraints: BoxConstraints(
+                      maxWidth: (maxW - 12).clamp(180.0, 440.0),
+                    ),
                     child: SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
                       child: Row(
@@ -280,7 +308,9 @@ class _HomePageState extends State<HomePage> {
                         children: [
                           for (final e in _kinds.entries)
                             Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 2),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 2,
+                              ),
                               child: FilterTab(
                                 key: Key('filter-${e.key}'),
                                 label: e.value.$1,
@@ -321,199 +351,223 @@ class _HomePageState extends State<HomePage> {
               backgroundColor: Glass.scaffoldBg(context),
               body: SafeArea(
                 bottom: false,
-                child: Column(children: [
-                  DecoratedBox(
-                    decoration: BoxDecoration(border: Border(bottom: BorderSide(color: c.separator))),
-                    child: barContent,
-                  ),
-                  filterAndSearchRow,
-                  sealBanner,
-                  Expanded(
-                    child: RefreshIndicator(
-                      onRefresh: () async => s.sync.reconnectNow(),
-                      child: BlockList(filter: _filter, kinds: _kinds[_kind]!.$2, gridMode: isGrid),
+                child: Column(
+                  children: [
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        border: Border(bottom: BorderSide(color: c.separator)),
+                      ),
+                      child: barContent,
                     ),
-                  ),
-                ]),
+                    filterAndSearchRow,
+                    sealBanner,
+                    Expanded(
+                      child: RefreshIndicator(
+                        onRefresh: () async => s.sync.reconnectNow(),
+                        child: BlockList(
+                          filter: _filter,
+                          kinds: _kinds[_kind]!.$2,
+                          gridMode: isGrid,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
               bottomNavigationBar: const QuickSendBar(),
             );
           }
 
-          // 液态玻璃统一悬浮架构（桌面端与移动端一致）：
-          // 1. 顶部行：按钮集中在左侧，软件标题居中、连接情况在标题正下方；
-          // 2. 第二行：居中四个切换项胶囊，搜索按钮紧贴其右侧；
+          // 液态玻璃悬浮架构：
+          // 1. 顶栏：头像最左，标题与状态居中，设置最右（桌面窗口缩放挨着设置）；
+          // 2. 第二行：分类胶囊、搜索、查看方式（查看方式在搜索右侧）；
           // 3. 底部栏：常驻消息发送框 + 右侧独立圆形新建按钮。
-          return LayoutBuilder(builder: (context, constraints) {
-            final mediaPad = MediaQuery.paddingOf(context);
-            final topInset = mediaPad.top + 102.0 + (s.sync.sealBlocked ? 48.0 : 0.0);
-            final bottomInset = mediaPad.bottom + 78.0;
-            final hPad = constraints.maxWidth >= 660 ? Gap.xl : Gap.m;
-            final leftBtnDim = constraints.maxWidth < 460 ? 30.0 : 32.0;
-            final leftBtnStyle = compactStyle(leftBtnDim);
-            final searchBtnStyle = compactStyle(32.0);
-            final leftBtnCount =
-                (widget.onMenu != null ? 1 : 0) + 1 + (isDesktop ? 1 : 0) + (!widget.embedded ? 1 : 0);
-            final leftPillW = leftBtnCount * leftBtnDim + 6.0;
-            final canCenterInStack = (constraints.maxWidth - hPad * 2) / 2 - 54.0 > leftPillW;
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              final mediaPad = MediaQuery.paddingOf(context);
+              final topInset =
+                  mediaPad.top + 102.0 + (s.sync.sealBlocked ? 48.0 : 0.0);
+              final bottomInset = mediaPad.bottom + 78.0;
+              final hPad = constraints.maxWidth >= 660 ? Gap.xl : Gap.m;
+              final iconDim = constraints.maxWidth < 460 ? 30.0 : 32.0;
+              final iconStyle = compactStyle(iconDim);
 
-            final leftGlassButtons = Glass(
-              radius: 18,
-              padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
-              child: Material(
-                type: MaterialType.transparency,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (widget.onMenu != null)
-                      IconButton(
-                        key: const Key('menuButton'),
-                        style: leftBtnStyle,
-                        icon: Icon(
-                          widget.embedded ? CupertinoIcons.sidebar_left : CupertinoIcons.person_crop_circle_fill,
-                          size: widget.embedded ? 17 : 20,
-                          color: c.text2,
-                        ),
-                        tooltip: widget.embedded ? '展开侧边栏' : '菜单与侧边栏',
-                        onPressed: widget.onMenu,
-                      ),
-                    IconButton(
-                      key: const Key('viewModeToggle'),
-                      style: leftBtnStyle,
-                      tooltip: isGrid ? '切换为普通列表视图' : '切换为自由便签画布',
+              Widget glassIconButton({
+                required Key? key,
+                required String tooltip,
+                required IconData icon,
+                required VoidCallback onPressed,
+                double iconSize = 16.5,
+                Color? iconColor,
+              }) {
+                return Glass(
+                  radius: 18,
+                  padding: const EdgeInsets.all(2),
+                  child: Material(
+                    type: MaterialType.transparency,
+                    child: IconButton(
+                      key: key,
+                      style: iconStyle,
+                      tooltip: tooltip,
                       icon: Icon(
-                        isGrid ? CupertinoIcons.list_bullet : CupertinoIcons.square_grid_2x2,
-                        size: 16.5,
-                        color: c.text2,
+                        icon,
+                        size: iconSize,
+                        color: iconColor ?? c.text2,
                       ),
-                      onPressed: toggleViewMode,
+                      onPressed: onPressed,
                     ),
-                    if (isDesktop)
-                      ValueListenableBuilder<bool>(
-                        valueListenable: DesktopShell.instance.expanded,
-                        builder: (c, ex, _) => IconButton(
-                          style: leftBtnStyle,
-                          tooltip: ex ? '收起为小窗' : '展开窗口',
-                          icon: Icon(
-                            ex
-                                ? CupertinoIcons.arrow_down_right_arrow_up_left
-                                : CupertinoIcons.arrow_up_left_arrow_down_right,
-                            size: 15.5,
-                            color: AppColors.of(c).text2,
-                          ),
-                          onPressed: DesktopShell.instance.toggleExpanded,
+                  ),
+                );
+              }
+
+              final avatarButton = widget.onMenu == null
+                  ? null
+                  : glassIconButton(
+                      key: const Key('menuButton'),
+                      tooltip: widget.embedded ? '展开侧边栏' : '菜单与侧边栏',
+                      icon: widget.embedded
+                          ? CupertinoIcons.sidebar_left
+                          : CupertinoIcons.person_crop_circle_fill,
+                      iconSize: widget.embedded ? 17 : 20,
+                      onPressed: widget.onMenu!,
+                    );
+
+              final settingsButton = widget.embedded
+                  ? null
+                  : glassIconButton(
+                      key: const Key('homeSettings'),
+                      tooltip: '设置',
+                      icon: CupertinoIcons.gear,
+                      onPressed: () => Navigator.of(
+                        context,
+                      ).push(fadeRoute(const SettingsPage())),
+                    );
+
+              final expandButton = !isDesktop
+                  ? null
+                  : ValueListenableBuilder<bool>(
+                      valueListenable: DesktopShell.instance.expanded,
+                      builder: (ctx, ex, _) => glassIconButton(
+                        key: null,
+                        tooltip: ex ? '收起为小窗' : '展开窗口',
+                        icon: ex
+                            ? CupertinoIcons.arrow_down_right_arrow_up_left
+                            : CupertinoIcons.arrow_up_left_arrow_down_right,
+                        iconSize: 15.5,
+                        iconColor: AppColors.of(ctx).text2,
+                        onPressed: DesktopShell.instance.toggleExpanded,
+                      ),
+                    );
+
+              final searchCircleButton = glassIconButton(
+                key: const Key('homeSearch'),
+                tooltip: _searching ? '关闭搜索' : '搜索',
+                icon: _searching ? CupertinoIcons.xmark : CupertinoIcons.search,
+                iconSize: 16,
+                onPressed: toggleSearch,
+              );
+
+              final viewModeButton = glassIconButton(
+                key: const Key('viewModeToggle'),
+                tooltip: isGrid ? '切换为普通列表视图' : '切换为自由便签画布',
+                icon: isGrid
+                    ? CupertinoIcons.list_bullet
+                    : CupertinoIcons.square_grid_2x2,
+                onPressed: toggleViewMode,
+              );
+
+              final trailingCluster = Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (expandButton != null) ...[
+                    expandButton,
+                    const SizedBox(width: 6),
+                  ],
+                  ?settingsButton,
+                ],
+              );
+
+              final floatingTopBar = SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(hPad, Gap.s, hPad, Gap.xs),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        height: 40,
+                        child: Row(
+                          children: [
+                            if (avatarButton != null)
+                              avatarButton
+                            else
+                              const SizedBox(width: 36),
+                            Expanded(child: Center(child: centeredTitle)),
+                            if (trailingCluster.children.isNotEmpty)
+                              trailingCluster
+                            else
+                              const SizedBox(width: 36),
+                          ],
                         ),
                       ),
-                    if (!widget.embedded)
-                      IconButton(
-                        key: const Key('homeSettings'),
-                        style: leftBtnStyle,
-                        tooltip: '设置',
-                        icon: Icon(CupertinoIcons.gear, size: 16.5, color: c.text2),
-                        onPressed: () => Navigator.of(context).push(fadeRoute(const SettingsPage())),
-                      ),
-                  ],
-                ),
-              ),
-            );
-
-            final searchCircleButton = Glass(
-              radius: 18,
-              padding: const EdgeInsets.all(2),
-              child: Material(
-                type: MaterialType.transparency,
-                child: IconButton(
-                  key: const Key('homeSearch'),
-                  style: searchBtnStyle,
-                  tooltip: _searching ? '关闭搜索' : '搜索',
-                  icon: Icon(
-                    _searching ? CupertinoIcons.xmark : CupertinoIcons.search,
-                    size: 16,
-                    color: c.text2,
-                  ),
-                  onPressed: toggleSearch,
-                ),
-              ),
-            );
-
-            final floatingTopBar = SafeArea(
-              bottom: false,
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(hPad, Gap.s, hPad, Gap.xs),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SizedBox(
-                      height: 40,
-                      child: canCenterInStack
-                          ? Stack(
-                              alignment: Alignment.center,
-                              children: [
-                                Align(alignment: Alignment.centerLeft, child: leftGlassButtons),
-                                centeredTitle,
-                              ],
-                            )
-                          : Row(
-                              children: [
-                                leftGlassButtons,
-                                Expanded(child: Center(child: centeredTitle)),
-                              ],
+                      const SizedBox(height: 6),
+                      Center(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            buildFloatingCategoryPill(
+                              constraints.maxWidth - 120,
                             ),
-                    ),
-                    const SizedBox(height: 6),
-                    // 四个切换项 + 右侧等高独立圆形搜索按钮
-                    Center(
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          buildFloatingCategoryPill(constraints.maxWidth - 64),
-                          const SizedBox(width: 8),
-                          searchCircleButton,
-                        ],
+                            const SizedBox(width: 8),
+                            searchCircleButton,
+                            const SizedBox(width: 6),
+                            viewModeButton,
+                          ],
+                        ),
+                      ),
+                      if (s.sync.sealBlocked) ...[
+                        const SizedBox(height: Gap.xs),
+                        sealBanner,
+                      ],
+                    ],
+                  ),
+                ),
+              );
+
+              return Scaffold(
+                backgroundColor: Colors.transparent,
+                body: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: RefreshIndicator(
+                        edgeOffset: topInset,
+                        onRefresh: () async => s.sync.reconnectNow(),
+                        child: BlockList(
+                          filter: _filter,
+                          kinds: _kinds[_kind]!.$2,
+                          gridMode: isGrid,
+                          topPadding: topInset,
+                          bottomPadding: bottomInset,
+                        ),
                       ),
                     ),
-                    if (s.sync.sealBlocked) ...[
-                      const SizedBox(height: Gap.xs),
-                      sealBanner,
-                    ],
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      child: floatingTopBar,
+                    ),
+                    const Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: QuickSendBar(floating: true),
+                    ),
                   ],
                 ),
-              ),
-            );
-
-            return Scaffold(
-              backgroundColor: Colors.transparent,
-              body: Stack(
-                children: [
-                  Positioned.fill(
-                    child: RefreshIndicator(
-                      edgeOffset: topInset,
-                      onRefresh: () async => s.sync.reconnectNow(),
-                      child: BlockList(
-                        filter: _filter,
-                        kinds: _kinds[_kind]!.$2,
-                        gridMode: isGrid,
-                        topPadding: topInset,
-                        bottomPadding: bottomInset,
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    child: floatingTopBar,
-                  ),
-                  const Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    child: QuickSendBar(floating: true),
-                  ),
-                ],
-              ),
-            );
-          });
+              );
+            },
+          );
         },
       ),
     );
@@ -525,7 +579,12 @@ class FilterTab extends StatefulWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
-  const FilterTab({super.key, required this.label, required this.selected, required this.onTap});
+  const FilterTab({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
   @override
   State<FilterTab> createState() => _FilterTabState();
 }
@@ -538,7 +597,9 @@ class _FilterTabState extends State<FilterTab> {
     final tt = Theme.of(context).textTheme;
     final dark = Theme.of(context).brightness == Brightness.dark;
     final selectedBg = Glass.surfaceTranslucent
-        ? (dark ? Colors.white.withValues(alpha: 0.18) : Colors.white.withValues(alpha: 0.88))
+        ? (dark
+              ? Colors.white.withValues(alpha: 0.18)
+              : Colors.white.withValues(alpha: 0.88))
         : c.selected;
     return Semantics(
       button: true,
@@ -558,15 +619,23 @@ class _FilterTabState extends State<FilterTab> {
             padding: const EdgeInsets.symmetric(horizontal: 12),
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: widget.selected ? selectedBg : (_hover ? c.hover : Colors.transparent),
+              color: widget.selected
+                  ? selectedBg
+                  : (_hover ? c.hover : Colors.transparent),
               borderRadius: BorderRadius.circular(15),
               border: widget.selected
-                  ? Border.all(color: dark ? Colors.white.withValues(alpha: 0.24) : Colors.white.withValues(alpha: 0.92))
+                  ? Border.all(
+                      color: dark
+                          ? Colors.white.withValues(alpha: 0.24)
+                          : Colors.white.withValues(alpha: 0.92),
+                    )
                   : null,
               boxShadow: widget.selected && Glass.surfaceTranslucent
                   ? [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: dark ? 0.25 : 0.06),
+                        color: Colors.black.withValues(
+                          alpha: dark ? 0.25 : 0.06,
+                        ),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),
@@ -576,11 +645,14 @@ class _FilterTabState extends State<FilterTab> {
             child: Text(
               widget.label,
               maxLines: 1,
-              style: (widget.selected ? tt.labelLarge : tt.bodyMedium)?.copyWith(
-                fontSize: 13,
-                fontWeight: widget.selected ? FontWeight.w600 : FontWeight.w500,
-                color: widget.selected ? c.text : c.text2,
-              ),
+              style: (widget.selected ? tt.labelLarge : tt.bodyMedium)
+                  ?.copyWith(
+                    fontSize: 13,
+                    fontWeight: widget.selected
+                        ? FontWeight.w600
+                        : FontWeight.w500,
+                    color: widget.selected ? c.text : c.text2,
+                  ),
             ),
           ),
         ),
@@ -642,43 +714,51 @@ class ConnectionBadge extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            fontSize: 10.5,
-                            height: 1.1,
-                            color: c.text3,
-                          ),
+                        fontSize: 10.5,
+                        height: 1.1,
+                        color: c.text3,
+                      ),
                     ),
                   ),
                 ],
               )
             : dotOnly
-                ? Row(mainAxisSize: MainAxisSize.min, children: [
-                    SizedBox.square(dimension: 16, child: Center(child: dot)),
-                    if (sync.state != ConnState.online || pending > 0)
-                      Flexible(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 120),
-                          child: Text(
-                            text,
-                            key: const Key('connLabel'),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: c.text3),
-                          ),
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox.square(dimension: 16, child: Center(child: dot)),
+                  if (sync.state != ConnState.online || pending > 0)
+                    Flexible(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 120),
+                        child: Text(
+                          text,
+                          key: const Key('connLabel'),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(
+                            context,
+                          ).textTheme.bodySmall?.copyWith(color: c.text3),
                         ),
                       ),
-                  ])
-                : Row(mainAxisSize: MainAxisSize.min, children: [
-                    dot,
-                    const SizedBox(width: Gap.s),
-                    Flexible(
-                      child: Text(
-                        text,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
                     ),
-                  ]),
+                ],
+              )
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  dot,
+                  const SizedBox(width: Gap.s),
+                  Flexible(
+                    child: Text(
+                      text,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                ],
+              ),
       ),
     );
   }
