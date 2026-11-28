@@ -311,13 +311,23 @@ class AppShellState extends State<AppShell> implements PageHost {
                         embedded: true,
                         onMenu: _sidebarCollapsed ? toggleSidebar : null,
                       )
-                    : ColoredBox(
+                    // v0.8.2：宽屏里打开的页面同样是一张不透明圆角卡片，四周露出背景；
+                    // MotionSwitch 先让收件箱完全淡出，再让卡片淡入，不会叠字。
+                    : LayoutBuilder(
                         key: ValueKey('page-$pageId'),
-                        color: Glass.surfaceTranslucent ? Colors.transparent : pal.bg,
-                        child: PageScreen(
-                          pageId: pageId,
-                          onMenu: _sidebarCollapsed ? toggleSidebar : null,
-                        ),
+                        builder: (context, box) {
+                          final side = ((box.maxWidth - 1040) / 2).clamp(16.0, double.infinity);
+                          return Padding(
+                            padding: EdgeInsets.fromLTRB(side, 12, side, 12),
+                            child: CardSurface(
+                              radius: 20,
+                              child: PageScreen(
+                                pageId: pageId,
+                                onMenu: _sidebarCollapsed ? toggleSidebar : null,
+                              ),
+                            ),
+                          );
+                        },
                       ),
               );
             } else {
