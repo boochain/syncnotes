@@ -1,0 +1,31 @@
+# 同源部署：Caddy 自动申请证书，静态托管网页版，并把 API / WebSocket 转到本机 7700。
+# WebSocket 不用额外配置。flush_interval -1 让大文件边传边转发。
+
+notes.example.com {
+	handle /health* {
+		reverse_proxy 127.0.0.1:7700
+	}
+	handle /api/* {
+		reverse_proxy 127.0.0.1:7700 {
+			flush_interval -1
+			transport http {
+				read_timeout 0
+				write_timeout 0
+			}
+		}
+	}
+	handle /ws {
+		reverse_proxy 127.0.0.1:7700 {
+			flush_interval -1
+			transport http {
+				read_timeout 0
+				write_timeout 0
+			}
+		}
+	}
+	handle {
+		root * /var/www/syncnotes-web
+		try_files {path} /index.html
+		file_server
+	}
+}
