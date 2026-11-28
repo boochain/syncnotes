@@ -2,7 +2,7 @@
 
 一个可自部署的多设备实时同步笔记、便签、消息与文件工具：在任意一台设备上发消息、写笔记、整理便签或传文件，其他设备**立即**同步。
 
-> **当前版本**：[v0.7.2](https://github.com/boochain/syncnotes/releases/latest) · [更新日志](docs/release-notes/v0.7.2.md) · [设计系统](docs/design-system.md) · [服务端管理脚本](docs/server-script.md) · [密码找回与数据救援](docs/password-recovery.md) · [任务仪表盘](docs/task-dashboard.md) · [日历](docs/calendar.md)
+> **当前版本**：[v0.7.2](https://github.com/boochain/syncnotes/releases/latest) · [更新日志](docs/release-notes/v0.7.2.md) · [设计系统](docs/design-system.md) · [服务端管理脚本](docs/server-script.md) · [密码找回与数据救援](docs/password-recovery.md) · [任务仪表盘](docs/task-dashboard.md) · [日历](docs/calendar.md) · [同步、备份与恢复](docs/backup-restore.md)
 
 ---
 
@@ -69,14 +69,17 @@ powershell -ExecutionPolicy Bypass -File .\syncnotes-server.ps1 status    # 查�
 sudo ./syncnotes-rescue.sh reset bill                    # 密码重置为默认 syncnotes123456，登录后强制修改
 sudo ./syncnotes-rescue.sh reset bill --password 新密码   # 或通过 SYNCNOTES_RESCUE_PASSWORD 传入
 sudo ./syncnotes-rescue.sh export bill bill.zip          # 导出全部数据（含回收站和附件）
+sudo ./syncnotes-rescue.sh restore bill bill.zip         # 把备份还原到该用户（先自动备份当前数据）
 
 # Windows
 powershell -ExecutionPolicy Bypass -File .\syncnotes-server.ps1 reset-password bill
 powershell -ExecutionPolicy Bypass -File .\syncnotes-server.ps1 export bill .\bill.zip
+powershell -ExecutionPolicy Bypass -File .\syncnotes-server.ps1 restore bill .\bill.zip
 powershell -ExecutionPolicy Bypass -File .\syncnotes-server.ps1 backup
 ```
 
 用户自助找回（恢复码）和全部救援命令见 [`docs/password-recovery.md`](docs/password-recovery.md)。
+一键同步、备份与恢复见 [`docs/backup-restore.md`](docs/backup-restore.md)。
 
 ### 方式 1：直接运行预编译文件
 
@@ -196,7 +199,7 @@ Android 上若搜索不到，请直接手动填写 IP（部分路由器/系统�
 
 - **外观与液态玻璃**：浅色 / 深色 / 跟随系统、液态玻璃开关、流体动态背景开关、透明度 / 折射率 / 画质调节、自定义本地背景图片与遮罩深浅
 - **启动与后台**：登录系统时自动启动（桌面）/ 开机自启与前台常驻服务（Android）、启动时最小化到托盘、新内容通知
-- **同步与安全**：默认全局已读、传输加密指纹管理、密码与恢复码管理、导出本地备份、清除本地缓存并重新同步
+- **同步与安全**：默认全局已读、传输加密指纹管理、密码与恢复码管理、立即同步、备份与恢复、导出本地数据、清除本地缓存并重新同步
 
 ---
 
@@ -213,14 +216,15 @@ syncnotes/
 │   │   ├── files.rs      分片断点续传 / 范围下载
 │   │   ├── seal.rs       应用层传输加密（syncnotes-seal-v1）
 │   │   ├── recovery.rs   恢复码与账号找回
-│   │   └── admin.rs      管理员救援子命令（重置密码 / 导出 / 备份）
+│   │   ├── backup.rs     账号备份 / 恢复（替换当前账号数据）
+│   │   └── admin.rs      管理员救援子命令（重置密码 / 导出 / 还原 / 备份）
 │   └── tests/            集成测试
 ├── app/             Flutter 客户端（Windows / Linux / Android）
 │   ├── lib/
 │   │   ├── models/       块模型
 │   │   ├── blocks/       可扩展块类型注册表 + 内置类型
 │   │   ├── sync/         同步引擎（离线队列、重连、增量追赶）
-│   │   ├── services/     认证、分片传输队列、局域网发现、设置与导出
+│   │   ├── services/     认证、分片传输队列、局域网发现、设置、导出与备份恢复
 │   │   ├── platform/     托盘/窗口、自启动、通知、单实例、Android 前台服务
 │   │   └── ui/           液态玻璃、流体背景、便签画布、Markdown/块编辑器
 │   └── test/             单元 / 组件 / 布局回归 / 真实服务端 E2E 测试

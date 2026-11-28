@@ -61,6 +61,13 @@ pub struct ChangePasswordRequest {
     pub new_password: String,
 }
 
+/// Replace the current account's data with a previously uploaded backup zip
+/// (`file_id` from `POST /api/blob`). The zip is deleted after the attempt.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RestoreRequest {
+    pub file_id: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMessage {
@@ -120,6 +127,11 @@ pub enum ServerMessage {
         seq: i64,
     },
     SyncComplete {
+        latest_seq: i64,
+    },
+    /// Account was replaced by a backup restore. Clients must drop the local
+    /// cache (including the outbox) and run `sync_since` from 0.
+    Resync {
         latest_seq: i64,
     },
     Error {

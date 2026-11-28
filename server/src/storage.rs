@@ -728,4 +728,129 @@ impl Storage {
         let rows = st.query_map(params![cutoff_ms], |r| Ok((r.get(0)?, r.get(1)?)))?;
         rows.collect()
     }
+
+    /// Account restore: write every block from a backup, tombstone anything not in it,
+    /// and replace device-view rows. Bypasses last-writer-wins so an older backup can
+    /// overwrite newer server state. Password, tokens and the user id are untouched.
+    pub fn restore_account(
+        &self,
+        user_id: &str,
+        blocks: &[crate::backup::RestoreBlock],
+        views: &[(String, String, bool)],
+    ) -> rusqlite::Result<crate::backup::RestoreDbSummary> {
+        use crate::backup::RestoreDbSummary;
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        let now = now_ms();
+
+        let mut existing: HashSet<String> = HashSet::new();
+        {
+            let mut st = tx.prepare("SELECT id FROM blocks WHERE user_id = ?1")?;
+            for id in st.query_map(params![user_id], |r| r.get::<_, String>(0))? {
+                existing.insert(id?);
+            }
+        }
+
+        // Pass 1: write every backup block with parent_id cleared so old parent
+        // links cannot trip cycle detection mid-import.
+        for b in blocks {
+            let seq = Self::next_seq(&tx, user_id)?;
+            let payload_s = serde_json::to_string(&b.payload).unwrap_or_else(|_| "null".into());
+            let created_at = if b.created_at > 0 {
+                b.created_at
+            } else {
+                b.updated_at
+            };
+            let updated_at = if b.updated_at > 0 { b.updated_at } else { now };
+            let created_by = if b.created_by.is_empty() {
+                "restore"
+            } else {
+                b.created_by.as_str()
+            };
+            tx.execute(
+                "INSERT INTO blocks(id, user_id, kind, title, payload, parent_id, viewed_mode, viewed_global,
+                                    created_at, updated_at, created_by, deleted, seq, deleted_at, deleted_by)
+                 VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+                 ON CONFLICT(user_id, id) DO UPDATE SET
+                   kind = excluded.kind, title = excluded.title, payload = excluded.payload,
+                   parent_id = NULL, viewed_mode = excluded.viewed_mode,
+                   viewed_global = excluded.viewed_global, updated_at = excluded.updated_at,
+                   created_at = excluded.created_at, created_by = excluded.created_by,
+                   deleted = excluded.deleted, seq = excluded.seq,
+                   deleted_at = excluded.deleted_at, deleted_by = excluded.deleted_by",
+                params![
+                    b.id,
+                    user_id,
+                    b.kind,
+                    b.title,
+                    payload_s,
+                    b.viewed_mode.as_str(),
+                    b.viewed_global as i64,
+                    created_at,
+                    updated_at,
+                    created_by,
+                    b.deleted as i64,
+                    seq,
+                    b.deleted_at,
+                    b.deleted_by.as_deref(),
+                ],
+            )?;
+        }
+
+        // Pass 2: apply parent_id with cycle / self-parent guards.
+        for b in blocks {
+            let safe = Self::sanitize_parent_id(&tx, user_id, &b.id, b.parent_id.as_deref(), None)?;
+            tx.execute(
+                "UPDATE blocks SET parent_id = ?1 WHERE user_id = ?2 AND id = ?3",
+                params![safe, user_id, b.id],
+            )?;
+        }
+
+        // Pass 3: tombstone current blocks that are not in the backup.
+        let keep: HashSet<&str> = blocks.iter().map(|b| b.id.as_str()).collect();
+        let mut tombstoned = 0usize;
+        for id in existing {
+            if keep.contains(id.as_str()) {
+                continue;
+            }
+            let seq = Self::next_seq(&tx, user_id)?;
+            tx.execute(
+                "UPDATE blocks SET deleted = 1, seq = ?1, updated_at = CASE
+                    WHEN updated_at >= ?2 THEN updated_at + 1 ELSE ?2 END
+                 WHERE user_id = ?3 AND id = ?4 AND deleted = 0",
+                params![seq, now, user_id, id],
+            )?;
+            if tx.changes() > 0 {
+                tombstoned += 1;
+            }
+        }
+
+        // Pass 4: replace device views.
+        tx.execute(
+            "DELETE FROM device_views WHERE user_id = ?1",
+            params![user_id],
+        )?;
+        let mut views_written = 0usize;
+        for (block_id, device_id, viewed) in views {
+            if block_id.is_empty() || device_id.is_empty() {
+                continue;
+            }
+            let seq = Self::next_seq(&tx, user_id)?;
+            tx.execute(
+                "INSERT INTO device_views(user_id, block_id, device_id, viewed, updated_at, seq)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![user_id, block_id, device_id, *viewed as i64, now, seq],
+            )?;
+            views_written += 1;
+        }
+
+        let latest = Self::latest_seq_inner(&tx, user_id)?;
+        tx.commit()?;
+        Ok(RestoreDbSummary {
+            blocks: blocks.len(),
+            tombstoned,
+            views: views_written,
+            latest_seq: latest,
+        })
+    }
 }

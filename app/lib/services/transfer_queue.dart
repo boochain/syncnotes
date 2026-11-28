@@ -86,6 +86,40 @@ class TransferQueue extends ChangeNotifier {
   int get activeCount =>
       jobs.where((j) => j.status == TransferStatus.queued || j.status == TransferStatus.running).length;
 
+  /// 等待队列里正在进行的上传/下载结束。若有失败的任务则抛出原因。
+  Future<void> waitIdle({Duration timeout = const Duration(seconds: 120)}) async {
+    bool busy() => jobs.any((j) => j.status == TransferStatus.queued || j.status == TransferStatus.running);
+    if (!busy()) {
+      _throwIfFailed();
+      return;
+    }
+    final c = Completer<void>();
+    late VoidCallback l;
+    final t = Timer(timeout, () {
+      if (!c.isCompleted) c.completeError(AuthException('文件传输超时，请检查网络后重试'));
+    });
+    l = () {
+      if (busy() || c.isCompleted) return;
+      t.cancel();
+      removeListener(l);
+      c.complete();
+    };
+    addListener(l);
+    try {
+      await c.future;
+    } finally {
+      t.cancel();
+      removeListener(l);
+    }
+    _throwIfFailed();
+  }
+
+  void _throwIfFailed() {
+    final failed = jobs.where((j) => j.status == TransferStatus.failed).toList();
+    if (failed.isEmpty) return;
+    throw AuthException(failed.map((j) => '${j.name}：${j.error ?? '失败'}').join('；'));
+  }
+
   TransferJob? get current {
     for (final j in jobs) {
       if (j.status == TransferStatus.running) return j;

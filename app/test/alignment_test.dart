@@ -60,6 +60,13 @@ void main() {
     await pump(tester, const Size(400, 760));
     await tester.tap(find.byKey(const Key('homeSettings')));
     await tester.pumpAndSettle();
+    // v0.8.0 在「外观」上方加了「备份与同步」分组，窄屏下需要先滚到主题选择器。
+    await tester.dragUntilVisible(
+      find.byKey(const Key('themeSelector')),
+      find.byKey(const Key('settingsSyncNow')),
+      const Offset(0, -200),
+    );
+    await tester.pumpAndSettle();
     expect(r(tester, find.byKey(const Key('themeSelector'))).height, Sizes.control);
     await tester.tap(find.byKey(const Key('seg-2')));
     await tester.pumpAndSettle();

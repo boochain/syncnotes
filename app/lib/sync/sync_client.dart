@@ -45,14 +45,14 @@ class SyncClient extends ChangeNotifier {
     Duration maxBackoff = const Duration(seconds: 30),
     Duration pingInterval = const Duration(seconds: 8),
   }) : this._(
-          store,
-          channelFactory ?? WebSocketChannel.connect,
-          deviceId,
-          maxBackoff,
-          settings,
-          channelFactory == null,
-          pingInterval,
-        );
+         store,
+         channelFactory ?? WebSocketChannel.connect,
+         deviceId,
+         maxBackoff,
+         settings,
+         channelFactory == null,
+         pingInterval,
+       );
 
   SyncClient._(
     this.store,
@@ -95,6 +95,7 @@ class SyncClient extends ChangeNotifier {
   int get lastSeq => _lastSeq;
   int get pendingCount => _outbox.length;
   List<Map<String, dynamic>> get outbox => List.unmodifiable(_outbox);
+  bool get catchingUp => _catchingUp;
 
   /// 所有可见块（未删除、不在回收站、祖先也不在回收站），按更新时间倒序。
   List<Block> get blocks {
@@ -106,7 +107,9 @@ class SyncClient extends ChangeNotifier {
   /// 子块。根目录还会显示"孤儿"块（父文件夹已删除或尚未同步），避免内容凭空消失。
   List<Block> childrenOf(String? parentId) {
     if (parentId != null) {
-      return blocks.where((b) => b.parentId == parentId && isInboxItem(b)).toList();
+      return blocks
+          .where((b) => b.parentId == parentId && isInboxItem(b))
+          .toList();
     }
     return blocks.where((b) {
       if (!isInboxItem(b)) return false;
@@ -136,14 +139,19 @@ class SyncClient extends ChangeNotifier {
 
   /// 回收站条目：自身被移入回收站的块（文件夹的子块随文件夹一起，不单独列出）。按删除时间倒序。
   List<Block> get trash {
-    final l = _blocks.values.where((b) => b.inTrash && b.kind != BlockKind.text).toList()
-      ..sort((a, b) => (b.deletedAt ?? 0).compareTo(a.deletedAt ?? 0));
+    final l =
+        _blocks.values
+            .where((b) => b.inTrash && b.kind != BlockKind.text)
+            .toList()
+          ..sort((a, b) => (b.deletedAt ?? 0).compareTo(a.deletedAt ?? 0));
     return l;
   }
 
   /// 回收站中某项的后代数量（文件夹内的项目数）。
-  int trashChildCount(String id) =>
-      descendantIds(id, includeTrashed: true).where((d) => _blocks[d]?.kind != BlockKind.text).length;
+  int trashChildCount(String id) => descendantIds(
+    id,
+    includeTrashed: true,
+  ).where((d) => _blocks[d]?.kind != BlockKind.text).length;
 
   /// 服务器回收站保留天数（来自 /health；0 = 永久保留）。
   int trashRetentionDays = 30;
@@ -154,7 +162,12 @@ class SyncClient extends ChangeNotifier {
     final old = _blocks[id];
     if (old == null || old.deleted || old.deletedAt != null) return const [];
     final now = _now();
-    final b = old.copyWith(deletedAt: now, deletedBy: deviceId, updatedAt: max(now, old.updatedAt + 1), pending: true);
+    final b = old.copyWith(
+      deletedAt: now,
+      deletedBy: deviceId,
+      updatedAt: max(now, old.updatedAt + 1),
+      pending: true,
+    );
     _blocks[id] = b;
     _enqueue(b.toUpsertMessage());
     _notify();
@@ -170,10 +183,17 @@ class SyncClient extends ChangeNotifier {
       if (old == null || old.deleted || old.deletedAt == null) continue;
       final pid = old.parentId;
       final parent = pid == null ? null : _blocks[pid];
-      final orphan = pid != null && (parent == null || isHidden(parent)) && !ids.contains(pid);
+      final orphan =
+          pid != null &&
+          (parent == null || isHidden(parent)) &&
+          !ids.contains(pid);
       if (orphan) toRoot.add(id);
       final b = old.copyWith(
-          clearDeletedAt: true, clearParent: orphan, updatedAt: max(_now(), old.updatedAt + 1), pending: true);
+        clearDeletedAt: true,
+        clearParent: orphan,
+        updatedAt: max(_now(), old.updatedAt + 1),
+        pending: true,
+      );
       _blocks[id] = b;
       _enqueue(b.toUpsertMessage());
     }
@@ -187,7 +207,11 @@ class SyncClient extends ChangeNotifier {
       for (final d in [...descendantIds(id, includeTrashed: true), id]) {
         final old = _blocks[d];
         if (old == null || old.deleted) continue;
-        final b = old.copyWith(deleted: true, updatedAt: max(_now(), old.updatedAt + 1), pending: true);
+        final b = old.copyWith(
+          deleted: true,
+          updatedAt: max(_now(), old.updatedAt + 1),
+          pending: true,
+        );
         _blocks[d] = b;
         _enqueue(b.toUpsertMessage());
       }
@@ -205,7 +229,10 @@ class SyncClient extends ChangeNotifier {
     while (stack.isNotEmpty) {
       final cur = stack.removeLast();
       for (final b in _blocks.values) {
-        if (b.parentId == cur && !b.deleted && (includeTrashed || b.deletedAt == null) && out.add(b.id)) {
+        if (b.parentId == cur &&
+            !b.deleted &&
+            (includeTrashed || b.deletedAt == null) &&
+            out.add(b.id)) {
           stack.add(b.id);
         }
       }
@@ -218,7 +245,15 @@ class SyncClient extends ChangeNotifier {
       b.kind != BlockKind.text && b.kind != BlockKind.calendar && b.kindRaw != 'calendar';
 
   int get unreadCount => blocks
-      .where((b) => !b.isViewed && b.kind != BlockKind.folder && b.kind != BlockKind.text && b.kind != BlockKind.page && b.kind != BlockKind.calendar && b.kindRaw != 'calendar')
+      .where(
+        (b) =>
+            !b.isViewed &&
+            b.kind != BlockKind.folder &&
+            b.kind != BlockKind.text &&
+            b.kind != BlockKind.page &&
+            b.kind != BlockKind.calendar &&
+            b.kindRaw != 'calendar',
+      )
       .length;
 
   Future<void> loadLocal() async {
@@ -236,10 +271,10 @@ class SyncClient extends ChangeNotifier {
   }
 
   Future<void> _persist() => store.save({
-        'last_seq': _lastSeq,
-        'blocks': _blocks.values.map((b) => b.toJson()).toList(),
-        'outbox': _outbox,
-      });
+    'last_seq': _lastSeq,
+    'blocks': _blocks.values.map((b) => b.toJson()).toList(),
+    'outbox': _outbox,
+  });
 
   // ------------------------------------------------------------- connection
 
@@ -248,7 +283,9 @@ class SyncClient extends ChangeNotifier {
     s = s.replaceFirst(RegExp(r'^http'), 'ws');
     final u = Uri.parse(s);
     // 保留反向代理的路径前缀，例如 https://host/notes → wss://host/notes/ws
-    var path = u.path.endsWith('/') ? u.path.substring(0, u.path.length - 1) : u.path;
+    var path = u.path.endsWith('/')
+        ? u.path.substring(0, u.path.length - 1)
+        : u.path;
     if (!path.endsWith('/ws')) path = '$path/ws';
     return u.replace(path: path);
   }
@@ -292,7 +329,9 @@ class SyncClient extends ChangeNotifier {
   }
 
   void _open() {
-    if (_disposed || !_wantConnected || _serverUrl == null || sealBlocked) return;
+    if (_disposed || !_wantConnected || _serverUrl == null || sealBlocked) {
+      return;
+    }
     final epoch = ++_epoch;
     _closeChannel();
     _connectStarted = DateTime.now();
@@ -405,10 +444,17 @@ class SyncClient extends ChangeNotifier {
     _recvQ = _recvQ.then((_) => _handleRaw(data, epoch, pub, eph));
   }
 
-  Future<void> _handleRaw(dynamic data, int epoch, Uint8List pub, KeyPair eph) async {
+  Future<void> _handleRaw(
+    dynamic data,
+    int epoch,
+    Uint8List pub,
+    KeyPair eph,
+  ) async {
     if (epoch != _epoch) return;
     try {
-      final bytes = data is Uint8List ? data : (data is List<int> ? Uint8List.fromList(data) : null);
+      final bytes = data is Uint8List
+          ? data
+          : (data is List<int> ? Uint8List.fromList(data) : null);
       if (_ws == null) {
         if (bytes == null) throw WireException('加密握手失败', fatal: true);
         _ws = await wsFinish(pub, eph, bytes);
@@ -449,7 +495,12 @@ class SyncClient extends ChangeNotifier {
   }
 
   void _scheduleReconnect() {
-    if (!_wantConnected || _disposed || _state == ConnState.authError || sealBlocked) return;
+    if (!_wantConnected ||
+        _disposed ||
+        _state == ConnState.authError ||
+        sealBlocked) {
+      return;
+    }
     _reconnectTimer?.cancel();
     final ms = min(maxBackoff.inMilliseconds, 500 * pow(2, _attempt).toInt());
     _attempt = min(_attempt + 1, 10);
@@ -553,6 +604,16 @@ class SyncClient extends ChangeNotifier {
         _persist();
         _notify();
         break;
+      case 'resync':
+        // 服务器已用备份替换账号数据：丢掉本地缓存（含未同步队列），从 0 重新拉取。
+        _outbox.clear();
+        _blocks.clear();
+        _lastSeq = 0;
+        _catchingUp = true;
+        _persist();
+        _notify();
+        _send({'type': 'sync_since', 'since_seq': 0});
+        break;
       case 'error':
         lastError = m['message'] as String?;
         _notify();
@@ -570,26 +631,36 @@ class SyncClient extends ChangeNotifier {
     if (incoming.deleted) {
       _outbox.removeWhere((o) => (o['id'] ?? o['block_id']) == incoming.id);
     } else {
-      _outbox.removeWhere((o) =>
-          o['type'] == 'upsert_block' &&
-          o['id'] == incoming.id &&
-          _asInt(o['client_updated_at']) <= incoming.updatedAt);
+      _outbox.removeWhere(
+        (o) =>
+            o['type'] == 'upsert_block' &&
+            o['id'] == incoming.id &&
+            _asInt(o['client_updated_at']) <= incoming.updatedAt,
+      );
 
       // 若本地有更新的未确认修改，则保留本地版本（它会在 outbox 中重放）。
-      if (existing != null && existing.pending && existing.updatedAt > incoming.updatedAt) {
+      if (existing != null &&
+          existing.pending &&
+          existing.updatedAt > incoming.updatedAt) {
         _notify();
         return;
       }
     }
-    final stillPending = _outbox.any((o) =>
-        o['type'] == 'upsert_block' &&
-        o['id'] == incoming.id &&
-        _asInt(o['client_updated_at']) > incoming.updatedAt);
+    final stillPending = _outbox.any(
+      (o) =>
+          o['type'] == 'upsert_block' &&
+          o['id'] == incoming.id &&
+          _asInt(o['client_updated_at']) > incoming.updatedAt,
+    );
     // 服务器把 JSON 对象的键排过序。按字符串比较会把没变的内容当成新改动，
     // 于是自己的笔记每次同步都被标成未读，角标一直涨。
-    final changed = existing != null &&
-        (existing.title != incoming.title || !_sameJson(existing.payload, incoming.payload));
-    final viewedLocal = changed ? false : (existing?.viewedLocal ?? incoming.createdBy == deviceId);
+    final changed =
+        existing != null &&
+        (existing.title != incoming.title ||
+            !_sameJson(existing.payload, incoming.payload));
+    final viewedLocal = changed
+        ? false
+        : (existing?.viewedLocal ?? incoming.createdBy == deviceId);
     final merged = incoming.copyWith(
       viewedLocal: viewedLocal,
       pending: stillPending,
@@ -613,7 +684,12 @@ class SyncClient extends ChangeNotifier {
   void _applyViewed(Map<String, dynamic> m) {
     final id = m['block_id'] as String;
     final viewed = m['viewed'] == true;
-    _outbox.removeWhere((o) => o['type'] == 'set_viewed' && o['block_id'] == id && o['viewed'] == viewed);
+    _outbox.removeWhere(
+      (o) =>
+          o['type'] == 'set_viewed' &&
+          o['block_id'] == id &&
+          o['viewed'] == viewed,
+    );
     final seq = (m['seq'] ?? 0) as int;
     if (seq > _lastSeq) _lastSeq = seq;
     final b = _blocks[id];
@@ -640,9 +716,13 @@ class SyncClient extends ChangeNotifier {
   void _enqueue(Map<String, dynamic> op) {
     if (op['type'] == 'upsert_block') {
       // 同一块的多次编辑只保留最新一次 upsert。
-      _outbox.removeWhere((o) => o['type'] == 'upsert_block' && o['id'] == op['id']);
+      _outbox.removeWhere(
+        (o) => o['type'] == 'upsert_block' && o['id'] == op['id'],
+      );
     } else if (op['type'] == 'set_viewed') {
-      _outbox.removeWhere((o) => o['type'] == 'set_viewed' && o['block_id'] == op['block_id']);
+      _outbox.removeWhere(
+        (o) => o['type'] == 'set_viewed' && o['block_id'] == op['block_id'],
+      );
     }
     _outbox.add(op);
     if (_state == ConnState.online && !_catchingUp) _send(op);
@@ -651,6 +731,144 @@ class SyncClient extends ChangeNotifier {
 
   /// 等待本地缓存写入完成（退出前调用）。
   Future<void> flush() => _persist();
+
+  /// 一键立即同步：连上服务器，拉取最新数据，再把尚未确认的修改增量上传。
+  /// 已同步的内容不会重传。
+  Future<SyncNowResult> syncNow({
+    Duration timeout = const Duration(seconds: 45),
+    void Function(String status)? onProgress,
+  }) async {
+    if (_serverUrl == null || _token == null) {
+      return const SyncNowResult(ok: false, error: '未登录，无法同步');
+    }
+    if (sealBlocked) {
+      return SyncNowResult(ok: false, error: lastError ?? '传输加密校验失败，请检查服务器指纹');
+    }
+    if (_state == ConnState.authError) {
+      return SyncNowResult(ok: false, error: lastError ?? '登录已失效，请重新登录');
+    }
+
+    onProgress?.call('正在连接服务器…');
+    if (_state != ConnState.online) {
+      reconnectNow();
+      final err = await _waitWhile(
+        () => _state != ConnState.online,
+        timeout: timeout,
+        failIf: () => _state == ConnState.authError || sealBlocked,
+        failMsg: () => lastError ?? '无法连接到服务器',
+      );
+      if (err != null) return SyncNowResult(ok: false, error: err);
+    }
+
+    if (!_catchingUp && _state == ConnState.online) {
+      _catchingUp = true;
+      _send({'type': 'sync_since', 'since_seq': _lastSeq});
+      _notify();
+    }
+    onProgress?.call('正在获取服务器最新数据…');
+    var err = await _waitWhile(
+      () => _catchingUp || _state != ConnState.online,
+      timeout: timeout,
+      failIf: () =>
+          _state == ConnState.authError ||
+          sealBlocked ||
+          (_state == ConnState.offline && !_catchingUp),
+      failMsg: () => lastError ?? '同步中断',
+    );
+    if (err != null) return SyncNowResult(ok: false, error: err);
+
+    final uploaded = _outbox.length;
+    if (uploaded > 0) {
+      onProgress?.call('正在上传 $uploaded 条未同步修改…');
+      _flushOutbox();
+    } else {
+      onProgress?.call('没有未同步的修改');
+    }
+    err = await _waitWhile(
+      () => _outbox.isNotEmpty || _catchingUp,
+      timeout: timeout,
+      failIf: () => _state != ConnState.online || sealBlocked,
+      failMsg: () => lastError ?? '还有未同步的修改未能上传，请检查网络后重试',
+    );
+    if (err != null) {
+      return SyncNowResult(
+        ok: false,
+        error: err,
+        uploaded: uploaded,
+        remaining: _outbox.length,
+      );
+    }
+    return SyncNowResult(ok: true, uploaded: uploaded, remaining: 0);
+  }
+
+  /// 只把本机缓存追平到服务器（拉最新），不强制把 outbox 传完。给备份用。
+  Future<String?> catchUp({
+    Duration timeout = const Duration(seconds: 30),
+  }) async {
+    if (_serverUrl == null || _token == null) return '未登录';
+    if (sealBlocked) return lastError ?? '传输加密校验失败';
+    if (_state == ConnState.authError) return lastError ?? '登录已失效，请重新登录';
+    if (_state != ConnState.online) {
+      reconnectNow();
+      final err = await _waitWhile(
+        () => _state != ConnState.online,
+        timeout: timeout,
+        failIf: () => _state == ConnState.authError || sealBlocked,
+        failMsg: () => lastError ?? '无法连接到服务器',
+      );
+      if (err != null) return err;
+    }
+    if (!_catchingUp) {
+      _catchingUp = true;
+      _send({'type': 'sync_since', 'since_seq': _lastSeq});
+      _notify();
+    }
+    return _waitWhile(
+      () => _catchingUp || _state != ConnState.online,
+      timeout: timeout,
+      failIf: () => _state == ConnState.authError || sealBlocked,
+      failMsg: () => lastError ?? '同步中断',
+    );
+  }
+
+  /// Returns an error message, or null on success.
+  Future<String?> _waitWhile(
+    bool Function() still, {
+    required Duration timeout,
+    bool Function()? failIf,
+    String Function()? failMsg,
+  }) async {
+    if (failIf?.call() == true) return failMsg?.call() ?? lastError ?? '同步失败';
+    if (!still()) return null;
+    final c = Completer<String?>();
+    late VoidCallback l;
+    Timer? t;
+    l = () {
+      if (_disposed) {
+        t?.cancel();
+        removeListener(l);
+        if (!c.isCompleted) c.complete('同步已取消');
+        return;
+      }
+      if (failIf?.call() == true) {
+        t?.cancel();
+        removeListener(l);
+        if (!c.isCompleted) c.complete(failMsg?.call() ?? lastError ?? '同步失败');
+        return;
+      }
+      if (still()) return;
+      t?.cancel();
+      removeListener(l);
+      if (!c.isCompleted) c.complete(null);
+    };
+    t = Timer(timeout, () {
+      removeListener(l);
+      if (!c.isCompleted) c.complete('同步超时，请检查网络后重试');
+    });
+    addListener(l);
+    l();
+    return c.future;
+  }
 
   // ------------------------------------------------------------- mutations
 
@@ -688,24 +906,32 @@ class SyncClient extends ChangeNotifier {
   /// 把块恢复为给定状态（撤销/重做用）。会生成新的 updatedAt 并同步。
   Block restore(Block b) {
     final old = _blocks[b.id];
-    final nb = b.copyWith(updatedAt: max(_now(), (old?.updatedAt ?? 0) + 1), pending: true);
+    final nb = b.copyWith(
+      updatedAt: max(_now(), (old?.updatedAt ?? 0) + 1),
+      pending: true,
+    );
     _blocks[b.id] = nb;
     _enqueue(nb.toUpsertMessage());
     _notify();
     return nb;
   }
 
-  Block? update(String id,
-      {String? title,
-      Map<String, dynamic>? payload,
-      ViewedMode? viewedMode,
-      String? parentId,
-      bool moveToRoot = false,
-      BlockKind? kind,
-      String? kindRaw}) {
+  Block? update(
+    String id, {
+    String? title,
+    Map<String, dynamic>? payload,
+    ViewedMode? viewedMode,
+    String? parentId,
+    bool moveToRoot = false,
+    BlockKind? kind,
+    String? kindRaw,
+  }) {
     final old = _blocks[id];
     if (old == null) return null;
-    if (parentId != null && (parentId == id || descendantIds(id).contains(parentId))) return old;
+    if (parentId != null &&
+        (parentId == id || descendantIds(id).contains(parentId))) {
+      return old;
+    }
     final b = old.copyWith(
       kind: kind,
       kindRaw: kindRaw,
@@ -798,4 +1024,18 @@ Object? _canon(Object? v) {
   return v;
 }
 
-bool _sameJson(Object? a, Object? b) => jsonEncode(_canon(a)) == jsonEncode(_canon(b));
+bool _sameJson(Object? a, Object? b) =>
+    jsonEncode(_canon(a)) == jsonEncode(_canon(b));
+
+class SyncNowResult {
+  final bool ok;
+  final int uploaded;
+  final int remaining;
+  final String? error;
+  const SyncNowResult({
+    required this.ok,
+    this.uploaded = 0,
+    this.remaining = 0,
+    this.error,
+  });
+}

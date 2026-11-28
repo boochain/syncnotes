@@ -152,6 +152,18 @@ async fn dispatch(state: &AppState, ip: &str, req: &OpenedHttp) -> (u16, Vec<u8>
                 Err(e) => Err(e),
             }
         }
+        (1, "/api/restore") => {
+            let parsed: RestoreRequest = match serde_json::from_slice(&req.body) {
+                Ok(v) => v,
+                Err(_) => return (400, "请求格式错误".into()),
+            };
+            match crate::backup::restore_http(State(state.clone()), headers, axum::Json(parsed))
+                .await
+            {
+                Ok(axum::Json(v)) => Ok((200, serde_json::to_vec(&v).unwrap_or_default())),
+                Err(e) => Err(e),
+            }
+        }
         _ => Err((StatusCode::NOT_FOUND, "未知接口".into())),
     };
     match result {

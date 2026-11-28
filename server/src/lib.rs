@@ -5,10 +5,11 @@
 
 pub mod admin;
 pub mod auth;
+pub mod backup;
 pub mod blocks;
 pub mod files;
-pub mod protocol;
 pub mod paths;
+pub mod protocol;
 pub mod recovery;
 pub mod seal;
 pub mod sealed;
@@ -36,6 +37,7 @@ pub fn build_router(state: AppState) -> axum::Router {
         .route("/api/recover", post(sealed::reject_plain))
         .route("/api/recovery-code", post(sealed::reject_plain))
         .route("/api/change-password", post(sealed::reject_plain))
+        .route("/api/restore", post(sealed::reject_plain))
         .route("/ws", get(sync::ws_handler))
         .route("/api/files", axum::routing::put(sealed::reject_plain))
         .route("/api/files/:id", get(sealed::reject_plain))
