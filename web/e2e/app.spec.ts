@@ -100,3 +100,35 @@ test('wrong password is rejected with a readable message', async ({ page }) => {
   await expect(p2.getByText('用户名或密码错误')).toBeVisible();
   await p2.context().close();
 });
+
+// v0.8.2：弹出页是不透明圆角卡片，打开时下层界面模糊并淡出（只露背景），关闭时先播退出动画再卸载。
+test('pop-ups are opaque cards and hide the page below', async ({ page }) => {
+  const errs = collectErrors(page);
+  await register(page, uname());
+  await page.getByRole('button', { name: '回收站' }).first().click();
+  const card = page.locator('.card-layer .page');
+  await expect(card).toBeVisible();
+  const look = await card.evaluate((el) => {
+    const cs = getComputedStyle(el);
+    return { bg: cs.backgroundColor, radius: parseFloat(cs.borderTopLeftRadius), rect: el.getBoundingClientRect().toJSON() };
+  });
+  expect(look.bg).toMatch(/^rgb\(/); // 不透明（rgba 才带透明度）
+  expect(look.radius).toBeGreaterThanOrEqual(16);
+  expect(look.rect.left).toBeGreaterThanOrEqual(8);
+  expect(look.rect.top).toBeGreaterThanOrEqual(8);
+  // 下层（侧栏、收件箱）完全淡出并模糊
+  await expect.poll(() => page.locator('.inbox').evaluate((el) => getComputedStyle(el).opacity)).toBe('0');
+  expect(await page.locator('.inbox').evaluate((el) => getComputedStyle(el).filter)).toContain('blur');
+  // 对话框也是卡片，下层（包括回收站卡片）整体隐去
+  await page.locator('.card-layer button', { hasText: '清空' }).click();
+  await expect(page.getByRole('dialog', { name: /清空回收站/ })).toBeVisible();
+  await expect.poll(() => page.locator('.shell').evaluate((el) => getComputedStyle(el).opacity)).toBe('0');
+  await page.locator('.dialog button', { hasText: '取消' }).click();
+  await expect(page.locator('.popup-root')).toHaveCount(0);
+  // 返回：卡片先退出，再卸载，下层恢复
+  await page.getByRole('button', { name: '返回' }).first().click();
+  await expect(page.locator('.card-layer')).toHaveAttribute('data-state', 'out');
+  await expect(page.locator('.card-layer')).toHaveCount(0);
+  await expect.poll(() => page.locator('.inbox').evaluate((el) => getComputedStyle(el).opacity)).toBe('1');
+  expect(errs).toEqual([]);
+});
