@@ -1,0 +1,52 @@
+# 同源部署：域名同时提供网页版静态文件，并把 API / WebSocket 转到本机 SyncNotes 服务器。
+# 把 root 换成 web/dist 的实际路径。单文件最大 4 GB，所以不限制请求体，也不要缓冲完再转发。
+
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen 443 ssl;
+    server_name notes.example.com;
+
+    # ssl_certificate     /path/fullchain.pem;
+    # ssl_certificate_key /path/privkey.pem;
+
+    root /var/www/syncnotes-web;
+    index index.html;
+
+    client_max_body_size 0;
+    proxy_request_buffering off;
+    proxy_buffering off;
+    proxy_http_version 1.1;
+    proxy_read_timeout 1h;
+    proxy_send_timeout 1h;
+
+    location /health {
+        proxy_pass http://127.0.0.1:7700;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:7700;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /ws {
+        proxy_pass http://127.0.0.1:7700;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

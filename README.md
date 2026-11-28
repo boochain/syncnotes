@@ -2,7 +2,7 @@
 
 一个可自部署的多设备实时同步笔记、便签、消息与文件工具：在任意一台设备上发消息、写笔记、整理便签或传文件，其他设备**立即**同步。
 
-> **当前版本**：[v0.7.2](https://github.com/boochain/syncnotes/releases/latest) · [更新日志](docs/release-notes/v0.7.2.md) · [设计系统](docs/design-system.md) · [服务端管理脚本](docs/server-script.md) · [密码找回与数据救援](docs/password-recovery.md) · [任务仪表盘](docs/task-dashboard.md) · [日历](docs/calendar.md) · [同步、备份与恢复](docs/backup-restore.md)
+> **当前版本**：[v0.7.2](https://github.com/boochain/syncnotes/releases/latest) · [更新日志](docs/release-notes/v0.7.2.md) · [设计系统](docs/design-system.md) · [服务端管理脚本](docs/server-script.md) · [密码找回与数据救援](docs/password-recovery.md) · [任务仪表盘](docs/task-dashboard.md) · [日历](docs/calendar.md) · [同步、备份与恢复](docs/backup-restore.md) · [网页版部署](docs/web-client.md)
 
 ---
 
@@ -174,6 +174,19 @@ Android 上若搜索不到，请直接手动填写 IP（部分路由器/系统�
 | Linux | `SyncNotes-linux-x64.tar.gz` | 解压后运行 `SyncNotes/syncnotes`（需要 GTK3；托盘需 `libayatana-appindicator3-1`） |
 | Android | `SyncNotes-android.apk` | 允许“安装未知来源应用”后安装 |
 
+### 网页版（独立站点）
+
+网页版是可以单独部署的静态站点，用浏览器打开，填写已部署的 SyncNotes 服务器地址即可使用。它和服务器是两样东西，不内嵌在 Rust 进程里，也不需要在服务器上放 Flutter 工程。
+
+```bash
+cd web
+npm ci
+npm test
+npm run build    # 把 dist/ 拷到 Nginx、Caddy 或任意静态主机
+```
+
+同源反代（同一域名既提供网页又转发 `/health`、`/api/`、`/ws`）的示例在 `web/deploy/`。详细说明见 [docs/web-client.md](docs/web-client.md)。
+
 ### 首次登录
 
 1. 填写服务器地址（如 `192.168.1.10:7700` 或 `https://notes.example.com`）
@@ -219,6 +232,7 @@ syncnotes/
 │   │   ├── backup.rs     账号备份 / 恢复（替换当前账号数据）
 │   │   └── admin.rs      管理员救援子命令（重置密码 / 导出 / 还原 / 备份）
 │   └── tests/            集成测试
+├── web/             独立网页客户端（Vite 静态站点，部署说明见 docs/web-client.md）
 ├── app/             Flutter 客户端（Windows / Linux / Android）
 │   ├── lib/
 │   │   ├── models/       块模型
