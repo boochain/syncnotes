@@ -245,7 +245,7 @@ class _TrashRow extends StatelessWidget {
     final c = AppColors.of(context);
     final tt = Theme.of(context).textTheme;
     final type = BlockTypes.of(block.kind);
-    final kids = block.kind == BlockKind.folder || block.kind == BlockKind.page ? s.sync.trashChildCount(block.id) : 0;
+    final kids = block.kind == BlockKind.folder || block.kind == BlockKind.page || block.kind == BlockKind.task ? s.sync.trashChildCount(block.id) : 0;
     final meta = [
       trashTypeLabel(block.kind),
       if (kids > 0) '含 $kids 项',

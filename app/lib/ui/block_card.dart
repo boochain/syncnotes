@@ -393,6 +393,7 @@ class _StickyNoteCardState extends State<StickyNoteCard> {
         BlockKind.folder => const Color(0xFFF59E0B),
         BlockKind.file => const Color(0xFF38BDF8),
         BlockKind.page || BlockKind.note => const Color(0xFF8B5CF6),
+        BlockKind.task => const Color(0xFF007AFF),
         BlockKind.message || BlockKind.text || BlockKind.unknown => null,
       };
 

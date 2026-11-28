@@ -2,7 +2,7 @@
 
 一个可自部署的多设备实时同步笔记、便签、消息与文件工具：在任意一台设备上发消息、写笔记、整理便签或传文件，其他设备**立即**同步。
 
-> **当前版本**：[v0.7.2](https://github.com/boochain/syncnotes/releases/latest) · [更新日志](docs/release-notes/v0.7.2.md) · [设计系统](docs/design-system.md) · [服务端管理脚本](docs/server-script.md) · [密码找回与数据救援](docs/password-recovery.md)
+> **当前版本**：[v0.7.2](https://github.com/boochain/syncnotes/releases/latest) · [更新日志](docs/release-notes/v0.7.2.md) · [设计系统](docs/design-system.md) · [服务端管理脚本](docs/server-script.md) · [密码找回与数据救援](docs/password-recovery.md) · [任务仪表盘设计](docs/task-dashboard.md)
 
 ---
 
@@ -275,7 +275,7 @@ git push origin v0.7.0
 
 服务器 → 客户端：`auth_ok` / `auth_error` / `block_update {block}` / `viewed_update {block_id, viewed, device_id?, seq}` / `sync_complete {latest_seq}` / `error` / `pong`
 
-每个用户维护单调递增的序号 `seq`；每次变更都会分配新序号，客户端记录收到的最大序号，重连时只拉取之后的变更。删除分两步：移入回收站设置 `deleted_at` 与 `deleted_by`（LWW 同步、支持离线排队）；彻底删除写入墓碑（`deleted=true`）并级联清理子块与服务端文件。`/health` 返回 `protocol: 2`、`features: ["trash"]` 与 `trash_retention_days`，数据库启动时自动迁移。
+每个用户维护单调递增的序号 `seq`；每次变更都会分配新序号，客户端记录收到的最大序号，重连时只拉取之后的变更。删除分两步：移入回收站设置 `deleted_at` 与 `deleted_by`（LWW 同步、支持离线排队）；彻底删除写入墓碑（`deleted=true`）并级联清理子块与服务端文件。`/health` 返回 `protocol: 3`、`features: ["trash", "seal", "tasks"]` 与 `trash_retention_days`，数据库启动时自动迁移。任务块的 kind 为 `task`，旧客户端按未知类型同步，payload 保持不透明。详见 [`docs/task-dashboard.md`](docs/task-dashboard.md)。
 
 </details>
 
