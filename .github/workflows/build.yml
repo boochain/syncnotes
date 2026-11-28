@@ -83,6 +83,16 @@ jobs:
           npm ci
           npm test
           npm run build
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+      - name: End-to-end (real server + Chromium)
+        run: |
+          (cd server && cargo build --release)
+          cd web
+          npx playwright install --with-deps chromium
+          npm run e2e
       - uses: actions/upload-artifact@v4
         with:
           name: web-dist

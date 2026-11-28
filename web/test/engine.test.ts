@@ -126,4 +126,27 @@ describe('SyncEngine', () => {
     expect(e.byId('n1')?.title).toBe('from-server');
     expect(e.latestSeq).toBe(4);
   });
+
+  it('v0.8.1: keeps a conflict copy when another device wins LWW over a pending local edit', () => {
+    const e = engine();
+    e.applyServerMessage({ type: 'block_update', block: serverBlock({ id: 'n1', title: '共享', payload: { markdown: 'v1' }, updated_at: 10 }) });
+    e.update('n1', { payload: { markdown: '本机修改' } });
+    const localTs = e.byId('n1')!.updated_at;
+    e.applyServerMessage({ type: 'block_update', block: serverBlock({ id: 'n1', title: '共享', payload: { markdown: '另一台' }, updated_at: localTs + 1000, seq: 2 }) });
+    expect(e.byId('n1')!.payload.markdown).toBe('另一台');
+    const copies = e.visible().filter((b) => b.title.startsWith('共享（冲突副本'));
+    expect(copies).toHaveLength(1);
+    expect(copies[0].payload.markdown).toBe('本机修改');
+  });
+
+  it('v0.8.1: does not toast every existing block during catch-up', () => {
+    const e = new SyncEngine('device-web');
+    const seen: string[] = [];
+    e.onRemoteNew = (b) => seen.push(b.id);
+    e.applyServerMessage({ type: 'auth_ok' });
+    e.applyServerMessage({ type: 'block_update', block: serverBlock({ id: 'old' }) });
+    e.applyServerMessage({ type: 'sync_complete', latest_seq: 1 });
+    e.applyServerMessage({ type: 'block_update', block: serverBlock({ id: 'live', seq: 2 }) });
+    expect(seen).toEqual(['live']);
+  });
 });
