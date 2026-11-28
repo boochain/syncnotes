@@ -2,12 +2,13 @@
 
 一个可自部署的多设备实时同步笔记、便签、消息与文件工具：在任意一台设备上发消息、写笔记、整理便签或传文件，其他设备**立即**同步。
 
-> **当前版本**：[v0.8.0](https://github.com/boochain/syncnotes/releases/latest) · [更新日志](docs/release-notes/v0.8.0.md) · [动效规范](docs/motion.md) · [设计系统](docs/design-system.md) · [服务端管理脚本](docs/server-script.md) · [密码找回与数据救援](docs/password-recovery.md) · [任务仪表盘](docs/task-dashboard.md) · [日历](docs/calendar.md) · [同步、备份与恢复](docs/backup-restore.md) · [网页版部署](docs/web-client.md)
+> **当前版本**：[v0.8.1](https://github.com/boochain/syncnotes/releases/latest) · [更新日志](docs/release-notes/v0.8.1.md) · [动效规范](docs/motion.md) · [设计系统](docs/design-system.md) · [服务端管理脚本](docs/server-script.md) · [密码找回与数据救援](docs/password-recovery.md) · [任务仪表盘](docs/task-dashboard.md) · [日历](docs/calendar.md) · [同步、备份与恢复](docs/backup-restore.md) · [网页版部署](docs/web-client.md)
 
 ---
 
-## 核心特性（v0.8.0）
+## 核心特性（v0.8.1）
 
+- **v0.8.1 修复版**：多设备同时修改时保留冲突副本、页面转场不再文字重叠、删除有退出动画、玻璃背景对比度达到 WCAG AA、登录限流、网页登录页与 App 统一等。见 [`docs/release-notes/v0.8.1.md`](docs/release-notes/v0.8.1.md)。
 - **v0.8.0 新增**
   - **任务仪表盘**：侧边栏「任务」；重要程度、起止 / 完成时间、自定义加权进度组成项、子任务起止时间与进度滚入、智能列表与风险提示。见 [`docs/task-dashboard.md`](docs/task-dashboard.md)。
   - **日历**：会员订阅（自动续费 / 单月 / 单季度 / 单年等）、重要日期、倒数日，任务日期只读叠加。见 [`docs/calendar.md`](docs/calendar.md)。
@@ -55,7 +56,7 @@ Linux 与 Windows 服务器压缩包内已分别附带管理脚本（也可从�
 ```bash
 sudo ./syncnotes-server.sh            # 打开中文菜单：临时运行 / 持久运行 / 安装为服务并开机自启 / 停止 / 状态 / 更新 / 卸载
 sudo ./syncnotes-server.sh install    # 直接安装为系统服务并开机自启（会逐项询问端口、目录等，回车用默认值）
-sudo ./syncnotes-server.sh update ./syncnotes-server-v0.8.0-linux-x86_64.tar.gz   # 升级，失败自动回滚
+sudo ./syncnotes-server.sh update ./syncnotes-server-v0.8.1-linux-x86_64.tar.gz   # 升级，失败自动回滚
 ```
 
 脚本会自动识别旧安装（旧 systemd 服务、nohup 或手动进程及其数据库），备份后再迁移到 `/opt/syncnotes`，配置保存在 `/etc/syncnotes/syncnotes.env`。脚本默认不修改防火墙（仅在交互确认或显式传入 `--open-firewall` 时放行）。详细说明见 [`docs/server-script.md`](docs/server-script.md)。
@@ -98,8 +99,8 @@ powershell -ExecutionPolicy Bypass -File .\syncnotes-server.ps1 backup
 压缩包内包含服务器程序、管理/救援脚本、README 和 `deploy/`（systemd / Docker / Caddy / Nginx 示例配置）。
 
 ```bash
-tar xzf syncnotes-server-v0.8.0-linux-x86_64.tar.gz
-cd syncnotes-server-v0.8.0-linux-x86_64
+tar xzf syncnotes-server-v0.8.1-linux-x86_64.tar.gz
+cd syncnotes-server-v0.8.1-linux-x86_64
 ./syncnotes-server --bind 0.0.0.0:7700
 ```
 
@@ -179,7 +180,7 @@ Android 上若搜索不到，请直接手动填写 IP（部分路由器/系统�
 | Windows | `SyncNotes-windows-x64.zip` | 解压后运行 `SyncNotes\syncnotes.exe`（已附带 VC++ 运行库） |
 | Linux | `SyncNotes-linux-x64.tar.gz` | 解压后运行 `SyncNotes/syncnotes`（需要 GTK3；托盘需 `libayatana-appindicator3-1`） |
 | Android | `SyncNotes-android.apk` | 允许“安装未知来源应用”后安装 |
-| 网页版 | `SyncNotes-web-v0.8.0.zip` | 解压后把 `syncnotes-web/` 放到任意静态主机，打开后填服务器地址；见 [`docs/web-client.md`](docs/web-client.md) |
+| 网页版 | `SyncNotes-web-v0.8.1.zip` | 解压后把 `syncnotes-web/` 放到任意静态主机，打开后填服务器地址；见 [`docs/web-client.md`](docs/web-client.md) |
 
 ### 网页版（独立站点）
 
@@ -277,8 +278,8 @@ SYNCNOTES_SERVER_BIN="$(pwd)/../server/target/release/syncnotes-server" flutter 
 3. 提交并推送 `v*` 标签，GitHub Actions 将自动测试、构建 6 平台产物并发布到 Releases：
 
 ```bash
-git tag -a v0.8.0 -m "SyncNotes v0.8.0"
-git push origin v0.8.0
+git tag -a v0.8.1 -m "SyncNotes v0.8.1"
+git push origin v0.8.1
 ```
 
 <details>
