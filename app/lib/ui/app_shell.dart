@@ -250,7 +250,7 @@ class AppShellState extends State<AppShell> implements PageHost {
                       )
                     : ColoredBox(
                         key: ValueKey('page-$pageId'),
-                        color: pal.bg,
+                        color: Glass.surfaceTranslucent ? Colors.transparent : pal.bg,
                         child: PageScreen(
                           pageId: pageId,
                           onMenu: _sidebarCollapsed ? toggleSidebar : null,

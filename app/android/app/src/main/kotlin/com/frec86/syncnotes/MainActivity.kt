@@ -29,6 +29,27 @@ class MainActivity : FlutterActivity() {
         pending = readShare(intent)
     }
 
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        preferHighRefreshRate()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        preferHighRefreshRate()
+    }
+
+    /// 选择显示器支持的最高刷新率（主流 120Hz 手机），让 Flutter 按 vsync 跑满，而不是锁在 60。
+    private fun preferHighRefreshRate() {
+        val display = if (Build.VERSION.SDK_INT >= 30) display else @Suppress("DEPRECATION") windowManager.defaultDisplay
+        val modes = display?.supportedModes ?: return
+        val best = modes.maxWithOrNull(compareBy<android.view.Display.Mode> { it.refreshRate }.thenBy { it.physicalWidth })
+            ?: return
+        val params = window.attributes
+        params.preferredDisplayModeId = best.modeId
+        window.attributes = params
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         val share = readShare(intent) ?: return
